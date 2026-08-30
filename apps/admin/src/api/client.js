@@ -26,6 +26,15 @@ async function req(method, path, body) {
   return json;
 }
 
+async function uploadFile(file) {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`/api${withTenant('/uploads')}`, { method: 'POST', credentials: 'include', body: form });
+  const json = await res.json().catch(() => ({ ok: false, error: { message: 'Invalid JSON response' } }));
+  if (!json.ok) throw new Error(json.error?.message || `HTTP ${res.status}`);
+  return json.data.url;
+}
+
 const get = (path) => req('GET', path);
 const post = (path, body) => req('POST', path, body);
 const patch = (path, body) => req('PATCH', path, body);
@@ -96,4 +105,5 @@ export const api = {
   updateTenantSettings: (data) => patch('/tenant', data),
   regenerateApiKey: () => post('/tenant/regenerate-key'),
   zernioStatus: () => get('/integrations/zernio-status'),
+  uploadFile,
 };

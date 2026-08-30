@@ -1,10 +1,11 @@
 // §9.3 Товар — картка/форма (створення й редагування). Дві колонки: ліва — основні поля,
-// права — розмірна сітка (URL-заглушка, до появи file-upload сервісу) + варіанти (offers).
+// права — розмірна сітка + варіанти (offers), фото через реальний upload-сервіс (POST /api/uploads).
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { Field, Input, Textarea, Select, Button, IconButton, ErrorBanner } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 import { SupplierForm } from './SuppliersPage';
+import { SingleFileDrop, MultiImageDrop } from '../components/common/FileDropInput';
 
 function TagsInput({ value, onChange, placeholder }) {
   const [draft, setDraft] = useState('');
@@ -141,8 +142,8 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
         </div>
 
         <div>
-          <Field label="Розмірна сітка (URL зображення)">
-            <Input placeholder="https://…" value={form.sizeChartImage} onChange={(e) => setForm({ ...form, sizeChartImage: e.target.value })} />
+          <Field label="Розмірна сітка">
+            <SingleFileDrop value={form.sizeChartImage} onChange={(url) => setForm({ ...form, sizeChartImage: url })} />
           </Field>
 
           <div className="mt-4">
@@ -164,12 +165,9 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
                     defaultValue={(offer.properties || []).map((p) => `${p.name}:${p.value}`).join(', ')}
                     onBlur={(e) => updateOfferField(offer, 'properties', e.target.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [name, value] = s.split(':'); return { name: (name || '').trim(), value: (value || '').trim() }; }))}
                   />
-                  <Input
-                    className="mt-2"
-                    placeholder="Фото (URL через кому, до 10, перше = головне)"
-                    defaultValue={(offer.images || []).join(', ')}
-                    onBlur={(e) => updateOfferField(offer, 'images', e.target.value.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 10))}
-                  />
+                  <div className="mt-2">
+                    <MultiImageDrop value={offer.images || []} onChange={(urls) => updateOfferField(offer, 'images', urls)} />
+                  </div>
                   <div className="mt-2 flex justify-end">
                     <IconButton onClick={() => removeOffer(offer.id)}>🗑️</IconButton>
                   </div>

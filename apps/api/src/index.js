@@ -26,6 +26,7 @@ const paymentsRouter = require('./routes/payments');
 const adsRouter = require('./routes/ads');
 const productExpensesRouter = require('./routes/product-expenses');
 const analyticsRouter = require('./routes/analytics');
+const uploadsRouter = require('./routes/uploads');
 
 const app = express();
 const PORT = Number(process.env.PORT || 4700);
@@ -33,6 +34,7 @@ const PORT = Number(process.env.PORT || 4700);
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 app.use(cors({ origin: true, credentials: true }));
+app.use('/uploads', express.static(path.join(__dirname, '../../../uploads')));
 
 app.get('/health', asyncHandler(async (req, res) => {
   const tenants = await db.tenant.count().catch(() => -1);
@@ -62,6 +64,7 @@ app.use('/api', resolveTenant,
   adsRouter,
   productExpensesRouter,
   analyticsRouter,
+  uploadsRouter,
 );
 
 // Продакшн: зібраний admin SPA (yarn build:admin → public/admin) роздається тим самим
