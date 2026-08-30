@@ -3,6 +3,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
+const helmet = require('helmet');
 const { db } = require('@crm/db');
 const logger = require('@crm/logger');
 
@@ -30,6 +31,24 @@ const uploadsRouter = require('./routes/uploads');
 
 const app = express();
 const PORT = Number(process.env.PORT || 4700);
+
+// CSP + базові security-заголовки (знайдено security-аудитом 2026-08-30 — не було зовсім).
+// crossOriginResourcePolicy: false — /uploads мають бути читабельні з інших *.fineko.space
+// доменів (адмінка на окремому origin у dev, і потенційно з домену воронки в проді).
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // React inline style="" атрибути
+      imgSrc: ["'self'", 'data:', 'https:'], // фото товарів — частина лишається на зовнішньому KeyCRM CDN (див. migrate-keycrm.js)
+      connectSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+      objectSrc: ["'none'"],
+    },
+  },
+  crossOriginResourcePolicy: false,
+}));
 
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
