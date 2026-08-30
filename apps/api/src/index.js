@@ -1,4 +1,5 @@
 // Fineko CRM API — Express, той самий стиль конвенцій що platform (CommonJS, packages/*).
+const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
@@ -62,6 +63,16 @@ app.use('/api', resolveTenant,
   productExpensesRouter,
   analyticsRouter,
 );
+
+// Продакшн: зібраний admin SPA (yarn build:admin → public/admin) роздається тим самим
+// процесом, щоб nginx/сервер потребував проксі лише на один порт (той самий підхід, що platform).
+// У dev-режимі admin піднятий окремо на Vite (5173) — цей блок просто нічого не знаходить і падає в 404 нижче.
+const ADMIN_DIST = path.join(__dirname, '../../../public/admin');
+app.use(express.static(ADMIN_DIST));
+app.get('*', (req, res, next) => {
+  if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path === '/me' || req.path === '/health') return next();
+  res.sendFile(path.join(ADMIN_DIST, 'index.html'), (err) => { if (err) next(); });
+});
 
 app.use((req, res) => {
   res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: `No route ${req.method} ${req.path}` } });
