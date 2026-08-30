@@ -59,8 +59,9 @@ export default function ProductsPage() {
           {/* mobile: картки */}
           <div className="divide-y divide-slate-800/60 md:hidden">
             {items.map((p) => (
-              <div key={p.id} className="flex items-center justify-between p-4" onClick={() => setEditing(p)}>
-                <div>
+              <div key={p.id} className="flex items-center gap-3 p-4" onClick={() => setEditing(p)}>
+                <Thumb url={p.thumbnailUrl} />
+                <div className="flex-1">
                   <div className="font-medium">{p.name}</div>
                   <div className="text-xs text-slate-500">{p.sku} · {money(p.price)}</div>
                 </div>
@@ -72,13 +73,14 @@ export default function ProductsPage() {
           <table className="hidden w-full text-sm md:table">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-4 py-3">Назва</th><th className="px-4 py-3">SKU</th><th className="px-4 py-3">Категорія</th>
+                <th className="px-4 py-3"></th><th className="px-4 py-3">Назва</th><th className="px-4 py-3">SKU</th><th className="px-4 py-3">Категорія</th>
                 <th className="px-4 py-3">Ціна</th><th className="px-4 py-3">Варіантів</th><th className="px-4 py-3">Постачальник</th><th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
               {items.map((p) => (
                 <tr key={p.id} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30" onClick={() => setEditing(p)}>
+                  <td className="px-4 py-3"><Thumb url={p.thumbnailUrl} /></td>
                   <td className="px-4 py-3">{p.name}</td>
                   <td className="px-4 py-3 text-slate-400">{p.sku}</td>
                   <td className="px-4 py-3 text-slate-400">{p.category?.name || '—'}</td>
@@ -114,4 +116,10 @@ export default function ProductsPage() {
       )}
     </div>
   );
+}
+
+function Thumb({ url }) {
+  return url
+    ? <img src={url} alt="" className="h-9 w-9 rounded-md object-cover" />
+    : <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>;
 }

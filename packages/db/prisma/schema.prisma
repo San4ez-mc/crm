@@ -90,6 +90,11 @@ model Product {
   supplier            Supplier? @relation(fields: [supplierId], references: [id])
   supplierArticle     String?
   sizeChartImage      String? // шлях/URL до завантаженого файлу
+  // ДОПОВНЕННЯ до §4.2 — виявлено при міграції з KeyCRM, у ТЗ не описані, але дані реальні:
+  thumbnailUrl        String? // мініатюра для списку товарів (§9.2 "фото (мініатюра thumbnailUrl)" — поле згадане в UI-специфікації, але не було в моделі)
+  images              String[] @default([]) // загальні фото товару (KeyCRM attachments_data), не привʼязані до конкретного offer-кольору
+  aiNotes             String? // "Додаткова інформація для ШІ" (KeyCRM CT_1011) — нотатки для бота, окремо від presentationText (текст для клієнта)
+  sizeChartData       Json? // структурована розмірна сітка (KeyCRM CT_1012: {title,unit,sizes[],measurements}) — доповнює sizeChartImage (той самий чарт, але як картинка)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

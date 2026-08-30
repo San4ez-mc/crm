@@ -69,6 +69,10 @@ router.post('/products', asyncHandler(async (req, res) => {
       supplierId: b.supplierId || null,
       supplierArticle: b.supplierArticle || null,
       sizeChartImage: b.sizeChartImage || null,
+      thumbnailUrl: b.thumbnailUrl || null,
+      images: Array.isArray(b.images) ? b.images : [],
+      aiNotes: b.aiNotes || null,
+      sizeChartData: b.sizeChartData ?? undefined,
     },
     include: PRODUCT_INCLUDE,
   });
@@ -103,6 +107,10 @@ router.patch('/products/:id', asyncHandler(async (req, res) => {
       ...(b.supplierId !== undefined ? { supplierId: b.supplierId || null } : {}),
       ...(b.supplierArticle !== undefined ? { supplierArticle: b.supplierArticle } : {}),
       ...(b.sizeChartImage !== undefined ? { sizeChartImage: b.sizeChartImage } : {}),
+      ...(b.thumbnailUrl !== undefined ? { thumbnailUrl: b.thumbnailUrl } : {}),
+      ...(b.images !== undefined ? { images: Array.isArray(b.images) ? b.images : [] } : {}),
+      ...(b.aiNotes !== undefined ? { aiNotes: b.aiNotes } : {}),
+      ...(b.sizeChartData !== undefined ? { sizeChartData: b.sizeChartData } : {}),
     },
     include: PRODUCT_INCLUDE,
   });

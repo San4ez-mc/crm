@@ -66,6 +66,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     categoryId: product?.categoryId || '', presentationText: product?.presentationText || '',
     adMatchTokens: product?.adMatchTokens || [], companionProductIds: product?.companionProductIds || [],
     supplierId: product?.supplierId || '', supplierArticle: product?.supplierArticle || '', sizeChartImage: product?.sizeChartImage || '',
+    thumbnailUrl: product?.thumbnailUrl || '', images: product?.images || [], aiNotes: product?.aiNotes || '',
   });
   const [offers, setOffers] = useState(product?.offers || []);
   const [error, setError] = useState('');
@@ -120,8 +121,14 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
+          <Field label="Мініатюра (для списку товарів)">
+            <SingleFileDrop value={form.thumbnailUrl} onChange={(url) => setForm({ ...form, thumbnailUrl: url })} />
+          </Field>
           <Field label="Презентація для клієнта">
             <Textarea rows={3} placeholder="Пишіть так, як має прозвучати для клієнта, а не сухий CRM-опис" value={form.presentationText} onChange={(e) => setForm({ ...form, presentationText: e.target.value })} />
+          </Field>
+          <Field label="Нотатки для ШІ (не показуються клієнту)">
+            <Textarea rows={2} placeholder="Напр. умови повернення, застереження — те, що бот має знати, але не читати клієнту дослівно" value={form.aiNotes} onChange={(e) => setForm({ ...form, aiNotes: e.target.value })} />
           </Field>
           <Field label="Токени для матчингу за рекламою/артикулом">
             <TagsInput value={form.adMatchTokens} onChange={(v) => setForm({ ...form, adMatchTokens: v })} placeholder="Ввести й Enter" />
@@ -142,6 +149,9 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
         </div>
 
         <div>
+          <Field label="Загальні фото товару (не привʼязані до кольору)">
+            <MultiImageDrop value={form.images} onChange={(urls) => setForm({ ...form, images: urls })} />
+          </Field>
           <Field label="Розмірна сітка">
             <SingleFileDrop value={form.sizeChartImage} onChange={(url) => setForm({ ...form, sizeChartImage: url })} />
           </Field>
