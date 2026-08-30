@@ -5,6 +5,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
+const { parseFrom, parseTo } = require('../lib/dateRange');
 
 const router = express.Router();
 
@@ -44,7 +45,7 @@ router.get('/ad-spend', asyncHandler(async (req, res) => {
   const { from, to, productId, take = '200', skip = '0' } = req.query;
   const where = {
     ad: { tenantId: req.tenant.id, ...(productId ? { productId: String(productId) } : {}) },
-    ...(from || to ? { date: { ...(from ? { gte: new Date(String(from)) } : {}), ...(to ? { lte: new Date(String(to)) } : {}) } } : {}),
+    ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}),
   };
   const [items, total] = await Promise.all([
     db.adSpendDaily.findMany({ where, include: { ad: { include: { product: { select: { id: true, name: true } } } } }, orderBy: { date: 'desc' }, take: Number(take), skip: Number(skip) }),

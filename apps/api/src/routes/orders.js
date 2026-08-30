@@ -3,6 +3,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
+const { parseFrom, parseTo } = require('../lib/dateRange');
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ router.get('/orders', asyncHandler(async (req, res) => {
   const where = {
     tenantId: req.tenant.id,
     ...(stageId ? { stageId: String(stageId) } : {}),
-    ...(from || to ? { createdAt: { ...(from ? { gte: new Date(String(from)) } : {}), ...(to ? { lte: new Date(String(to)) } : {}) } } : {}),
+    ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}),
     ...(productId ? { items: { some: { productId: String(productId) } } } : {}),
     ...(q ? { OR: [
       { ttn: { has: String(q) } },

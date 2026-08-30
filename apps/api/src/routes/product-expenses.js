@@ -7,6 +7,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { NotFoundError } = require('@crm/errors');
+const { parseFrom, parseTo } = require('../lib/dateRange');
 
 const router = express.Router();
 
@@ -23,8 +24,8 @@ async function adSpendForProduct(tenantId, productId, from, to) {
 
 router.get('/product-expenses', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
-  const fromDate = from ? new Date(String(from)) : null;
-  const toDate = to ? new Date(String(to)) : null;
+  const fromDate = parseFrom(from);
+  const toDate = parseTo(to);
 
   const products = await db.product.findMany({
     where: { tenantId: req.tenant.id },

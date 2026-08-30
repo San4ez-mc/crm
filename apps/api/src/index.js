@@ -21,6 +21,7 @@ const buyersRouter = require('./routes/buyers');
 const pipelinesRouter = require('./routes/pipelines');
 const ordersRouter = require('./routes/orders');
 const returnsRouter = require('./routes/returns');
+const paymentsRouter = require('./routes/payments');
 const adsRouter = require('./routes/ads');
 const productExpensesRouter = require('./routes/product-expenses');
 const analyticsRouter = require('./routes/analytics');
@@ -56,6 +57,7 @@ app.use('/api', resolveTenant,
   pipelinesRouter,
   ordersRouter,
   returnsRouter,
+  paymentsRouter,
   adsRouter,
   productExpensesRouter,
   analyticsRouter,

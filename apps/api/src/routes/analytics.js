@@ -5,12 +5,13 @@
 const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
+const { parseFrom, parseTo } = require('../lib/dateRange');
 
 const router = express.Router();
 
 function periodWhere(from, to) {
   if (!from && !to) return {};
-  return { createdAt: { ...(from ? { gte: new Date(String(from)) } : {}), ...(to ? { lte: new Date(String(to)) } : {}) } };
+  return { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } };
 }
 
 // ── §6.1 Топ товарів за продажами ────────────────────────────────────────
@@ -42,8 +43,8 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
 
   const data = await Promise.all(ads.map(async (ad) => {
     const [clicks, spendAgg, firstTouchOrders, lastTouchOrders] = await Promise.all([
-      db.adClick.count({ where: { adId: ad.id, ...(from || to ? { timestamp: { ...(from ? { gte: new Date(String(from)) } : {}), ...(to ? { lte: new Date(String(to)) } : {}) } } : {}) } }),
-      db.adSpendDaily.aggregate({ where: { adId: ad.id, ...(from || to ? { date: { ...(from ? { gte: new Date(String(from)) } : {}), ...(to ? { lte: new Date(String(to)) } : {}) } } : {}) }, _sum: { amount: true } }),
+      db.adClick.count({ where: { adId: ad.id, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+      db.adSpendDaily.aggregate({ where: { adId: ad.id, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) }, _sum: { amount: true } }),
       db.order.count({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } } }),
       db.order.count({ where: { tenantId: req.tenant.id, lastTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } } }),
     ]);
@@ -69,8 +70,8 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
 // ── §6.3 Маржа по товару (дохід − ProductExpense за період) ─────────────
 router.get('/analytics/margin', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
-  const fromDate = from ? new Date(String(from)) : null;
-  const toDate = to ? new Date(String(to)) : null;
+  const fromDate = parseFrom(from);
+  const toDate = parseTo(to);
 
   const products = await db.product.findMany({
     where: { tenantId: req.tenant.id },
