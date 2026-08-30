@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+build/
+public/admin/
+*.log
+.DS_Store
+Thumbs.db
+/packages/db/node_modules/.prisma/
+uploads/
