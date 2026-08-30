@@ -1,0 +1,14 @@
+{
+  "name": "@crm/mcp",
+  "version": "0.1.0",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@crm/db": "*",
+    "@crm/errors": "*",
+    "@crm/logger": "*"
+  }
+}

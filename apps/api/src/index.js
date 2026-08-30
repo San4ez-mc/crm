@@ -10,6 +10,8 @@ const asyncHandler = require('./middleware/asyncHandler');
 const { resolveTenant } = require('./middleware/resolveTenant');
 
 const authSsoRouter = require('./routes/auth-sso');
+const mcpRouter = require('./routes/mcp');
+const mcpEditRouter = require('./routes/mcp-edit');
 const tenantsAdminRouter = require('./routes/tenants-admin');
 const tenantSettingsRouter = require('./routes/tenant-settings');
 const categoriesRouter = require('./routes/categories');
@@ -37,6 +39,9 @@ app.get('/health', asyncHandler(async (req, res) => {
 
 // SSO-логін адмінки + контракт SSO-панелі (свої власні перевірки авторизації всередині).
 app.use(authSsoRouter);
+
+// MCP (§5, §6 CLAUDE.md) — власна авторизація (Bearer MCP_SECRET), крос-тенантно.
+app.use('/api', mcpRouter, mcpEditRouter);
 
 // Онбординг нових tenant — окремо, superadmin-only, без прив'язки до конкретного tenantId.
 app.use('/api', tenantsAdminRouter);
