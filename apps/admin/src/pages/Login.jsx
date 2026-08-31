@@ -14,7 +14,7 @@ export default function Login() {
 
     const bgStyle = {
         background:
-            "linear-gradient(rgba(2,6,23,.55), rgba(2,6,23,.88)), url('/login-bg.png') center/cover fixed, #020617",
+            "linear-gradient(rgba(2,6,23,.55), rgba(2,6,23,.88)), url('/login-bg.jpg') center/cover fixed, #020617",
     };
 
     return (
