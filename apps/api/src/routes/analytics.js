@@ -6,6 +6,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { parseFrom, parseTo } = require('../lib/dateRange');
+const { ValidationError } = require('@crm/errors');
 
 const router = express.Router();
 
@@ -154,6 +155,207 @@ router.get('/analytics/time-to-purchase', asyncHandler(async (req, res) => {
   const byProduct = groupSummarize(orders.map((o) => ({ key: o.items[0]?.productId || null, minutes: (o.createdAt.getTime() - o.firstTouchAt.getTime()) / 60000 })).filter((x) => x.key));
 
   res.json({ ok: true, data: { overall, byAd, byProduct } });
+}));
+
+// ── Щоденні звіти («Рука на пульсі») — доповнення 2026-08-31 ────────────────
+// Маржа per-order = дохід − cogs − managerCost (той самий підхід, що /analytics/margin
+// і /product-expenses), АЛЕ без відрахування рекламного бюджету — рекламу віднімаємо
+// окремо на рівні "Прибуток", щоб не рахувати її двічі. Фінансові наслідки відмови
+// (хто платить за зворотну доставку) ще НЕ визначені (чекаємо правил від Олексія) —
+// тут відмова лише виключає замовлення з "успішної" виручки, без додаткових штрафів.
+function dayKey(date) {
+  return new Date(date).toISOString().slice(0, 10);
+}
+
+async function marginPerOrderItem(item, expenseByProduct) {
+  const exp = item.productId ? expenseByProduct.get(item.productId) : null;
+  const cogs = Number(exp?.cogs || 0);
+  const managerCostFixed = Number(exp?.managerCostFixed || 0);
+  const managerCostPercent = Number(exp?.managerCostPercent || 0);
+  const revenue = Number(item.price) * item.quantity;
+  return revenue - cogs * item.quantity - managerCostFixed * item.quantity - (revenue * managerCostPercent) / 100;
+}
+
+async function loadExpenseMap(tenantId) {
+  const rows = await db.productExpense.findMany({ where: { tenantId } });
+  return new Map(rows.map((r) => [r.productId, r]));
+}
+
+// ── Щоденне зведення по всьому tenant (скріншот "День") ─────────────────
+router.get('/analytics/daily', asyncHandler(async (req, res) => {
+  const { from, to } = req.query;
+  const tenant = req.tenant;
+  const expenseByProduct = await loadExpenseMap(tenant.id);
+
+  const [orders, spendRows, clickRows, returns] = await Promise.all([
+    db.order.findMany({
+      where: { tenantId: tenant.id, ...periodWhere(from, to) },
+      include: { items: true, buyer: { select: { id: true } } },
+    }),
+    db.adSpendDaily.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+    db.adClick.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+    db.return.findMany({ where: { tenantId: tenant.id, ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+  ]);
+
+  // Для "новий/повторний клієнт" потрібна історія покупця ДО цього замовлення — рахуємо по всій базі, не тільки в періоді.
+  const firstOrderAtByBuyer = new Map();
+  for (const o of await db.order.findMany({ where: { tenantId: tenant.id, buyerId: { not: null } }, select: { buyerId: true, createdAt: true }, orderBy: { createdAt: 'asc' } })) {
+    if (!firstOrderAtByBuyer.has(o.buyerId)) firstOrderAtByBuyer.set(o.buyerId, o.createdAt);
+  }
+
+  const days = new Map(); // dayKey -> accumulator
+  function bucket(key) {
+    if (!days.has(key)) {
+      days.set(key, {
+        date: key, ordersCount: 0, refusedCount: 0, marginNonRefusedTotal: 0, marginAllTotal: 0,
+        qtySold: 0, qtyRepeat: 0, newBuyerOrders: 0,
+      });
+    }
+    return days.get(key);
+  }
+
+  for (const order of orders) {
+    const key = dayKey(order.createdAt);
+    const b = bucket(key);
+    b.ordersCount += 1;
+    if (order.isRefused) b.refusedCount += 1;
+
+    let orderMargin = 0;
+    for (const item of order.items) {
+      orderMargin += await marginPerOrderItem(item, expenseByProduct);
+      if (!item.isUpsell) b.qtySold += item.quantity;
+      const isRepeat = order.buyerId && firstOrderAtByBuyer.get(order.buyerId) && firstOrderAtByBuyer.get(order.buyerId).getTime() < order.createdAt.getTime();
+      if (isRepeat) b.qtyRepeat += item.quantity;
+    }
+    b.marginAllTotal += orderMargin;
+    if (!order.isRefused) b.marginNonRefusedTotal += orderMargin;
+
+    const isNewBuyer = !order.buyerId || (firstOrderAtByBuyer.get(order.buyerId)?.getTime() === order.createdAt.getTime());
+    if (isNewBuyer) b.newBuyerOrders += 1;
+  }
+  for (const spend of spendRows) {
+    const b = bucket(dayKey(spend.date));
+    b.adSpend = (b.adSpend || 0) + Number(spend.amount);
+    b.impressions = (b.impressions || 0) + Number(spend.impressions || 0);
+    b.platformClicks = (b.platformClicks || 0) + Number(spend.clicks || 0);
+  }
+  for (const click of clickRows) {
+    const b = bucket(dayKey(click.timestamp));
+    b.messages = (b.messages || 0) + 1;
+  }
+  for (const ret of returns) {
+    const b = bucket(dayKey(ret.createdAt));
+    b.returnsCount = (b.returnsCount || 0) + 1;
+  }
+
+  const usdRate = Number(tenant.usdExchangeRate || 0);
+  const fixedCosts = Number(tenant.dailyFixedCosts || 0);
+  const payrollCosts = Number(tenant.dailyPayrollCosts || 0);
+
+  const data = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
+    const adSpend = d.adSpend || 0;
+    const messages = d.messages || 0;
+    const impressions = d.impressions || 0;
+    const platformClicks = d.platformClicks || 0;
+    const profitExpected = d.marginNonRefusedTotal - adSpend - fixedCosts - payrollCosts;
+    const profitNoPayroll = d.marginNonRefusedTotal - adSpend - fixedCosts;
+    return {
+      date,
+      marginAvgNonRefused: d.ordersCount - d.refusedCount > 0 ? d.marginNonRefusedTotal / (d.ordersCount - d.refusedCount) : null,
+      marginAvgWithRefused: d.ordersCount > 0 ? d.marginNonRefusedTotal / d.ordersCount : null,
+      orderPrice: d.ordersCount > 0 ? adSpend / d.ordersCount : null, // "Ціна замовлення" = CPA
+      profitPerClientNoPayroll: d.ordersCount > 0 ? profitNoPayroll / d.ordersCount : null,
+      profitPerClientWithPayroll: d.ordersCount > 0 ? profitExpected / d.ordersCount : null,
+      messagePrice: messages > 0 ? adSpend / messages : null, // CPL
+      conversionToSale: messages > 0 ? d.ordersCount / messages : null,
+      marginTotal: d.marginNonRefusedTotal,
+      adSpend,
+      newMessages: messages,
+      qtySold: d.qtySold,
+      qtyRepeat: d.qtyRepeat,
+      clicks: platformClicks,
+      impressions,
+      roi: adSpend > 0 ? d.marginNonRefusedTotal / adSpend : null, // "Окупність"
+      expectedProfit: profitExpected,
+      usdExchangeRate: usdRate || null,
+      refusalRate: d.ordersCount > 0 ? (d.refusedCount / d.ordersCount) * 100 : null,
+      returnRate: d.ordersCount > 0 ? ((d.returnsCount || 0) / d.ordersCount) * 100 : null,
+      dailyFixedCosts: fixedCosts,
+      dailyPayrollCosts: payrollCosts,
+      profitNoPayroll,
+      newCustomerCost: d.newBuyerOrders > 0 ? adSpend / d.newBuyerOrders : null,
+      cpc: platformClicks > 0 ? adSpend / platformClicks : null,
+      ctr: impressions > 0 ? (platformClicks / impressions) * 100 : null,
+      cpm: impressions > 0 ? (adSpend / impressions) * 1000 : null,
+      repeatSalesRate: d.qtySold > 0 ? (d.qtyRepeat / d.qtySold) * 100 : null,
+      ordersCount: d.ordersCount,
+      refusedCount: d.refusedCount,
+    };
+  });
+
+  res.json({ ok: true, data });
+}));
+
+// ── Щоденний звіт по одному товару (скріншот "Артикул") ─────────────────
+router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
+  const { from, to, productId } = req.query;
+  if (!productId) throw new (require('@crm/errors').ValidationError)('productId обовʼязковий');
+  const tenant = req.tenant;
+  const expenseByProduct = await loadExpenseMap(tenant.id);
+
+  const [ads, orders] = await Promise.all([
+    db.ad.findMany({ where: { tenantId: tenant.id, productId: String(productId) } }),
+    db.order.findMany({
+      where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...periodWhere(from, to) },
+      include: { items: { where: { productId: String(productId) } } },
+    }),
+  ]);
+  const adIds = ads.map((a) => a.id);
+
+  const [spendRows, clickRows] = await Promise.all([
+    db.adSpendDaily.findMany({ where: { adId: { in: adIds }, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+    db.adClick.findMany({ where: { adId: { in: adIds }, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+  ]);
+
+  const days = new Map();
+  function bucket(key) {
+    if (!days.has(key)) days.set(key, { date: key, ordersCount: 0, refusedCount: 0, marginGrossTotal: 0, marginNetTotal: 0, adSpend: 0, messages: 0 });
+    return days.get(key);
+  }
+  for (const order of orders) {
+    const b = bucket(dayKey(order.createdAt));
+    b.ordersCount += 1;
+    if (order.isRefused) b.refusedCount += 1;
+    let m = 0;
+    for (const item of order.items) m += await marginPerOrderItem(item, expenseByProduct);
+    b.marginGrossTotal += m; // "Маржа всього" — до врахування відмов
+    if (!order.isRefused) b.marginNetTotal += m; // "...із відмовами" — фактична (виключені відмовлені)
+  }
+  for (const spend of spendRows) bucket(dayKey(spend.date)).adSpend += Number(spend.amount);
+  for (const click of clickRows) bucket(dayKey(click.timestamp)).messages += 1;
+
+  const usdRate = Number(tenant.usdExchangeRate || 0);
+  const data = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
+    const nonRefusedOrders = d.ordersCount - d.refusedCount;
+    return {
+      date,
+      adSpend: d.adSpend,
+      messages: d.messages,
+      ordersCount: d.ordersCount,
+      marginPerOrder: nonRefusedOrders > 0 ? d.marginNetTotal / nonRefusedOrders : null,
+      marginTotal: d.marginGrossTotal, // "Маржа всього" — гросс, до відмов
+      marginTotalWithRefused: d.marginNetTotal, // "...із відмовами" — фактична
+      messagePrice: d.messages > 0 ? d.adSpend / d.messages : null,
+      orderPrice: d.ordersCount > 0 ? d.adSpend / d.ordersCount : null,
+      conversionToOrder: d.messages > 0 ? d.ordersCount / d.messages : null,
+      refusalRate: d.ordersCount > 0 ? (d.refusedCount / d.ordersCount) * 100 : null,
+      usdExchangeRate: usdRate || null,
+      roi: d.adSpend > 0 ? d.marginNetTotal / d.adSpend : null,
+      profit: d.marginNetTotal - d.adSpend,
+    };
+  });
+
+  res.json({ ok: true, data });
 }));
 
 function summarize(values) {

@@ -1,4 +1,5 @@
-// §9.16 Налаштування — Загальні: назва магазину, API-ключ (показати/перегенерувати).
+// §9.16 Налаштування — Загальні: назва магазину, API-ключ (показати/перегенерувати),
+// + фінансові вхідні для щоденної аналітики (курс, постійні витрати, ЗП).
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { PageHeader, Card, Field, Input, Button, ErrorBanner } from '../components/common/Common';
@@ -9,15 +10,37 @@ export default function SettingsGeneralPage() {
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [finance, setFinance] = useState({ usdExchangeRate: '', dailyFixedCosts: '', dailyPayrollCosts: '' });
+  const [financeSaved, setFinanceSaved] = useState(false);
 
   async function load() {
-    try { const { data } = await api.getTenantSettings(); setTenant(data); setName(data.name); } catch (e) { setError(e.message); }
+    try {
+      const { data } = await api.getTenantSettings();
+      setTenant(data); setName(data.name);
+      setFinance({
+        usdExchangeRate: data.usdExchangeRate ?? '',
+        dailyFixedCosts: data.dailyFixedCosts ?? '',
+        dailyPayrollCosts: data.dailyPayrollCosts ?? '',
+      });
+    } catch (e) { setError(e.message); }
   }
   useEffect(() => { load(); }, []);
 
   async function save() {
     setError(''); setSaved(false);
     try { await api.updateTenantSettings({ name }); setSaved(true); load(); } catch (e) { setError(e.message); }
+  }
+
+  async function saveFinance() {
+    setError(''); setFinanceSaved(false);
+    try {
+      await api.updateTenantSettings({
+        usdExchangeRate: finance.usdExchangeRate === '' ? null : Number(finance.usdExchangeRate),
+        dailyFixedCosts: finance.dailyFixedCosts === '' ? null : Number(finance.dailyFixedCosts),
+        dailyPayrollCosts: finance.dailyPayrollCosts === '' ? null : Number(finance.dailyPayrollCosts),
+      });
+      setFinanceSaved(true);
+    } catch (e) { setError(e.message); }
   }
 
   async function regenerate() {
@@ -28,7 +51,7 @@ export default function SettingsGeneralPage() {
   if (!tenant) return null;
 
   return (
-    <div className="max-w-lg">
+    <div className="max-w-lg space-y-5">
       <PageHeader title="Налаштування — Загальні" />
       <ErrorBanner message={error} />
       <Card className="p-5">
@@ -46,6 +69,18 @@ export default function SettingsGeneralPage() {
             </div>
           </Field>
           <Button variant="danger" onClick={regenerate}>Перегенерувати ключ</Button>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <h3 className="mb-3 text-sm font-semibold">Фінансові параметри для щоденної аналітики</h3>
+        <p className="mb-3 text-xs text-slate-500">Вручну оновлювані значення — курс міняється щодня/щотижня, постійні витрати/ЗП зазвичай стабільні по місяцю.</p>
+        <Field label="Курс долара, грн"><Input type="number" step="0.01" value={finance.usdExchangeRate} onChange={(e) => setFinance({ ...finance, usdExchangeRate: e.target.value })} /></Field>
+        <Field label="Постійні витрати за добу, $"><Input type="number" step="0.01" value={finance.dailyFixedCosts} onChange={(e) => setFinance({ ...finance, dailyFixedCosts: e.target.value })} /></Field>
+        <Field label="Витрати на оплату праці за добу, $"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
+        <div className="mt-2 flex items-center gap-2">
+          <Button onClick={saveFinance}>Зберегти</Button>
+          {financeSaved && <span className="text-xs text-emerald-400">Збережено</span>}
         </div>
       </Card>
     </div>

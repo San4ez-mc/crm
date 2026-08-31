@@ -9,17 +9,36 @@ const { ValidationError } = require('@crm/errors');
 const router = express.Router();
 
 router.get('/tenant', asyncHandler(async (req, res) => {
-  res.json({ ok: true, data: { id: req.tenant.id, name: req.tenant.name, apiKey: req.tenant.apiKey, ssoOrgId: req.tenant.ssoOrgId, novaPoshtaApiKey: req.tenant.novaPoshtaApiKey } });
+  const t = req.tenant;
+  res.json({
+    ok: true,
+    data: {
+      id: t.id, name: t.name, apiKey: t.apiKey, ssoOrgId: t.ssoOrgId, novaPoshtaApiKey: t.novaPoshtaApiKey,
+      usdExchangeRate: t.usdExchangeRate, dailyFixedCosts: t.dailyFixedCosts, dailyPayrollCosts: t.dailyPayrollCosts,
+    },
+  });
 }));
 
 router.patch('/tenant', asyncHandler(async (req, res) => {
-  const { name, novaPoshtaApiKey } = req.body || {};
+  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts } = req.body || {};
   if (name !== undefined && !String(name).trim()) throw new ValidationError('name не може бути порожнім');
   const tenant = await db.tenant.update({
     where: { id: req.tenant.id },
-    data: { ...(name !== undefined ? { name: String(name).trim() } : {}), ...(novaPoshtaApiKey !== undefined ? { novaPoshtaApiKey } : {}) },
+    data: {
+      ...(name !== undefined ? { name: String(name).trim() } : {}),
+      ...(novaPoshtaApiKey !== undefined ? { novaPoshtaApiKey } : {}),
+      ...(usdExchangeRate !== undefined ? { usdExchangeRate } : {}),
+      ...(dailyFixedCosts !== undefined ? { dailyFixedCosts } : {}),
+      ...(dailyPayrollCosts !== undefined ? { dailyPayrollCosts } : {}),
+    },
   });
-  res.json({ ok: true, data: { id: tenant.id, name: tenant.name, novaPoshtaApiKey: tenant.novaPoshtaApiKey } });
+  res.json({
+    ok: true,
+    data: {
+      id: tenant.id, name: tenant.name, novaPoshtaApiKey: tenant.novaPoshtaApiKey,
+      usdExchangeRate: tenant.usdExchangeRate, dailyFixedCosts: tenant.dailyFixedCosts, dailyPayrollCosts: tenant.dailyPayrollCosts,
+    },
+  });
 }));
 
 // §9.17 — зведення по підключених рекламних кабінетах (сама інтеграція з Zernio живе у Flows,

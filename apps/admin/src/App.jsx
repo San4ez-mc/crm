@@ -12,6 +12,7 @@ import OrdersPage from './pages/OrdersPage';
 import BuyersPage from './pages/BuyersPage';
 import ReturnsPage from './pages/ReturnsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import DailyAnalyticsPage from './pages/DailyAnalyticsPage';
 import AdSpendPage from './pages/AdSpendPage';
 import PaymentsPage from './pages/PaymentsPage';
 import ProductExpensesPage from './pages/ProductExpensesPage';
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="/buyers" element={<BuyersPage />} />
             <Route path="/returns" element={<ReturnsPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/daily-analytics" element={<DailyAnalyticsPage />} />
             <Route path="/ad-spend" element={<AdSpendPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/product-expenses" element={<ProductExpensesPage />} />

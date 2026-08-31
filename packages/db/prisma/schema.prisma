@@ -19,6 +19,12 @@ model Tenant {
   apiKey    String   @unique @default(uuid()) // Bearer для воронки/MCP/Flows-автоматизацій цього tenant
   ssoOrgId  String? // звʼязок з обліковим записом у SSO-панелі FINEKO
   novaPoshtaApiKey String? // §9.17 — ключ для крон-Flows, що опитує статуси ТТН
+  // ДОПОВНЕННЯ 2026-08-31 — ручні фінансові параметри для щоденного аналітичного зведення
+  // (скріншот "Рука на пульсі"). Формула розподілу відмов/собівартості ще не узгоджена
+  // з Олексієм — тут лише сирі вхідні дані, без прихованої логіки розрахунку.
+  usdExchangeRate     Decimal? @db.Decimal(10, 4) // "Курс доллара, грн" — оновлюється вручну
+  dailyFixedCosts     Decimal? @db.Decimal(12, 2) // "Постійні витрати, $" за добу
+  dailyPayrollCosts   Decimal? @db.Decimal(12, 2) // "Витрати на оплату праці, $" за добу
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -205,6 +211,9 @@ model Order {
   shipping       Json? // {city, warehouse, ...}
   ttn            String[]  @default([]) // може бути кілька номерів ТТН
   ttnStatus      String?
+  isRefused      Boolean   @default(false) // "Відмова" — клієнт не забрав/не оплатив на НП (§ дод. 2026-08-31).
+  // Фінансові наслідки відмови (хто платить за зворотну доставку тощо) ще не узгоджені —
+  // тут лише факт відмови для підрахунку %, без прихованої логіки розподілу витрат.
   firstTouchAdId String?
   firstTouchAd   Ad?       @relation("FirstTouch", fields: [firstTouchAdId], references: [id])
   firstTouchAt   DateTime?
@@ -253,6 +262,10 @@ model Ad {
   name       String?
   productId  String?
   product    Product? @relation(fields: [productId], references: [id])
+  // Метадані з Meta Marketing API (заповнює крон-Flows, § Meta Ads інтеграція 2026-08-31).
+  campaignId   String? // id кампанії в Meta
+  campaignName String?
+  adAccountId  String? // id рекламного кабінету, з якого прийшли дані
   createdAt  DateTime @default(now())
 
   spendDaily      AdSpendDaily[]
@@ -271,6 +284,10 @@ model AdSpendDaily {
   date     DateTime @db.Date
   amount   Decimal  @db.Decimal(12, 2)
   currency String   @default("UAH")
+  // Платформні метрики Meta (не наш AdClick — те, що сам Facebook рахує показами/кліками
+  // по оголошенню) — потрібні для CPC/CTR/CPM у щоденному зведенні.
+  impressions Int?
+  clicks      Int?
 
   @@unique([adId, date])
   @@index([adId, date])

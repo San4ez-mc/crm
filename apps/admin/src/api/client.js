@@ -99,6 +99,8 @@ export const api = {
   analyticsMargin: (params = {}) => get(`/analytics/margin?${new URLSearchParams(params)}`),
   analyticsUpsells: (params = {}) => get(`/analytics/upsells?${new URLSearchParams(params)}`),
   analyticsTimeToPurchase: (params = {}) => get(`/analytics/time-to-purchase?${new URLSearchParams(params)}`),
+  analyticsDaily: (params = {}) => get(`/analytics/daily?${new URLSearchParams(params)}`),
+  analyticsProductDaily: (params = {}) => get(`/analytics/product-daily?${new URLSearchParams(params)}`),
 
   // Налаштування
   getTenantSettings: () => get('/tenant'),

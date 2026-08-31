@@ -107,6 +107,7 @@ router.patch('/orders/:id', asyncHandler(async (req, res) => {
       ...(b.shipping !== undefined ? { shipping: b.shipping } : {}),
       ...(b.ttn !== undefined ? { ttn: Array.isArray(b.ttn) ? b.ttn : [] } : {}),
       ...(b.sourceName !== undefined ? { sourceName: b.sourceName } : {}),
+      ...(b.isRefused !== undefined ? { isRefused: !!b.isRefused } : {}),
     },
     include: ORDER_INCLUDE,
   });
@@ -114,13 +115,17 @@ router.patch('/orders/:id', asyncHandler(async (req, res) => {
 }));
 
 // Flows-крон опитує Нову Пошту і пише сюди статус (§5, §2 ТЗ) — той самий Bearer tenant.apiKey.
+// isRefused — опційний: сам крон вирішує за сирим статусом НП, чи це "Відмова" (CRM лише зберігає факт).
 router.patch('/orders/:id/ttn-status', asyncHandler(async (req, res) => {
   const existing = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
   if (!existing) throw new NotFoundError('Order', req.params.id);
-  const { ttnStatus } = req.body || {};
+  const { ttnStatus, isRefused } = req.body || {};
   if (!ttnStatus) throw new ValidationError('ttnStatus обовʼязковий');
-  const order = await db.order.update({ where: { id: existing.id }, data: { ttnStatus: String(ttnStatus) } });
-  res.json({ ok: true, data: { id: order.id, ttnStatus: order.ttnStatus } });
+  const order = await db.order.update({
+    where: { id: existing.id },
+    data: { ttnStatus: String(ttnStatus), ...(isRefused !== undefined ? { isRefused: !!isRefused } : {}) },
+  });
+  res.json({ ok: true, data: { id: order.id, ttnStatus: order.ttnStatus, isRefused: order.isRefused } });
 }));
 
 // Атрибуція first/last-touch — воронка викликає в момент кліку по рекламі / перед оформленням (§4.8).

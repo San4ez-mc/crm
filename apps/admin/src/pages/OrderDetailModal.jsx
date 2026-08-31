@@ -18,6 +18,9 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
   async function refreshTtn() {
     alert('Форс-запит до API Нової Пошти виконує окрема Flows-автоматизація — тут лише відображення останнього відомого статусу.');
   }
+  async function toggleRefused() {
+    try { await api.updateOrder(order.id, { isRefused: !order.isRefused }); onChanged(); } catch (e) { setError(e.message); }
+  }
 
   return (
     <Modal isOpen title={`Замовлення від ${new Date(order.createdAt).toLocaleString('uk-UA')}`} onClose={onClose} wide>
@@ -48,6 +51,12 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
             {order.ttn?.length ? order.ttn.map((t) => <Badge key={t}>{t}</Badge>) : <span className="text-slate-500">ТТН немає</span>}
             {order.ttnStatus && <Badge color="green">{order.ttnStatus}</Badge>}
             <button onClick={refreshTtn} className="text-xs text-brand-light hover:underline">Оновити зараз</button>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            {order.isRefused ? <Badge color="red">Відмова від НП</Badge> : null}
+            <button onClick={toggleRefused} className="text-xs text-slate-400 hover:text-red-300">
+              {order.isRefused ? 'Зняти позначку відмови' : 'Позначити як відмову (не забрав/не оплатив на НП)'}
+            </button>
           </div>
         </section>
 

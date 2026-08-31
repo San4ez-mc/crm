@@ -23,8 +23,13 @@ router.get('/ads', asyncHandler(async (req, res) => {
 }));
 
 router.post('/ads', asyncHandler(async (req, res) => {
-  const { externalId, name, productId } = req.body || {};
-  const ad = await db.ad.create({ data: { tenantId: req.tenant.id, externalId: externalId || null, name: name || null, productId: productId || null } });
+  const { externalId, name, productId, campaignId, campaignName, adAccountId } = req.body || {};
+  const ad = await db.ad.create({
+    data: {
+      tenantId: req.tenant.id, externalId: externalId || null, name: name || null, productId: productId || null,
+      campaignId: campaignId || null, campaignName: campaignName || null, adAccountId: adAccountId || null,
+    },
+  });
   res.status(201).json({ ok: true, data: ad });
 }));
 
@@ -54,24 +59,35 @@ router.get('/ad-spend', asyncHandler(async (req, res) => {
   res.json({ ok: true, data: items, meta: { total, take: Number(take), skip: Number(skip) } });
 }));
 
-async function findOrCreateAdByExternalId(tenantId, externalId, name) {
+async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {}) {
   let ad = await db.ad.findFirst({ where: { tenantId, externalId } });
-  if (!ad) ad = await db.ad.create({ data: { tenantId, externalId, name: name || null } });
+  if (!ad) {
+    ad = await db.ad.create({
+      data: { tenantId, externalId, name: name || null, campaignId: meta.campaignId || null, campaignName: meta.campaignName || null, adAccountId: meta.adAccountId || null },
+    });
+  } else if (meta.campaignName || meta.campaignId || meta.adAccountId) {
+    // Meta не міняє campaignId/adAccountId заднім числом, але назва кампанії могла оновитись.
+    ad = await db.ad.update({
+      where: { id: ad.id },
+      data: { ...(meta.campaignId ? { campaignId: meta.campaignId } : {}), ...(meta.campaignName ? { campaignName: meta.campaignName } : {}), ...(meta.adAccountId ? { adAccountId: meta.adAccountId } : {}) },
+    });
+  }
   return ad;
 }
 
 // §5: `POST /ad-spend-daily` — щоденні витрати від Flows-автоматизації (Zernio/Meta Ads).
+// impressions/clicks — платформні метрики самого Facebook (для CPC/CTR/CPM), не наш AdClick.
 router.post('/ad-spend-daily', asyncHandler(async (req, res) => {
-  const { externalId, adId, name, date, amount, currency } = req.body || {};
+  const { externalId, adId, name, date, amount, currency, impressions, clicks, campaignId, campaignName, adAccountId } = req.body || {};
   if (!date || amount === undefined) throw new ValidationError('date і amount обовʼязкові');
   const ad = adId
     ? await db.ad.findFirst({ where: { id: adId, tenantId: req.tenant.id } })
-    : await findOrCreateAdByExternalId(req.tenant.id, String(externalId || 'unknown'), name);
+    : await findOrCreateAdByExternalId(req.tenant.id, String(externalId || 'unknown'), name, { campaignId, campaignName, adAccountId });
   if (!ad) throw new NotFoundError('Ad', adId);
   const row = await db.adSpendDaily.upsert({
     where: { adId_date: { adId: ad.id, date: new Date(date) } },
-    update: { amount, currency: currency || 'UAH' },
-    create: { adId: ad.id, date: new Date(date), amount, currency: currency || 'UAH' },
+    update: { amount, currency: currency || 'UAH', ...(impressions !== undefined ? { impressions: Number(impressions) } : {}), ...(clicks !== undefined ? { clicks: Number(clicks) } : {}) },
+    create: { adId: ad.id, date: new Date(date), amount, currency: currency || 'UAH', impressions: impressions !== undefined ? Number(impressions) : null, clicks: clicks !== undefined ? Number(clicks) : null },
   });
   res.status(201).json({ ok: true, data: row });
 }));
