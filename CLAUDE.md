@@ -55,17 +55,18 @@
 
 ```bash
 git add <files> && git commit -m "..." && git push origin main
-ssh root@<CRM_SERVER_IP>
+ssh root@173.242.62.180
 cd /var/www/crm.fineko.space
 git pull origin main
 yarn install --frozen-lockfile
-yarn db:migrate:deploy
+yarn workspace @crm/db run migrate:deploy
+yarn workspace @crm/db run generate   # ОБОВʼЯЗКОВО окремо — див. §9.4
 yarn build:admin
 pm2 restart crm-api crm-mcp
 pm2 logs crm-api --lines 20
 ```
 
-*(IP сервера/шлях підставити, коли буде виділено інфраструктуру — див. Фазу 10 плану.)*
+Сервер: `173.242.62.180`, prod-домен `pcrm.fineko.space`.
 
 ## 9. Уроки з помилок
 
@@ -78,6 +79,11 @@ pm2 logs crm-api --lines 20
 
 **Помилка:** Спробував масову заміну `money(` → `usd(` через `(Get-Content ... -Raw) -replace ... | Set-Content -Encoding utf8` — файл прочитався в системному codepage (не UTF-8) до replace, тому всі кириличні рядки перетворились на мокроджибіш (`Р СѓРєР°...`), а `-Encoding utf8` на виході цього вже не рятує.
 **Правило:** Для правок файлів з кирилицею — тільки Edit/Write інструменти, ніколи PowerShell `Get-Content`/`Set-Content`/`-replace` навіть з `-Encoding utf8` на запис (проблема в читанні, не в записі). Той самий клас багу, що §9.2, інший інструмент.
+
+### 9.4 `prisma migrate deploy` НЕ регенерує Prisma Client — на відміну від `migrate dev`
+
+**Помилка:** Після додавання Fop/TenantSecret/bulkPricing/isSet — задеплоїв (`git pull` → `migrate:deploy` → `build:admin` → `pm2 restart`), але перший же реальний запит (повторний прогін `migrate-keycrm.js --apply` на проді) впав з `PrismaClientValidationError: Unknown argument 'bulkPricing'`. Причина: `migrate:deploy` (на відміну від `migrate:dev`, який сам друкує "Running generate...") лишає СТАРИЙ згенерований `@prisma/client` на диску — `pm2 restart` підхопив старий клієнт, що не знав про нові поля/моделі. `yarn install --frozen-lockfile` теж не тригерить generate, якщо lockfile не змінився ("Already up-to-date" за 0.26с).
+**Правило:** Після КОЖНОГО `migrate:deploy`, де змінювалась схема (нові поля/моделі), явно запускати `yarn workspace @crm/db run generate` ПЕРЕД `pm2 restart` — не покладатись, що deploy/install зробить це сам. Внесено в чеклист §8.
 
 ### 9.2 Git Bash + інлайн кирилиця в `curl -d '...'` — мовчки б'є байти
 
