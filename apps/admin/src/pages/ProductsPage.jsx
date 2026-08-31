@@ -17,7 +17,7 @@ export default function ProductsPage() {
   async function load() {
     setError('');
     try {
-      const params = {};
+      const params = { isSet: 'false' }; // «Комплекти» — окремий пункт меню, тут лише звичайні товари
       if (q) params.q = q;
       if (categoryId) params.categoryId = categoryId;
       if (supplierId) params.supplierId = supplierId;
@@ -70,23 +70,23 @@ export default function ProductsPage() {
             ))}
           </div>
           {/* desktop: таблиця */}
-          <table className="hidden w-full text-sm md:table">
+          <table className="hidden w-full table-fixed text-sm md:table">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-4 py-3"></th><th className="px-4 py-3">Назва</th><th className="px-4 py-3">SKU</th><th className="px-4 py-3">Категорія</th>
-                <th className="px-4 py-3">Ціна</th><th className="px-4 py-3">Варіантів</th><th className="px-4 py-3">Постачальник</th><th className="px-4 py-3"></th>
+                <th className="w-16 px-4 py-3"></th><th className="w-48 px-4 py-3">Назва</th><th className="w-24 px-4 py-3">Артикул</th><th className="w-32 px-4 py-3">Категорія</th>
+                <th className="w-28 px-4 py-3">Ціна</th><th className="w-20 px-4 py-3">Варіантів</th><th className="px-4 py-3">Постачальник</th><th className="w-20 px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
               {items.map((p) => (
                 <tr key={p.id} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30" onClick={() => setEditing(p)}>
                   <td className="px-4 py-3"><Thumb url={p.thumbnailUrl} /></td>
-                  <td className="px-4 py-3">{p.name}</td>
-                  <td className="px-4 py-3 text-slate-400">{p.sku}</td>
-                  <td className="px-4 py-3 text-slate-400">{p.category?.name || '—'}</td>
-                  <td className="px-4 py-3">{money(p.price)}</td>
+                  <td className="truncate px-4 py-3" title={p.name}>{p.name}</td>
+                  <td className="truncate px-4 py-3 text-slate-400">{p.sku}</td>
+                  <td className="truncate px-4 py-3 text-slate-400">{p.category?.name || '—'}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{money(p.price)}</td>
                   <td className="px-4 py-3 text-slate-400">{p.offersCount}</td>
-                  <td className="px-4 py-3 text-slate-400">{p.supplier?.name || '—'}</td>
+                  <td className="truncate px-4 py-3 text-slate-400">{p.supplier?.name || '—'}</td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1.5">
                       <IconButton onClick={() => setEditing(p)}>✏️</IconButton>
@@ -120,6 +120,6 @@ export default function ProductsPage() {
 
 function Thumb({ url }) {
   return url
-    ? <img src={url} alt="" className="h-9 w-9 rounded-md object-cover" />
-    : <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>;
+    ? <img src={url} alt="" className="h-14 w-14 rounded-md object-cover" />
+    : <div className="flex h-14 w-14 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>;
 }

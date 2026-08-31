@@ -53,6 +53,17 @@ export const api = {
   updateSupplier: (id, data) => patch(`/suppliers/${id}`, data),
   deleteSupplier: (id) => del(`/suppliers/${id}`),
 
+  listFops: () => get('/fops'),
+  createFop: (data) => post('/fops', data),
+  updateFop: (id, data) => patch(`/fops/${id}`, data),
+  deleteFop: (id) => del(`/fops/${id}`),
+
+  listSecrets: () => get('/secrets'),
+  getSecret: (id) => get(`/secrets/${id}`),
+  createSecret: (data) => post('/secrets', data),
+  updateSecret: (id, data) => patch(`/secrets/${id}`, data),
+  deleteSecret: (id) => del(`/secrets/${id}`),
+
   listProducts: (params = {}) => get(`/products?${new URLSearchParams(params)}`),
   getProduct: (id) => get(`/products/${id}`),
   createProduct: (data) => post('/products', data),

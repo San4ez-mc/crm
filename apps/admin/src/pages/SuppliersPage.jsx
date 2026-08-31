@@ -1,7 +1,7 @@
 // §9.5 Постачальники — список + форма.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, IconButton, Field, Input, Select, Card, EmptyState, ErrorBanner } from '../components/common/Common';
+import { PageHeader, Button, IconButton, Field, Input, Textarea, Select, Card, EmptyState, ErrorBanner } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 
 const MECHANISMS = ['ручне', 'EasyDrop', 'BrewDrop', 'інше'];
@@ -70,7 +70,18 @@ export default function SuppliersPage() {
 }
 
 export function SupplierForm({ initial, onSave, onCancel }) {
-  const [form, setForm] = useState({ id: initial.id, name: initial.name || '', mechanism: initial.mechanism || MECHANISMS[0], contactInfo: initial.contactInfo || '' });
+  const [form, setForm] = useState({
+    id: initial.id,
+    name: initial.name || '',
+    mechanism: initial.mechanism || MECHANISMS[0],
+    contactInfo: initial.contactInfo || '',
+    description: initial.description || '',
+    aiNotes: initial.aiNotes || '',
+    website: initial.website || '',
+    telegramGroupId: initial.telegramGroupId || '',
+    loginUsername: initial.loginUsername || '',
+    loginPassword: initial.loginPassword || '',
+  });
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
       <Field label="Назва"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
@@ -80,6 +91,14 @@ export function SupplierForm({ initial, onSave, onCancel }) {
         </Select>
       </Field>
       <Field label="Контактна інформація"><Input value={form.contactInfo} onChange={(e) => setForm({ ...form, contactInfo: e.target.value })} /></Field>
+      <Field label="Сайт"><Input value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="https://…" /></Field>
+      <Field label="Телеграм-група (id)"><Input value={form.telegramGroupId} onChange={(e) => setForm({ ...form, telegramGroupId: e.target.value })} /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Логін на сайт"><Input value={form.loginUsername} onChange={(e) => setForm({ ...form, loginUsername: e.target.value })} /></Field>
+        <Field label="Пароль на сайт"><Input value={form.loginPassword} onChange={(e) => setForm({ ...form, loginPassword: e.target.value })} /></Field>
+      </div>
+      <Field label="Опис"><Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+      <Field label="Нотатки для ШІ"><Textarea rows={2} value={form.aiNotes} onChange={(e) => setForm({ ...form, aiNotes: e.target.value })} /></Field>
       <div className="mt-4 flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel}>Скасувати</Button>
         <Button type="submit">Зберегти</Button>

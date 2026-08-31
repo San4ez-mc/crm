@@ -2,10 +2,12 @@
 // порядок можна міняти (тут — кнопками ↑/↓, функціонально еквівалентно перетягуванню).
 import { useState } from 'react';
 import { api } from '../../api/client';
+import ImageLightbox from './ImageLightbox';
 
 export function SingleFileDrop({ value, onChange }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [lightbox, setLightbox] = useState(null);
 
   async function handleFiles(files) {
     const file = files[0];
@@ -24,11 +26,12 @@ export function SingleFileDrop({ value, onChange }) {
         onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
         onClick={() => document.getElementById('single-file-input')?.click()}
       >
-        {value ? <img src={value} alt="" className="h-full w-full rounded-lg object-contain p-1" /> : <span>{uploading ? 'Завантаження…' : 'Перетягніть файл або клікніть'}</span>}
+        {value ? <img src={value} alt="" className="h-full w-full rounded-lg object-contain p-1" onClick={(e) => { e.stopPropagation(); setLightbox(value); }} /> : <span>{uploading ? 'Завантаження…' : 'Перетягніть файл або клікніть'}</span>}
       </div>
       <input id="single-file-input" type="file" accept="image/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
       {value && <button type="button" onClick={() => onChange('')} className="mt-1 text-xs text-slate-500 hover:text-red-400">Видалити</button>}
       {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+      <ImageLightbox url={lightbox} onClose={() => setLightbox(null)} />
     </div>
   );
 }
@@ -36,6 +39,7 @@ export function SingleFileDrop({ value, onChange }) {
 export function MultiImageDrop({ value = [], onChange, max = 10 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [lightbox, setLightbox] = useState(null);
 
   async function handleFiles(files) {
     const list = Array.from(files).slice(0, max - value.length);
@@ -70,7 +74,7 @@ export function MultiImageDrop({ value = [], onChange, max = 10 }) {
       <div className="flex flex-wrap gap-2">
         {value.map((url, i) => (
           <div key={url} className="relative h-16 w-16 overflow-hidden rounded-lg border border-slate-700">
-            <img src={url} alt="" className="h-full w-full object-cover" />
+            <img src={url} alt="" className="h-full w-full cursor-zoom-in object-cover" onClick={() => setLightbox(url)} />
             {i === 0 && <span className="absolute left-0.5 top-0.5 rounded bg-brand px-1 text-[10px]">гол.</span>}
             <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/60 px-0.5">
               <button type="button" disabled={i === 0} onClick={() => move(i, -1)} className="text-[10px] text-white disabled:opacity-30">←</button>
@@ -80,6 +84,7 @@ export function MultiImageDrop({ value = [], onChange, max = 10 }) {
           </div>
         ))}
       </div>
+      <ImageLightbox url={lightbox} onClose={() => setLightbox(null)} />
     </div>
   );
 }

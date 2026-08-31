@@ -27,12 +27,13 @@ function serializeProduct(p) {
 
 // ── Список / пошук (адмінка + бот через n_lookup-code.js) ──────────────────
 router.get('/products', asyncHandler(async (req, res) => {
-  const { q, categoryId, supplierId, sku, take = '50', skip = '0' } = req.query;
+  const { q, categoryId, supplierId, sku, isSet, take = '50', skip = '0' } = req.query;
   const where = {
     tenantId: req.tenant.id,
     ...(categoryId ? { categoryId: String(categoryId) } : {}),
     ...(supplierId ? { supplierId: String(supplierId) } : {}),
     ...(sku ? { sku: String(sku) } : {}),
+    ...(isSet !== undefined ? { isSet: isSet === 'true' } : {}),
     ...(q ? { OR: [
       { name: { contains: String(q), mode: 'insensitive' } },
       { sku: { contains: String(q), mode: 'insensitive' } },
@@ -73,6 +74,8 @@ router.post('/products', asyncHandler(async (req, res) => {
       images: Array.isArray(b.images) ? b.images : [],
       aiNotes: b.aiNotes || null,
       sizeChartData: b.sizeChartData ?? undefined,
+      bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [],
+      isSet: !!b.isSet,
     },
     include: PRODUCT_INCLUDE,
   });
@@ -111,6 +114,8 @@ router.patch('/products/:id', asyncHandler(async (req, res) => {
       ...(b.images !== undefined ? { images: Array.isArray(b.images) ? b.images : [] } : {}),
       ...(b.aiNotes !== undefined ? { aiNotes: b.aiNotes } : {}),
       ...(b.sizeChartData !== undefined ? { sizeChartData: b.sizeChartData } : {}),
+      ...(b.bulkPricing !== undefined ? { bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [] } : {}),
+      ...(b.isSet !== undefined ? { isSet: !!b.isSet } : {}),
     },
     include: PRODUCT_INCLUDE,
   });
@@ -149,6 +154,7 @@ router.post('/products/:id/offers', asyncHandler(async (req, res) => {
       productId: product.id,
       sku: b.sku || null,
       price: b.price ?? null,
+      quantity: b.quantity !== undefined && b.quantity !== null && b.quantity !== '' ? Number(b.quantity) : null,
       properties: Array.isArray(b.properties) ? b.properties : [],
       images: Array.isArray(b.images) ? b.images.slice(0, 10) : [],
       sortOrder: Number(b.sortOrder) || 0,
@@ -166,6 +172,7 @@ router.patch('/offers/:id', asyncHandler(async (req, res) => {
     data: {
       ...(b.sku !== undefined ? { sku: b.sku } : {}),
       ...(b.price !== undefined ? { price: b.price } : {}),
+      ...(b.quantity !== undefined ? { quantity: b.quantity === null || b.quantity === '' ? null : Number(b.quantity) } : {}),
       ...(b.properties !== undefined ? { properties: Array.isArray(b.properties) ? b.properties : [] } : {}),
       ...(b.images !== undefined ? { images: Array.isArray(b.images) ? b.images.slice(0, 10) : [] } : {}),
       ...(b.sortOrder !== undefined ? { sortOrder: Number(b.sortOrder) || 0 } : {}),

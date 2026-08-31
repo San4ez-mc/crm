@@ -11,7 +11,8 @@
 //   CT_1003 "Постачальник"                    → Supplier (select, значення напр. "brewdrop.in.ua")
 //   CT_1005 "Склад набору"                    → setComponents (список sku/offer-sku без явної qty)
 //   CT_1006 "Артикул постачальника"           → supplierArticle
-//   CT_1007 "Ціна за 2 шт"                     → НЕ мапиться нікуди в поточній моделі — лише в звіті
+//   CT_1007/1008/1009 "Ціна за 2/3/4 шт"       → Product.bulkPricing [{quantity,price}] (одна й та сама
+//                                                ціна для всіх варіантів кольору — підтверджено власником)
 //   CT_1010 "Розмірна сітка (посилання...)"   → sizeChartImage (Google Drive link → перезаливаємо в наше /uploads, як прямо вимагає §4.2)
 //   CT_1011 "Додаткова інформація для ШІ"     → Product.aiNotes (нове поле, якого не було в §4.2)
 //   CT_1012 "Розмірна сітка" (JSON-текст)      → Product.sizeChartData (нове поле, якого не було в §4.2)
@@ -35,8 +36,39 @@ const TOKEN = process.env.KEYCRM_API_TOKEN;
 const UPLOADS_ROOT = path.join(__dirname, '../uploads');
 
 const TENANT_NAME_FOR_CATEGORY = (categoryId) => (categoryId === 3 ? 'covercar_ua' : 'goverla_shop');
-// TZ явно вимагає лише для sizeChartImage "файл, завантажений у власне сховище" — інші фото лишаємо зовнішніми.
-const KNOWN_UNMAPPED_CODES = new Set(['CT_1007']);
+// Всі три поля тепер мапляться (bulkPricing) — довідкового "unmapped" списку по них більше нема.
+const KNOWN_UNMAPPED_CODES = new Set();
+
+// Механізм постачальника — в KeyCRM це просто текстове select-значення, самого "механізму"
+// (API/офлайн-форма/ручне) там нема. Мапимо за відомою власнику номенклатурою постачальників
+// (підтверджено описом бота: "Постачальники: brewdrop (API), easydrop (офлайн-форма+дропшип-кошик)");
+// усе, чого нема в мапі, лишається дефолтним "ручне" (можна поправити вручну в адмінці).
+const SUPPLIER_MECHANISM_BY_NAME = {
+  'brewdrop.in.ua': 'BrewDrop',
+  'easydrop': 'EasyDrop',
+};
+function resolveSupplierMechanism(name) {
+  const key = String(name || '').trim().toLowerCase();
+  for (const [needle, mechanism] of Object.entries(SUPPLIER_MECHANISM_BY_NAME)) {
+    if (key.includes(needle)) return mechanism;
+  }
+  return 'ручне';
+}
+// "Комплекти" — окрема категорія в KeyCRM → в нашій моделі це прапорець Product.isSet,
+// а не категорія (див. CLAUDE.md/ТЗ-фідбек власника) — категорію все одно фіксуємо (для довідки),
+// але додатково піднімаємо isSet=true.
+const SET_CATEGORY_NAME = 'Комплекти';
+
+function bulkPricingFromCustomFields(cf) {
+  const rows = [];
+  const specs = [['CT_1007', 2], ['CT_1008', 3], ['CT_1009', 4]];
+  for (const [code, quantity] of specs) {
+    const raw = cf.get(code)?.value;
+    const price = raw !== undefined && raw !== null && raw !== '' ? Number(raw) : null;
+    if (price !== null && !Number.isNaN(price)) rows.push({ quantity, price });
+  }
+  return rows;
+}
 
 function parseArgs(argv) {
   const out = { dryRun: false, apply: false };
@@ -123,7 +155,11 @@ async function findOrCreateSupplier(tenantId, name, cache) {
   const key = `${tenantId}:${name}`;
   if (cache.has(key)) return cache.get(key);
   let supplier = await db.supplier.findFirst({ where: { tenantId, name } });
-  if (!supplier) supplier = await db.supplier.create({ data: { tenantId, name, mechanism: 'ручне' } });
+  if (!supplier) supplier = await db.supplier.create({ data: { tenantId, name, mechanism: resolveSupplierMechanism(name) } });
+  else if (!supplier.mechanism || supplier.mechanism === 'ручне') {
+    const resolved = resolveSupplierMechanism(name);
+    if (resolved !== 'ручне') supplier = await db.supplier.update({ where: { id: supplier.id }, data: { mechanism: resolved } });
+  }
   cache.set(key, supplier.id);
   return supplier.id;
 }
@@ -212,6 +248,8 @@ async function main() {
       images: Array.isArray(p.attachments_data) ? p.attachments_data : [],
       aiNotes: cf.get('CT_1011')?.value || null,
       sizeChartData: sizeChartData ?? undefined,
+      bulkPricing: bulkPricingFromCustomFields(cf),
+      isSet: categoryName === SET_CATEGORY_NAME,
     };
 
     const crmProduct = await db.product.upsert({
@@ -227,7 +265,8 @@ async function main() {
       const offerData = {
         productId: crmProduct.id,
         sku: offer.sku || null,
-        price: offer.price ?? null,
+        price: offer.price ?? null, // лишаємо як історичні дані з KeyCRM (§4.3 UI більше не редагує)
+        quantity: Number.isFinite(offer.in_reserve) ? offer.in_reserve : (Number.isFinite(offer.quantity) ? offer.quantity : null),
         properties: Array.isArray(offer.properties) ? offer.properties : [],
         images: offer.thumbnail_url ? [offer.thumbnail_url] : [],
       };

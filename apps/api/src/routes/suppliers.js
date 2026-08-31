@@ -16,10 +16,21 @@ router.get('/suppliers', asyncHandler(async (req, res) => {
 }));
 
 router.post('/suppliers', asyncHandler(async (req, res) => {
-  const { name, mechanism, contactInfo } = req.body || {};
+  const { name, mechanism, contactInfo, description, aiNotes, website, telegramGroupId, loginUsername, loginPassword } = req.body || {};
   if (!name || !String(name).trim()) throw new ValidationError('name обовʼязкове');
   const supplier = await db.supplier.create({
-    data: { tenantId: req.tenant.id, name: String(name).trim(), mechanism: mechanism || null, contactInfo: contactInfo || null },
+    data: {
+      tenantId: req.tenant.id,
+      name: String(name).trim(),
+      mechanism: mechanism || null,
+      contactInfo: contactInfo || null,
+      description: description || null,
+      aiNotes: aiNotes || null,
+      website: website || null,
+      telegramGroupId: telegramGroupId || null,
+      loginUsername: loginUsername || null,
+      loginPassword: loginPassword || null,
+    },
   });
   res.status(201).json({ ok: true, data: supplier });
 }));
@@ -33,13 +44,19 @@ router.get('/suppliers/:id', asyncHandler(async (req, res) => {
 router.patch('/suppliers/:id', asyncHandler(async (req, res) => {
   const existing = await db.supplier.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
   if (!existing) throw new NotFoundError('Supplier', req.params.id);
-  const { name, mechanism, contactInfo } = req.body || {};
+  const { name, mechanism, contactInfo, description, aiNotes, website, telegramGroupId, loginUsername, loginPassword } = req.body || {};
   const supplier = await db.supplier.update({
     where: { id: existing.id },
     data: {
       ...(name !== undefined ? { name: String(name).trim() } : {}),
       ...(mechanism !== undefined ? { mechanism } : {}),
       ...(contactInfo !== undefined ? { contactInfo } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(aiNotes !== undefined ? { aiNotes } : {}),
+      ...(website !== undefined ? { website } : {}),
+      ...(telegramGroupId !== undefined ? { telegramGroupId } : {}),
+      ...(loginUsername !== undefined ? { loginUsername } : {}),
+      ...(loginPassword !== undefined ? { loginPassword } : {}),
     },
   });
   res.json({ ok: true, data: supplier });

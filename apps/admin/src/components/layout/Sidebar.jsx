@@ -5,6 +5,7 @@ import { useAuthStore } from '../../stores/authStore';
 const SECTIONS = [
   { title: 'Каталог', items: [
     { to: '/products', label: 'Товари' },
+    { to: '/sets', label: 'Комплекти' },
     { to: '/categories', label: 'Категорії' },
     { to: '/suppliers', label: 'Постачальники' },
   ] },
@@ -22,10 +23,12 @@ const SECTIONS = [
   { title: 'Фінанси', items: [
     { to: '/payments', label: 'Журнал платежів' },
     { to: '/product-expenses', label: 'Витрати по товару' },
+    { to: '/fops', label: 'ФОПи' },
   ] },
   { title: 'Налаштування', items: [
     { to: '/settings/general', label: 'Загальні' },
     { to: '/settings/integrations', label: 'Інтеграції' },
+    { to: '/settings/keys', label: 'Ключі API' },
   ] },
 ];
 
@@ -40,7 +43,7 @@ export default function Sidebar() {
   const { user, tenants, currentTenantId, setTenant, logout } = useAuthStore();
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-900">
+    <aside className="flex h-screen w-52 shrink-0 flex-col border-r border-slate-800 bg-slate-900">
       <div className="flex items-center gap-2 px-4 py-4 border-b border-slate-800">
         <span className="text-xl">🧾</span>
         <span className="font-semibold tracking-tight">Fineko CRM</span>

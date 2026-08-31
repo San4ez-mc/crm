@@ -5,8 +5,11 @@ import Layout from './components/layout/Layout';
 import Login from './pages/Login';
 import NoAccess from './pages/NoAccess';
 import ProductsPage from './pages/ProductsPage';
+import SetsPage from './pages/SetsPage';
 import CategoriesPage from './pages/CategoriesPage';
 import SuppliersPage from './pages/SuppliersPage';
+import FopsPage from './pages/FopsPage';
+import SettingsKeysPage from './pages/SettingsKeysPage';
 import PipelinesPage from './pages/PipelinesPage';
 import OrdersPage from './pages/OrdersPage';
 import BuyersPage from './pages/BuyersPage';
@@ -38,8 +41,10 @@ export default function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<Navigate to="/orders" replace />} />
             <Route path="/products" element={<ProductsPage />} />
+            <Route path="/sets" element={<SetsPage />} />
             <Route path="/categories" element={<CategoriesPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
+            <Route path="/fops" element={<FopsPage />} />
             <Route path="/pipelines" element={<PipelinesPage />} />
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/buyers" element={<BuyersPage />} />
@@ -51,6 +56,7 @@ export default function App() {
             <Route path="/product-expenses" element={<ProductExpensesPage />} />
             <Route path="/settings/general" element={<SettingsGeneralPage />} />
             <Route path="/settings/integrations" element={<SettingsIntegrationsPage />} />
+            <Route path="/settings/keys" element={<SettingsKeysPage />} />
             <Route path="*" element={<Navigate to="/orders" replace />} />
           </Route>
         </Routes>

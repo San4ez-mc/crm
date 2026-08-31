@@ -24,19 +24,25 @@ const TOOLS = [
 
   // ── Supplier §4.4 ────────────────────────────────────────────────────
   { name: 'list_suppliers', description: 'Постачальники tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
-  { name: 'create_supplier', description: 'Створити постачальника.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string' }, mechanism: { type: 'string', description: 'ручне / EasyDrop / BrewDrop / інше' }, contactInfo: { type: 'string' } }, required: ['tenantId', 'name'] } },
-  { name: 'update_supplier', description: 'Оновити постачальника.', inputSchema: { type: 'object', properties: { supplierId: { type: 'string' }, name: { type: 'string' }, mechanism: { type: 'string' }, contactInfo: { type: 'string' } }, required: ['supplierId'] } },
+  { name: 'create_supplier', description: 'Створити постачальника.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string' }, mechanism: { type: 'string', description: 'ручне / EasyDrop / BrewDrop / інше' }, contactInfo: { type: 'string' }, description: { type: 'string' }, aiNotes: { type: 'string' }, website: { type: 'string' }, telegramGroupId: { type: 'string' }, loginUsername: { type: 'string' }, loginPassword: { type: 'string' } }, required: ['tenantId', 'name'] } },
+  { name: 'update_supplier', description: 'Оновити постачальника.', inputSchema: { type: 'object', properties: { supplierId: { type: 'string' }, name: { type: 'string' }, mechanism: { type: 'string' }, contactInfo: { type: 'string' }, description: { type: 'string' }, aiNotes: { type: 'string' }, website: { type: 'string' }, telegramGroupId: { type: 'string' }, loginUsername: { type: 'string' }, loginPassword: { type: 'string' } }, required: ['supplierId'] } },
   { name: 'delete_supplier', description: 'Видалити постачальника (лише якщо немає товарів).', inputSchema: { type: 'object', properties: { supplierId: { type: 'string' } }, required: ['supplierId'] } },
 
+  // ── Fop (ФОП для прийому оплат) — окремо per-tenant ─────────────────
+  { name: 'list_fops', description: 'ФОПи tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
+  { name: 'create_fop', description: 'Створити ФОП.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string' }, iban: { type: 'string' }, taxId: { type: 'string', description: 'ІПН' }, monobankToken: { type: 'string' } }, required: ['tenantId', 'name'] } },
+  { name: 'update_fop', description: 'Оновити ФОП.', inputSchema: { type: 'object', properties: { fopId: { type: 'string' }, name: { type: 'string' }, iban: { type: 'string' }, taxId: { type: 'string' }, monobankToken: { type: 'string' } }, required: ['fopId'] } },
+  { name: 'delete_fop', description: 'Видалити ФОП.', inputSchema: { type: 'object', properties: { fopId: { type: 'string' } }, required: ['fopId'] } },
+
   // ── Product / Offer §4.2/§4.3 ───────────────────────────────────────
-  { name: 'list_products', description: 'Каталог товарів з варіантами (offers) і фото.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, q: { type: 'string' }, categoryId: { type: 'string' }, supplierId: { type: 'string' } }, required: ['tenantId'] } },
+  { name: 'list_products', description: 'Каталог товарів з варіантами (offers) і фото.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, q: { type: 'string' }, categoryId: { type: 'string' }, supplierId: { type: 'string' }, isSet: { type: 'boolean', description: 'фільтр: тільки комплекти (true) чи тільки звичайні товари (false)' } }, required: ['tenantId'] } },
   { name: 'get_product', description: 'Товар за id або sku.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, productId: { type: 'string' }, sku: { type: 'string' } }, required: ['tenantId'] } },
-  { name: 'create_product', description: 'Створити товар.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string' }, sku: { type: 'string' }, price: { type: 'number' }, minPrice: { type: 'number' }, categoryId: { type: 'string' }, presentationText: { type: 'string', description: 'Готовий текст-презентація, бот показує verbatim' }, adMatchTokens: { type: 'array', items: { type: 'string' } }, companionProductIds: { type: 'array', items: { type: 'string' } }, supplierId: { type: 'string' }, supplierArticle: { type: 'string' }, thumbnailUrl: { type: 'string' }, images: { type: 'array', items: { type: 'string' } }, aiNotes: { type: 'string', description: 'Нотатки для бота (не показуються клієнту)' }, sizeChartData: { type: 'object', description: '{title,unit,sizes[],measurements}' } }, required: ['tenantId', 'name', 'sku', 'price'] } },
-  { name: 'update_product', description: 'Оновити товар (часткове).', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, name: { type: 'string' }, sku: { type: 'string' }, price: { type: 'number' }, minPrice: { type: 'number' }, categoryId: { type: 'string' }, presentationText: { type: 'string' }, adMatchTokens: { type: 'array', items: { type: 'string' } }, companionProductIds: { type: 'array', items: { type: 'string' } }, supplierId: { type: 'string' }, supplierArticle: { type: 'string' }, thumbnailUrl: { type: 'string' }, images: { type: 'array', items: { type: 'string' } }, aiNotes: { type: 'string' }, sizeChartData: { type: 'object' } }, required: ['productId'] } },
+  { name: 'create_product', description: 'Створити товар.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string' }, sku: { type: 'string' }, price: { type: 'number' }, minPrice: { type: 'number' }, categoryId: { type: 'string' }, presentationText: { type: 'string', description: 'Готовий текст-презентація, бот показує verbatim' }, adMatchTokens: { type: 'array', items: { type: 'string' } }, companionProductIds: { type: 'array', items: { type: 'string' } }, supplierId: { type: 'string' }, supplierArticle: { type: 'string' }, thumbnailUrl: { type: 'string' }, images: { type: 'array', items: { type: 'string' } }, aiNotes: { type: 'string', description: 'Нотатки для бота (не показуються клієнту)' }, sizeChartData: { type: 'object', description: '{title,unit,sizes[],measurements}' }, bulkPricing: { type: 'array', items: { type: 'object', properties: { quantity: { type: 'number' }, price: { type: 'number' } } }, description: 'Ціна за кількість — однакова для всіх варіантів кольору' }, isSet: { type: 'boolean', description: 'true = це комплект (окремий пункт меню, не категорія)' } }, required: ['tenantId', 'name', 'sku', 'price'] } },
+  { name: 'update_product', description: 'Оновити товар (часткове).', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, name: { type: 'string' }, sku: { type: 'string' }, price: { type: 'number' }, minPrice: { type: 'number' }, categoryId: { type: 'string' }, presentationText: { type: 'string' }, adMatchTokens: { type: 'array', items: { type: 'string' } }, companionProductIds: { type: 'array', items: { type: 'string' } }, supplierId: { type: 'string' }, supplierArticle: { type: 'string' }, thumbnailUrl: { type: 'string' }, images: { type: 'array', items: { type: 'string' } }, aiNotes: { type: 'string' }, sizeChartData: { type: 'object' }, bulkPricing: { type: 'array', items: { type: 'object', properties: { quantity: { type: 'number' }, price: { type: 'number' } } } }, isSet: { type: 'boolean' } }, required: ['productId'] } },
   { name: 'delete_product', description: 'Видалити товар (лише якщо не задіяний у замовленнях).', inputSchema: { type: 'object', properties: { productId: { type: 'string' } }, required: ['productId'] } },
   { name: 'update_set_components', description: 'Задати склад набору {componentProductId,qty}[] — повна заміна.', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, components: { type: 'array', items: { type: 'object', properties: { componentProductId: { type: 'string' }, qty: { type: 'number' } } } } }, required: ['productId', 'components'] } },
-  { name: 'create_offer', description: 'Додати варіант товару (колір/розмір).', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, sku: { type: 'string' }, price: { type: 'number' }, properties: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } } } }, images: { type: 'array', items: { type: 'string' }, description: 'до 10 URL, перший = головне фото' } }, required: ['productId'] } },
-  { name: 'update_offer', description: 'Оновити варіант товару.', inputSchema: { type: 'object', properties: { offerId: { type: 'string' }, sku: { type: 'string' }, price: { type: 'number' }, properties: { type: 'array' }, images: { type: 'array', items: { type: 'string' } } }, required: ['offerId'] } },
+  { name: 'create_offer', description: 'Додати варіант товару (колір/розмір). Ціна лишається спільною на товарі — тут тільки кількість цього конкретного варіанту.', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, sku: { type: 'string' }, quantity: { type: 'number', description: 'Кількість саме цього кольору/розміру' }, properties: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } } } }, images: { type: 'array', items: { type: 'string' }, description: 'до 10 URL, перший = головне фото' } }, required: ['productId'] } },
+  { name: 'update_offer', description: 'Оновити варіант товару.', inputSchema: { type: 'object', properties: { offerId: { type: 'string' }, sku: { type: 'string' }, quantity: { type: 'number' }, properties: { type: 'array' }, images: { type: 'array', items: { type: 'string' } } }, required: ['offerId'] } },
   { name: 'delete_offer', description: 'Видалити варіант товару.', inputSchema: { type: 'object', properties: { offerId: { type: 'string' } }, required: ['offerId'] } },
 
   // ── Pipeline / Stage §4.7 ────────────────────────────────────────────
@@ -89,12 +95,12 @@ async function callTool(name, args = {}) {
       return db.supplier.findMany({ where: { tenantId: args.tenantId }, orderBy: { name: 'asc' } });
     case 'create_supplier':
       if (!args.name) throw new ValidationError('name обовʼязкове');
-      return db.supplier.create({ data: { tenantId: args.tenantId, name: args.name, mechanism: args.mechanism || null, contactInfo: args.contactInfo || null } });
-    case 'update_supplier':
-      return db.supplier.update({
-        where: { id: args.supplierId },
-        data: { ...(args.name !== undefined ? { name: args.name } : {}), ...(args.mechanism !== undefined ? { mechanism: args.mechanism } : {}), ...(args.contactInfo !== undefined ? { contactInfo: args.contactInfo } : {}) },
-      });
+      return db.supplier.create({ data: { tenantId: args.tenantId, name: args.name, mechanism: args.mechanism || null, contactInfo: args.contactInfo || null, description: args.description || null, aiNotes: args.aiNotes || null, website: args.website || null, telegramGroupId: args.telegramGroupId || null, loginUsername: args.loginUsername || null, loginPassword: args.loginPassword || null } });
+    case 'update_supplier': {
+      const data = {};
+      for (const key of ['name', 'mechanism', 'contactInfo', 'description', 'aiNotes', 'website', 'telegramGroupId', 'loginUsername', 'loginPassword']) if (args[key] !== undefined) data[key] = args[key];
+      return db.supplier.update({ where: { id: args.supplierId }, data });
+    }
     case 'delete_supplier': {
       const count = await db.product.count({ where: { supplierId: args.supplierId } });
       if (count > 0) throw new ConflictError('Спершу відвʼяжіть товари від цього постачальника', { productsCount: count });
@@ -102,11 +108,26 @@ async function callTool(name, args = {}) {
       return { id: args.supplierId, deleted: true };
     }
 
+    case 'list_fops':
+      return db.fop.findMany({ where: { tenantId: args.tenantId }, orderBy: { name: 'asc' } });
+    case 'create_fop':
+      if (!args.name) throw new ValidationError('name обовʼязкове');
+      return db.fop.create({ data: { tenantId: args.tenantId, name: args.name, iban: args.iban || null, taxId: args.taxId || null, monobankToken: args.monobankToken || null } });
+    case 'update_fop': {
+      const data = {};
+      for (const key of ['name', 'iban', 'taxId', 'monobankToken']) if (args[key] !== undefined) data[key] = args[key];
+      return db.fop.update({ where: { id: args.fopId }, data });
+    }
+    case 'delete_fop':
+      await db.fop.delete({ where: { id: args.fopId } });
+      return { id: args.fopId, deleted: true };
+
     case 'list_products': {
       const where = {
         tenantId: args.tenantId,
         ...(args.categoryId ? { categoryId: args.categoryId } : {}),
         ...(args.supplierId ? { supplierId: args.supplierId } : {}),
+        ...(args.isSet !== undefined ? { isSet: !!args.isSet } : {}),
         ...(args.q ? { OR: [{ name: { contains: args.q, mode: 'insensitive' } }, { sku: { contains: args.q, mode: 'insensitive' } }, { adMatchTokens: { has: args.q } }] } : {}),
       };
       return db.product.findMany({ where, include: { offers: true, category: true, supplier: true }, orderBy: { updatedAt: 'desc' } });
@@ -128,13 +149,13 @@ async function callTool(name, args = {}) {
           adMatchTokens: args.adMatchTokens || [], companionProductIds: args.companionProductIds || [],
           supplierId: args.supplierId || null, supplierArticle: args.supplierArticle || null,
           thumbnailUrl: args.thumbnailUrl || null, images: args.images || [], aiNotes: args.aiNotes || null,
-          sizeChartData: args.sizeChartData ?? undefined,
+          sizeChartData: args.sizeChartData ?? undefined, bulkPricing: args.bulkPricing || [], isSet: !!args.isSet,
         },
       });
     }
     case 'update_product': {
       const data = {};
-      for (const key of ['name', 'sku', 'price', 'minPrice', 'categoryId', 'presentationText', 'adMatchTokens', 'companionProductIds', 'supplierId', 'supplierArticle', 'thumbnailUrl', 'images', 'aiNotes', 'sizeChartData']) {
+      for (const key of ['name', 'sku', 'price', 'minPrice', 'categoryId', 'presentationText', 'adMatchTokens', 'companionProductIds', 'supplierId', 'supplierArticle', 'thumbnailUrl', 'images', 'aiNotes', 'sizeChartData', 'bulkPricing', 'isSet']) {
         if (args[key] !== undefined) data[key] = args[key];
       }
       return db.product.update({ where: { id: args.productId }, data });
@@ -153,10 +174,10 @@ async function callTool(name, args = {}) {
       return { productId: args.productId, components: args.components };
     }
     case 'create_offer':
-      return db.offer.create({ data: { productId: args.productId, sku: args.sku || null, price: args.price ?? null, properties: args.properties || [], images: (args.images || []).slice(0, 10) } });
+      return db.offer.create({ data: { productId: args.productId, sku: args.sku || null, quantity: args.quantity ?? null, properties: args.properties || [], images: (args.images || []).slice(0, 10) } });
     case 'update_offer': {
       const data = {};
-      for (const key of ['sku', 'price', 'properties', 'images']) if (args[key] !== undefined) data[key] = key === 'images' ? args.images.slice(0, 10) : args[key];
+      for (const key of ['sku', 'quantity', 'properties', 'images']) if (args[key] !== undefined) data[key] = key === 'images' ? args.images.slice(0, 10) : args[key];
       return db.offer.update({ where: { id: args.offerId }, data });
     }
     case 'delete_offer':

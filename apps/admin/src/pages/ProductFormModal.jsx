@@ -67,8 +67,10 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     adMatchTokens: product?.adMatchTokens || [], companionProductIds: product?.companionProductIds || [],
     supplierId: product?.supplierId || '', supplierArticle: product?.supplierArticle || '', sizeChartImage: product?.sizeChartImage || '',
     thumbnailUrl: product?.thumbnailUrl || '', images: product?.images || [], aiNotes: product?.aiNotes || '',
+    bulkPricing: product?.bulkPricing || [], isSet: !!product?.isSet,
   });
   const [offers, setOffers] = useState(product?.offers || []);
+  const [setComponents, setSetComponentsState] = useState((product?.setComponents || []).map((c) => c.productId));
   const [error, setError] = useState('');
   const [showNewSupplier, setShowNewSupplier] = useState(false);
   const [savedProductId, setSavedProductId] = useState(product?.id || null);
@@ -78,11 +80,15 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     setError('');
     try {
       if (!form.name.trim() || !form.sku.trim() || !form.price) throw new Error('Назва, артикул і ціна обовʼязкові');
-      const payload = { ...form, price: Number(form.price), minPrice: form.minPrice ? Number(form.minPrice) : null, categoryId: form.categoryId || null, supplierId: form.supplierId || null };
+      const { bulkPricing, isSet, ...rest } = form;
+      const payload = { ...rest, bulkPricing, isSet, price: Number(form.price), minPrice: form.minPrice ? Number(form.minPrice) : null, categoryId: form.categoryId || null, supplierId: form.supplierId || null };
       const saved = isEdit ? (await api.updateProduct(product.id, payload)).data : (await api.createProduct(payload)).data;
       setSavedProductId(saved.id);
+      if (isEdit && isSet) {
+        await api.setSetComponents(saved.id, setComponents.map((componentProductId) => ({ componentProductId, qty: 1 })));
+      }
       onSaved();
-      if (!isEdit) onClose(); // для нового товару — офери додаються після повторного відкриття (простіше й надійніше)
+      if (!isEdit) onClose(); // для нового товару — офери/склад комплекту додаються після повторного відкриття (простіше й надійніше)
     } catch (e) { setError(e.message); }
   }
 
@@ -115,12 +121,26 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
             <Field label="Ціна"><Input required type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></Field>
           </div>
           <Field label="Мін. ціна"><Input type="number" step="0.01" value={form.minPrice} onChange={(e) => setForm({ ...form, minPrice: e.target.value })} /></Field>
+          <Field label="Ціна за кількість (та сама для всіх кольорів)">
+            <BulkPricingEditor value={form.bulkPricing} onChange={(v) => setForm({ ...form, bulkPricing: v })} />
+          </Field>
           <Field label="Категорія">
             <Select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })}>
               <option value="">— не вибрано —</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
+          <label className="mb-3 flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={form.isSet} onChange={(e) => setForm({ ...form, isSet: e.target.checked })} />
+            Це комплект (окремий пункт меню «Комплекти», не категорія)
+          </label>
+          {form.isSet && (
+            <Field label="Товари, що входять у комплект">
+              {isEdit
+                ? <MultiProductSelect allProducts={allProducts} excludeId={product?.id} value={setComponents} onChange={setSetComponentsState} />
+                : <p className="text-xs text-slate-500">Спершу збережіть комплект, потім відкрийте його знову, щоб вибрати склад.</p>}
+            </Field>
+          )}
           <Field label="Мініатюра (для списку товарів)">
             <SingleFileDrop value={form.thumbnailUrl} onChange={(url) => setForm({ ...form, thumbnailUrl: url })} />
           </Field>
@@ -166,18 +186,18 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
               {offers.map((offer) => (
                 <div key={offer.id} className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
                   <div className="grid grid-cols-2 gap-2">
-                    <Input placeholder="sku варіанту" defaultValue={offer.sku || ''} onBlur={(e) => updateOfferField(offer, 'sku', e.target.value)} />
-                    <Input placeholder="ціна" type="number" defaultValue={offer.price || ''} onBlur={(e) => updateOfferField(offer, 'price', Number(e.target.value))} />
+                    <Field label="Артикул варіанту"><Input defaultValue={offer.sku || ''} onBlur={(e) => updateOfferField(offer, 'sku', e.target.value)} /></Field>
+                    <Field label="Кількість (свій запас на цей колір)"><Input type="number" defaultValue={offer.quantity ?? ''} onBlur={(e) => updateOfferField(offer, 'quantity', e.target.value === '' ? null : Number(e.target.value))} /></Field>
                   </div>
-                  <Input
-                    className="mt-2"
-                    placeholder='Властивості: розмір:M, колір:чорний'
-                    defaultValue={(offer.properties || []).map((p) => `${p.name}:${p.value}`).join(', ')}
-                    onBlur={(e) => updateOfferField(offer, 'properties', e.target.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [name, value] = s.split(':'); return { name: (name || '').trim(), value: (value || '').trim() }; }))}
-                  />
-                  <div className="mt-2">
+                  <Field label="Властивості (розмір:M, колір:чорний)">
+                    <Input
+                      defaultValue={(offer.properties || []).map((p) => `${p.name}:${p.value}`).join(', ')}
+                      onBlur={(e) => updateOfferField(offer, 'properties', e.target.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [name, value] = s.split(':'); return { name: (name || '').trim(), value: (value || '').trim() }; }))}
+                    />
+                  </Field>
+                  <Field label="Фото цього варіанту">
                     <MultiImageDrop value={offer.images || []} onChange={(urls) => updateOfferField(offer, 'images', urls)} />
-                  </div>
+                  </Field>
                   <div className="mt-2 flex justify-end">
                     <IconButton onClick={() => removeOffer(offer.id)}>🗑️</IconButton>
                   </div>
@@ -209,3 +229,25 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
 }
 
 function Label2({ children }) { return <span className="text-sm font-medium text-slate-300">{children}</span>; }
+
+function BulkPricingEditor({ value = [], onChange }) {
+  function update(i, field, v) {
+    const next = value.map((row, idx) => (idx === i ? { ...row, [field]: v } : row));
+    onChange(next);
+  }
+  function remove(i) { onChange(value.filter((_, idx) => idx !== i)); }
+  function add() { onChange([...value, { quantity: (value[value.length - 1]?.quantity || 1) + 1, price: '' }]); }
+  return (
+    <div className="space-y-2">
+      {value.map((row, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="w-20 shrink-0 text-xs text-slate-500">за {row.quantity || 0} шт</span>
+          <Input type="number" min="2" placeholder="кількість" value={row.quantity ?? ''} onChange={(e) => update(i, 'quantity', Number(e.target.value))} />
+          <Input type="number" step="0.01" placeholder="ціна" value={row.price ?? ''} onChange={(e) => update(i, 'price', Number(e.target.value))} />
+          <IconButton onClick={() => remove(i)}>🗑️</IconButton>
+        </div>
+      ))}
+      <Button type="button" variant="secondary" onClick={add}>+ Ціна за кількість</Button>
+    </div>
+  );
+}

@@ -29,6 +29,8 @@ const adsRouter = require('./routes/ads');
 const productExpensesRouter = require('./routes/product-expenses');
 const analyticsRouter = require('./routes/analytics');
 const uploadsRouter = require('./routes/uploads');
+const fopsRouter = require('./routes/fops');
+const tenantSecretsRouter = require('./routes/tenant-secrets');
 
 const app = express();
 const PORT = Number(process.env.PORT || 4700);
@@ -85,6 +87,8 @@ app.use('/api', resolveTenant,
   productExpensesRouter,
   analyticsRouter,
   uploadsRouter,
+  fopsRouter,
+  tenantSecretsRouter,
 );
 
 // Продакшн: зібраний admin SPA (yarn build:admin → public/admin) роздається тим самим
