@@ -19,16 +19,25 @@ router.get('/auth/sso/login', (req, res) => {
 });
 
 // Крок 2: SSO повертає сюди з ?code&state.
+// На будь-якій помилці — редірект назад на /login?sso=<код> (як у flows), а
+// не сирий JSON-error: юзер має побачити ту саму картку логіну з поясненням,
+// а не впасти на API-відповідь.
 router.get('/auth/callback', asyncHandler(async (req, res) => {
   const { code, state } = req.query;
   const expectedState = req.cookies?.crm_oauth_state;
   res.cookie('crm_oauth_state', '', { maxAge: 0 });
-  if (!code || !state || state !== expectedState) {
-    throw new AuthError('Невірний або протермінований стан OAuth-запиту');
-  }
-  const tokenRes = await ssoClient.exchangeCodeForToken(String(code));
-  res.cookie('crm_session', tokenRes.access_token, SESSION_COOKIE_OPTS);
   const adminBase = process.env.ADMIN_BASE_URL || 'http://localhost:5173';
+  if (!code || !state || state !== expectedState) {
+    return void res.redirect(`${adminBase}/login?sso=state`);
+  }
+  let tokenRes;
+  try {
+    tokenRes = await ssoClient.exchangeCodeForToken(String(code));
+  } catch {
+    return void res.redirect(`${adminBase}/login?sso=exchange`);
+  }
+  if (!tokenRes?.access_token) return void res.redirect(`${adminBase}/login?sso=exchange`);
+  res.cookie('crm_session', tokenRes.access_token, SESSION_COOKIE_OPTS);
   res.redirect(adminBase);
 }));
 
