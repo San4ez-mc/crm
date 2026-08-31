@@ -9,6 +9,7 @@
   "dependencies": {
     "@crm/db": "*",
     "@crm/errors": "*",
-    "@crm/logger": "*"
+    "@crm/logger": "*",
+    "dotenv": "^16.4.5"
   }
 }

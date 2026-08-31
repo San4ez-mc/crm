@@ -1,5 +1,6 @@
 // Fineko CRM API — Express, той самий стиль конвенцій що platform (CommonJS, packages/*).
 const path = require('node:path');
+require('dotenv').config({ path: path.join(__dirname, '../../../.env') }); // корінь монорепо — PM2 сам .env не читає
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
