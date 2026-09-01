@@ -67,18 +67,45 @@ export default function CategoriesPage() {
 }
 
 function CategoryForm({ initial, onSave, onCancel }) {
-  const [form, setForm] = useState({ id: initial.id, name: initial.name || '', description: initial.description || '', aiInstructions: initial.aiInstructions || '' });
+  const [form, setForm] = useState({
+    id: initial.id, name: initial.name || '', description: initial.description || '', aiInstructions: initial.aiInstructions || '',
+    requiredParams: initial.requiredParams || [],
+  });
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
       <Field label="Назва"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
       <Field label="Опис"><Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
-      <Field label="Інформація для ШІ">
-        <Textarea rows={3} placeholder="Що бот має дізнатись у клієнта для товарів цієї категорії (напр. зріст і вага для одягу)" value={form.aiInstructions} onChange={(e) => setForm({ ...form, aiInstructions: e.target.value })} />
+      <Field label="Параметри, які треба запитати перед оформленням">
+        <RequiredParamsEditor value={form.requiredParams} onChange={(v) => setForm({ ...form, requiredParams: v })} />
+      </Field>
+      <Field label="Інформація для ШІ (вільний текст, додатково до параметрів вище)">
+        <Textarea rows={3} placeholder="Напр. нюанси розмірної сітки, застереження для бота" value={form.aiInstructions} onChange={(e) => setForm({ ...form, aiInstructions: e.target.value })} />
       </Field>
       <div className="mt-4 flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel}>Скасувати</Button>
         <Button type="submit">Зберегти</Button>
       </div>
     </form>
+  );
+}
+
+function RequiredParamsEditor({ value = [], onChange }) {
+  function update(i, field, v) {
+    onChange(value.map((row, idx) => (idx === i ? { ...row, [field]: v } : row)));
+  }
+  function remove(i) { onChange(value.filter((_, idx) => idx !== i)); }
+  function add() { onChange([...value, { name: '', unit: '', hint: '' }]); }
+  return (
+    <div className="space-y-2">
+      {value.map((row, i) => (
+        <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,70px)_minmax(0,1fr)_auto] items-center gap-2">
+          <Input placeholder="напр. зріст" value={row.name || ''} onChange={(e) => update(i, 'name', e.target.value)} />
+          <Input placeholder="см" value={row.unit || ''} onChange={(e) => update(i, 'unit', e.target.value)} />
+          <Input placeholder="підказка боту (необовʼязково)" value={row.hint || ''} onChange={(e) => update(i, 'hint', e.target.value)} />
+          <IconButton onClick={() => remove(i)}>🗑️</IconButton>
+        </div>
+      ))}
+      <Button type="button" variant="secondary" onClick={add}>+ Параметр</Button>
+    </div>
   );
 }

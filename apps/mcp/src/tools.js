@@ -18,8 +18,8 @@ const TOOLS = [
 
   // ── Category §4.5 ────────────────────────────────────────────────────
   { name: 'list_categories', description: 'Категорії товарів tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
-  { name: 'create_category', description: 'Створити категорію.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, aiInstructions: { type: 'string', description: 'Що бот має дізнатись у клієнта для товарів цієї категорії' } }, required: ['tenantId', 'name'] } },
-  { name: 'update_category', description: 'Оновити категорію.', inputSchema: { type: 'object', properties: { categoryId: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, aiInstructions: { type: 'string' } }, required: ['categoryId'] } },
+  { name: 'create_category', description: 'Створити категорію.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, aiInstructions: { type: 'string', description: 'Що бот має дізнатись у клієнта для товарів цієї категорії (вільний текст)' }, requiredParams: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, unit: { type: 'string' }, hint: { type: 'string' } } }, description: 'Структурований список параметрів для збору перед оформленням (напр. [{name:"зріст",unit:"см"},{name:"вага",unit:"кг"}] для одягу, [{name:"розмір стопи",unit:"см"}] для взуття)' } }, required: ['tenantId', 'name'] } },
+  { name: 'update_category', description: 'Оновити категорію.', inputSchema: { type: 'object', properties: { categoryId: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, aiInstructions: { type: 'string' }, requiredParams: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, unit: { type: 'string' }, hint: { type: 'string' } } } } }, required: ['categoryId'] } },
   { name: 'delete_category', description: 'Видалити категорію (лише якщо немає товарів).', inputSchema: { type: 'object', properties: { categoryId: { type: 'string' } }, required: ['categoryId'] } },
 
   // ── Supplier §4.4 ────────────────────────────────────────────────────
@@ -78,11 +78,11 @@ async function callTool(name, args = {}) {
       return db.category.findMany({ where: { tenantId: args.tenantId }, orderBy: { name: 'asc' } });
     case 'create_category':
       if (!args.name) throw new ValidationError('name обовʼязкове');
-      return db.category.create({ data: { tenantId: args.tenantId, name: args.name, description: args.description || null, aiInstructions: args.aiInstructions || null } });
+      return db.category.create({ data: { tenantId: args.tenantId, name: args.name, description: args.description || null, aiInstructions: args.aiInstructions || null, requiredParams: Array.isArray(args.requiredParams) ? args.requiredParams : [] } });
     case 'update_category':
       return db.category.update({
         where: { id: args.categoryId },
-        data: { ...(args.name !== undefined ? { name: args.name } : {}), ...(args.description !== undefined ? { description: args.description } : {}), ...(args.aiInstructions !== undefined ? { aiInstructions: args.aiInstructions } : {}) },
+        data: { ...(args.name !== undefined ? { name: args.name } : {}), ...(args.description !== undefined ? { description: args.description } : {}), ...(args.aiInstructions !== undefined ? { aiInstructions: args.aiInstructions } : {}), ...(args.requiredParams !== undefined ? { requiredParams: Array.isArray(args.requiredParams) ? args.requiredParams : [] } : {}) },
       });
     case 'delete_category': {
       const count = await db.product.count({ where: { categoryId: args.categoryId } });
