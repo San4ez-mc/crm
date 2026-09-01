@@ -14,6 +14,7 @@ import OrdersPage from './pages/OrdersPage';
 import BuyersPage from './pages/BuyersPage';
 import ReturnsPage from './pages/ReturnsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import FunnelAnalyticsPage from './pages/FunnelAnalyticsPage';
 import DailyAnalyticsPage from './pages/DailyAnalyticsPage';
 import AdSpendPage from './pages/AdSpendPage';
 import AdsPage from './pages/AdsPage';
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/buyers" element={<BuyersPage />} />
             <Route path="/returns" element={<ReturnsPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/funnel-analytics" element={<FunnelAnalyticsPage />} />
             <Route path="/daily-analytics" element={<DailyAnalyticsPage />} />
             <Route path="/ads" element={<AdsPage />} />
             <Route path="/ad-spend" element={<AdSpendPage />} />

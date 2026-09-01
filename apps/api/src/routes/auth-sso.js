@@ -83,6 +83,7 @@ const PAGES = [
   { id: 'buyers', label: 'Покупці' },
   { id: 'returns', label: 'Повернення/обміни' },
   { id: 'analytics', label: 'Дашборд аналітики' },
+  { id: 'funnel-analytics', label: 'Воронка (конверсія)' },
   { id: 'daily-analytics', label: 'Щоденна аналітика' },
   { id: 'ads', label: 'Оголошення' },
   { id: 'ad-spend', label: 'Рекламні витрати' },

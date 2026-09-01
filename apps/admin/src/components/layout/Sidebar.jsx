@@ -17,6 +17,7 @@ const SECTIONS = [
   ] },
   { title: 'Реклама та аналітика', items: [
     { to: '/analytics', label: 'Дашборд аналітики' },
+    { to: '/funnel-analytics', label: 'Воронка (конверсія)' },
     { to: '/daily-analytics', label: 'Щоденна аналітика' },
     { to: '/ads', label: 'Оголошення' },
     { to: '/ad-spend', label: 'Рекламні витрати' },

@@ -103,6 +103,9 @@ export const api = {
   listAdSpend: (params = {}) => get(`/ad-spend?${new URLSearchParams(params)}`),
   syncAdSpendNow: () => post('/ad-spend/sync-now'),
 
+  listFunnelSlugs: () => get('/funnel-events/funnels'),
+  getFunnelSummary: (params = {}) => get(`/funnel-events/summary?${new URLSearchParams(params)}`),
+
   listProductExpenses: (params = {}) => get(`/product-expenses?${new URLSearchParams(params)}`),
   updateProductExpense: (productId, data) => put(`/product-expenses/${productId}`, data),
 
