@@ -8,8 +8,7 @@ import ProductsPage from './pages/ProductsPage';
 import SetsPage from './pages/SetsPage';
 import CategoriesPage from './pages/CategoriesPage';
 import SuppliersPage from './pages/SuppliersPage';
-import FopsPage from './pages/FopsPage';
-import SettingsKeysPage from './pages/SettingsKeysPage';
+import AutomationsPage from './pages/AutomationsPage';
 import PipelinesPage from './pages/PipelinesPage';
 import OrdersPage from './pages/OrdersPage';
 import BuyersPage from './pages/BuyersPage';
@@ -20,7 +19,6 @@ import AdSpendPage from './pages/AdSpendPage';
 import PaymentsPage from './pages/PaymentsPage';
 import ProductExpensesPage from './pages/ProductExpensesPage';
 import SettingsGeneralPage from './pages/SettingsGeneralPage';
-import SettingsIntegrationsPage from './pages/SettingsIntegrationsPage';
 
 function ProtectedShell({ children }) {
   const { isLoading, isAuthenticated, tenants } = useAuthStore();
@@ -44,7 +42,7 @@ export default function App() {
             <Route path="/sets" element={<SetsPage />} />
             <Route path="/categories" element={<CategoriesPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
-            <Route path="/fops" element={<FopsPage />} />
+            <Route path="/automations" element={<AutomationsPage />} />
             <Route path="/pipelines" element={<PipelinesPage />} />
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/buyers" element={<BuyersPage />} />
@@ -55,8 +53,6 @@ export default function App() {
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/product-expenses" element={<ProductExpensesPage />} />
             <Route path="/settings/general" element={<SettingsGeneralPage />} />
-            <Route path="/settings/integrations" element={<SettingsIntegrationsPage />} />
-            <Route path="/settings/keys" element={<SettingsKeysPage />} />
             <Route path="*" element={<Navigate to="/orders" replace />} />
           </Route>
         </Routes>

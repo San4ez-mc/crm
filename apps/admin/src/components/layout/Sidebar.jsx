@@ -23,12 +23,10 @@ const SECTIONS = [
   { title: 'Фінанси', items: [
     { to: '/payments', label: 'Журнал платежів' },
     { to: '/product-expenses', label: 'Витрати по товару' },
-    { to: '/fops', label: 'ФОПи' },
   ] },
   { title: 'Налаштування', items: [
     { to: '/settings/general', label: 'Загальні' },
-    { to: '/settings/integrations', label: 'Інтеграції' },
-    { to: '/settings/keys', label: 'Ключі API' },
+    { to: '/automations', label: 'Автоматизації' },
   ] },
 ];
 
