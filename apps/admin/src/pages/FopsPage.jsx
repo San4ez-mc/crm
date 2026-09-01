@@ -29,6 +29,10 @@ export default function FopsPage() {
     try { await api.deleteFop(id); load(); } catch (e) { alert(e.message); }
   }
 
+  async function handleActivate(id) {
+    try { await api.activateFop(id); load(); } catch (e) { alert(e.message); }
+  }
+
   return (
     <div>
       <PageHeader title="ФОПи" action={<Button onClick={() => setEditing({})}>+ ФОП</Button>} />
@@ -39,12 +43,15 @@ export default function FopsPage() {
         <Card>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-              <tr><th className="px-4 py-3">Назва</th><th className="px-4 py-3">IBAN</th><th className="px-4 py-3">ІПН</th><th className="px-4 py-3">Monobank токен</th><th className="px-4 py-3"></th></tr>
+              <tr><th className="px-4 py-3">Активний</th><th className="px-4 py-3">Назва</th><th className="px-4 py-3">IBAN</th><th className="px-4 py-3">ІПН</th><th className="px-4 py-3">Monobank токен</th><th className="px-4 py-3"></th></tr>
             </thead>
             <tbody>
               {items.map((f) => (
-                <tr key={f.id} className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30">
-                  <td className="px-4 py-3">{f.name}</td>
+                <tr key={f.id} className={`border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30 ${f.isActive ? 'bg-brand/5' : ''}`}>
+                  <td className="px-4 py-3">
+                    <input type="radio" name="active-fop" checked={!!f.isActive} onChange={() => handleActivate(f.id)} title="Зробити активним" />
+                  </td>
+                  <td className="px-4 py-3">{f.name} {f.isActive && <span className="ml-1 rounded bg-brand/20 px-1.5 py-0.5 text-[10px] text-brand-light">активний</span>}</td>
                   <td className="px-4 py-3 text-slate-400">{f.iban || '—'}</td>
                   <td className="px-4 py-3 text-slate-400">{f.taxId || '—'}</td>
                   <td className="px-4 py-3 text-slate-400">{f.monobankToken ? '✓ задано' : '—'}</td>

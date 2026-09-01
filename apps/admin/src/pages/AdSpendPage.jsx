@@ -1,12 +1,14 @@
 // §9.13 Рекламні витрати — таблиця дата×оголошення×товар×сума, inline-прив'язка товару.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Select, Card, EmptyState, ErrorBanner, money } from '../components/common/Common';
+import { PageHeader, Button, Select, Card, EmptyState, ErrorBanner, money } from '../components/common/Common';
 
 export default function AdSpendPage() {
   const [items, setItems] = useState(null);
   const [products, setProducts] = useState([]);
   const [error, setError] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
 
   async function load() {
     setError('');
@@ -21,11 +23,28 @@ export default function AdSpendPage() {
     try { await api.updateAd(ad.id, { productId }); load(); } catch (e) { alert(e.message); }
   }
 
+  async function syncNow() {
+    setSyncing(true); setSyncResult(null); setError('');
+    try {
+      const { data } = await api.syncAdSpendNow();
+      setSyncResult(data);
+      if (data.status === 'ok') load();
+    } catch (e) { setError(e.message); }
+    finally { setSyncing(false); }
+  }
+
   return (
     <div>
-      <PageHeader title="Рекламні витрати" />
+      <PageHeader title="Рекламні витрати" action={<Button onClick={syncNow} disabled={syncing}>{syncing ? 'Отримую…' : '🔄 Отримати дані зараз'}</Button>} />
       <ErrorBanner message={error} />
-      <p className="mb-4 text-xs text-slate-500">Автоматичне щоденне підтягування через Zernio-конектор (крон-Flows). Ручне редагування суми не передбачене — лише прив'язка товару.</p>
+      {syncResult && (
+        <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${syncResult.status === 'ok' ? 'border-emerald-800 bg-emerald-900/20 text-emerald-300' : syncResult.status === 'pending' ? 'border-amber-800 bg-amber-900/20 text-amber-300' : 'border-red-800 bg-red-900/20 text-red-300'}`}>
+          {syncResult.status === 'ok' && `Готово: ${syncResult.date}, оголошень ${syncResult.adsCount}, записано ${syncResult.written}`}
+          {syncResult.status === 'pending' && 'Meta ще формує звіт (async) — спробуйте ще раз за хвилину.'}
+          {syncResult.status === 'error' && `Помилка Meta Ads API: ${syncResult.error}`}
+        </div>
+      )}
+      <p className="mb-4 text-xs text-slate-500">Автоматичне щоденне підтягування через Meta Ads API (крон-Flows, о 00:00). Кнопка вище тригерить той самий сценарій негайно. Ручне редагування суми не передбачене — лише прив'язка товару.</p>
       {items === null ? null : items.length === 0 ? (
         <EmptyState title="Витрат ще немає" hint="Дані підтягнуться автоматично, щойно запрацює Flows-автоматизація Zernio." />
       ) : (

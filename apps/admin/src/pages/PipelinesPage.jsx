@@ -43,14 +43,11 @@ export default function PipelinesPage() {
     try { await api.createPipeline({ name }); load(); } catch (e) { alert(e.message); }
   }
 
-  if (pipelines === null) return null;
-  if (pipelines.length === 0) return <EmptyState title="Воронок ще немає" action={<Button onClick={createPipeline}>+ Воронка</Button>} />;
-
   return (
     <div>
       <PageHeader
         title="Воронки"
-        action={pipelines.length > 1 ? (
+        action={pipelines && pipelines.length > 1 ? (
           <Select className="max-w-xs" value={currentId} onChange={(e) => setCurrentId(e.target.value)}>
             {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
@@ -58,6 +55,9 @@ export default function PipelinesPage() {
       />
       <ErrorBanner message={error} />
 
+      {pipelines !== null && pipelines.length === 0 && <EmptyState title="Воронок ще немає" action={<Button onClick={createPipeline}>+ Воронка</Button>} />}
+
+      {current && (
       <div className="flex gap-3 overflow-x-auto pb-2">
         {current?.stages.map((stage, i) => (
           <Card key={stage.id} className="w-64 shrink-0 p-3">
@@ -77,6 +77,7 @@ export default function PipelinesPage() {
           <Button variant="secondary" onClick={addStage}>+ Стадія</Button>
         </Card>
       </div>
+      )}
     </div>
   );
 }

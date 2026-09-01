@@ -51,38 +51,40 @@ export default function SettingsGeneralPage() {
   if (!tenant) return null;
 
   return (
-    <div className="max-w-lg space-y-5">
+    <div className="space-y-5">
       <PageHeader title="Налаштування — Загальні" />
       <ErrorBanner message={error} />
-      <Card className="p-5">
-        <Field label="Назва магазину"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <div className="mt-4 flex items-center gap-2">
-          <Button onClick={save}>Зберегти</Button>
-          {saved && <span className="text-xs text-emerald-400">Збережено</span>}
-        </div>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <Card className="p-5">
+          <Field label="Назва магазину"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <div className="mt-4 flex items-center gap-2">
+            <Button onClick={save}>Зберегти</Button>
+            {saved && <span className="text-xs text-emerald-400">Збережено</span>}
+          </div>
 
-        <div className="mt-6 border-t border-slate-800 pt-5">
-          <Field label="API-ключ для воронки">
-            <div className="flex gap-2">
-              <Input readOnly value={showKey ? tenant.apiKey : '•'.repeat(24)} />
-              <Button variant="secondary" onClick={() => setShowKey(!showKey)}>{showKey ? 'Приховати' : 'Показати'}</Button>
-            </div>
-          </Field>
-          <Button variant="danger" onClick={regenerate}>Перегенерувати ключ</Button>
-        </div>
-      </Card>
+          <div className="mt-6 border-t border-slate-800 pt-5">
+            <Field label="API-ключ для воронки">
+              <div className="flex gap-2">
+                <Input readOnly value={showKey ? tenant.apiKey : '•'.repeat(24)} />
+                <Button variant="secondary" onClick={() => setShowKey(!showKey)}>{showKey ? 'Приховати' : 'Показати'}</Button>
+              </div>
+            </Field>
+            <Button variant="danger" onClick={regenerate}>Перегенерувати ключ</Button>
+          </div>
+        </Card>
 
-      <Card className="p-5">
-        <h3 className="mb-3 text-sm font-semibold">Фінансові параметри для щоденної аналітики</h3>
-        <p className="mb-3 text-xs text-slate-500">Вручну оновлювані значення — курс міняється щодня/щотижня, постійні витрати/ЗП зазвичай стабільні по місяцю.</p>
-        <Field label="Курс долара, грн"><Input type="number" step="0.01" value={finance.usdExchangeRate} onChange={(e) => setFinance({ ...finance, usdExchangeRate: e.target.value })} /></Field>
-        <Field label="Постійні витрати за добу, $"><Input type="number" step="0.01" value={finance.dailyFixedCosts} onChange={(e) => setFinance({ ...finance, dailyFixedCosts: e.target.value })} /></Field>
-        <Field label="Витрати на оплату праці за добу, $"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
-        <div className="mt-2 flex items-center gap-2">
-          <Button onClick={saveFinance}>Зберегти</Button>
-          {financeSaved && <span className="text-xs text-emerald-400">Збережено</span>}
-        </div>
-      </Card>
+        <Card className="p-5">
+          <h3 className="mb-3 text-sm font-semibold">Фінансові параметри для щоденної аналітики</h3>
+          <p className="mb-3 text-xs text-slate-500">Вручну оновлювані значення — курс міняється щодня/щотижня, постійні витрати/ЗП зазвичай стабільні по місяцю.</p>
+          <Field label="Курс долара, грн"><Input type="number" step="0.01" value={finance.usdExchangeRate} onChange={(e) => setFinance({ ...finance, usdExchangeRate: e.target.value })} /></Field>
+          <Field label="Постійні витрати за добу, $"><Input type="number" step="0.01" value={finance.dailyFixedCosts} onChange={(e) => setFinance({ ...finance, dailyFixedCosts: e.target.value })} /></Field>
+          <Field label="Витрати на оплату праці за добу, $"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
+          <div className="mt-2 flex items-center gap-2">
+            <Button onClick={saveFinance}>Зберегти</Button>
+            {financeSaved && <span className="text-xs text-emerald-400">Збережено</span>}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

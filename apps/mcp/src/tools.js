@@ -31,7 +31,7 @@ const TOOLS = [
   // ── Fop (ФОП для прийому оплат) — окремо per-tenant ─────────────────
   { name: 'list_fops', description: 'ФОПи tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
   { name: 'create_fop', description: 'Створити ФОП.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string' }, iban: { type: 'string' }, taxId: { type: 'string', description: 'ІПН' }, monobankToken: { type: 'string' } }, required: ['tenantId', 'name'] } },
-  { name: 'update_fop', description: 'Оновити ФОП.', inputSchema: { type: 'object', properties: { fopId: { type: 'string' }, name: { type: 'string' }, iban: { type: 'string' }, taxId: { type: 'string' }, monobankToken: { type: 'string' } }, required: ['fopId'] } },
+  { name: 'update_fop', description: 'Оновити ФОП. isActive:true робить його єдиним активним для tenant (деактивує інші).', inputSchema: { type: 'object', properties: { fopId: { type: 'string' }, name: { type: 'string' }, iban: { type: 'string' }, taxId: { type: 'string' }, monobankToken: { type: 'string' }, isActive: { type: 'boolean' } }, required: ['fopId'] } },
   { name: 'delete_fop', description: 'Видалити ФОП.', inputSchema: { type: 'object', properties: { fopId: { type: 'string' } }, required: ['fopId'] } },
 
   // ── Product / Offer §4.2/§4.3 ───────────────────────────────────────
@@ -114,9 +114,17 @@ async function callTool(name, args = {}) {
       if (!args.name) throw new ValidationError('name обовʼязкове');
       return db.fop.create({ data: { tenantId: args.tenantId, name: args.name, iban: args.iban || null, taxId: args.taxId || null, monobankToken: args.monobankToken || null } });
     case 'update_fop': {
+      if (args.isActive === true) {
+        const fop = await db.fop.findUnique({ where: { id: args.fopId } });
+        if (!fop) throw new NotFoundError('Fop', args.fopId);
+        await db.$transaction([
+          db.fop.updateMany({ where: { tenantId: fop.tenantId }, data: { isActive: false } }),
+          db.fop.update({ where: { id: fop.id }, data: { isActive: true } }),
+        ]);
+      }
       const data = {};
       for (const key of ['name', 'iban', 'taxId', 'monobankToken']) if (args[key] !== undefined) data[key] = args[key];
-      return db.fop.update({ where: { id: args.fopId }, data });
+      return Object.keys(data).length ? db.fop.update({ where: { id: args.fopId }, data }) : db.fop.findUnique({ where: { id: args.fopId } });
     }
     case 'delete_fop':
       await db.fop.delete({ where: { id: args.fopId } });

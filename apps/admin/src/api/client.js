@@ -57,6 +57,7 @@ export const api = {
   createFop: (data) => post('/fops', data),
   updateFop: (id, data) => patch(`/fops/${id}`, data),
   deleteFop: (id) => del(`/fops/${id}`),
+  activateFop: (id) => post(`/fops/${id}/activate`),
 
   listSecrets: () => get('/secrets'),
   getSecret: (id) => get(`/secrets/${id}`),
@@ -100,6 +101,7 @@ export const api = {
   createAd: (data) => post('/ads', data),
   updateAd: (id, data) => patch(`/ads/${id}`, data),
   listAdSpend: (params = {}) => get(`/ad-spend?${new URLSearchParams(params)}`),
+  syncAdSpendNow: () => post('/ad-spend/sync-now'),
 
   listProductExpenses: (params = {}) => get(`/product-expenses?${new URLSearchParams(params)}`),
   updateProductExpense: (productId, data) => put(`/product-expenses/${productId}`, data),

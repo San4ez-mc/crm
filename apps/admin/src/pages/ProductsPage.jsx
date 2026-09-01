@@ -73,8 +73,8 @@ export default function ProductsPage() {
           <table className="hidden w-full table-fixed text-sm md:table">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
               <tr>
-                <th className="w-16 px-4 py-3"></th><th className="w-48 px-4 py-3">Назва</th><th className="w-24 px-4 py-3">Артикул</th><th className="w-32 px-4 py-3">Категорія</th>
-                <th className="w-28 px-4 py-3">Ціна</th><th className="w-20 px-4 py-3">Варіантів</th><th className="px-4 py-3">Постачальник</th><th className="w-20 px-4 py-3"></th>
+                <th className="w-[12%] px-4 py-3"></th><th className="w-[22%] px-4 py-3">Назва</th><th className="w-[12%] px-4 py-3">Артикул</th><th className="w-[14%] px-4 py-3">Категорія</th>
+                <th className="w-[12%] px-4 py-3">Ціна</th><th className="w-[10%] px-4 py-3">Варіантів</th><th className="w-[14%] px-4 py-3">Постачальник</th><th className="w-[8%] px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -120,6 +120,6 @@ export default function ProductsPage() {
 
 function Thumb({ url }) {
   return url
-    ? <img src={url} alt="" className="h-14 w-14 rounded-md object-cover" />
-    : <div className="flex h-14 w-14 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>;
+    ? <img src={url} alt="" className="h-28 w-28 rounded-md object-cover" />
+    : <div className="flex h-28 w-28 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>;
 }

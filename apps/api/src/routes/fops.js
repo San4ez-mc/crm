@@ -50,4 +50,15 @@ router.delete('/fops/:id', asyncHandler(async (req, res) => {
   res.json({ ok: true, data: { id: existing.id, deleted: true } });
 }));
 
+// Активний ФОП — рівно один на tenant (використовується для платежів за замовчуванням).
+router.post('/fops/:id/activate', asyncHandler(async (req, res) => {
+  const existing = await db.fop.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+  if (!existing) throw new NotFoundError('Fop', req.params.id);
+  await db.$transaction([
+    db.fop.updateMany({ where: { tenantId: req.tenant.id }, data: { isActive: false } }),
+    db.fop.update({ where: { id: existing.id }, data: { isActive: true } }),
+  ]);
+  res.json({ ok: true, data: { id: existing.id, activated: true } });
+}));
+
 module.exports = router;

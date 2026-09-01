@@ -59,6 +59,28 @@ router.get('/ad-spend', asyncHandler(async (req, res) => {
   res.json({ ok: true, data: items, meta: { total, take: Number(take), skip: Number(skip) } });
 }));
 
+// ДОПОВНЕННЯ 2026-09-01 — кнопка "Отримати дані зараз" на сторінці реклами: тригерить
+// відповідну cron-воронку Flows (Meta Ads Sync) прямо зараз, не чекаючи щоденний крон.
+// botId per-tenant зберігається як TenantSecret FLOWS_META_SYNC_BOT_ID (заповнюється вручну
+// один раз при підключенні магазину). FLOWS_API_URL/FLOWS_API_SECRET — системні, у .env,
+// той самий X-Api-Secret механізм, яким платформа Flows сама себе авторизує служебно.
+router.post('/ad-spend/sync-now', asyncHandler(async (req, res) => {
+  const secret = await db.tenantSecret.findFirst({ where: { tenantId: req.tenant.id, key: 'FLOWS_META_SYNC_BOT_ID' } });
+  if (!secret?.value) throw new ValidationError('Не налаштовано FLOWS_META_SYNC_BOT_ID для цього магазину (Ключі API)');
+  if (!process.env.FLOWS_API_URL || !process.env.FLOWS_API_SECRET) throw new ValidationError('FLOWS_API_URL/FLOWS_API_SECRET не налаштовані на сервері CRM');
+
+  const resp = await fetch(`${process.env.FLOWS_API_URL}/api/sessions/test/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Api-Secret': process.env.FLOWS_API_SECRET },
+    body: JSON.stringify({ botId: secret.value }),
+  });
+  const json = await resp.json().catch(() => null);
+  if (!resp.ok || !json?.ok) throw new ValidationError('Flows не відповів успіхом: ' + (json?.error?.message || json?.error || resp.status));
+
+  const snap = json.data?.contextSnapshot || {};
+  res.json({ ok: true, data: { status: snap.metaSyncStatus || 'unknown', date: snap.metaSyncDate || null, adsCount: snap.metaSyncAdsCount ?? null, written: snap.metaSyncWritten ?? null, error: snap.metaSyncError || null } });
+}));
+
 async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {}) {
   let ad = await db.ad.findFirst({ where: { tenantId, externalId } });
   if (!ad) {
