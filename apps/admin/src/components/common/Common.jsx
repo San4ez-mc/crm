@@ -69,8 +69,10 @@ export function Field({ label, children }) {
   );
 }
 
+// overflow-x-auto тут — щоб широкі таблиці скролились ГОРИЗОНТАЛЬНО всередині картки
+// на мобільних, а не ламали всю сторінку (мобільна верстка, 2026-09-01).
 export function Card({ children, className = '' }) {
-  return <div className={`rounded-xl border border-slate-800 bg-slate-900 ${className}`}>{children}</div>;
+  return <div className={`overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 ${className}`}>{children}</div>;
 }
 
 export function Badge({ children, color = 'slate' }) {
