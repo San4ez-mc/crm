@@ -96,13 +96,13 @@ async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {})
   let ad = await db.ad.findFirst({ where: { tenantId, externalId } });
   if (!ad) {
     ad = await db.ad.create({
-      data: { tenantId, externalId, name: name || null, campaignId: meta.campaignId || null, campaignName: meta.campaignName || null, adAccountId: meta.adAccountId || null },
+      data: { tenantId, externalId, name: name || null, campaignId: meta.campaignId || null, campaignName: meta.campaignName || null, adAccountId: meta.adAccountId || null, thumbnailUrl: meta.thumbnailUrl || null },
     });
-  } else if (meta.campaignName || meta.campaignId || meta.adAccountId) {
-    // Meta не міняє campaignId/adAccountId заднім числом, але назва кампанії могла оновитись.
+  } else if (meta.campaignName || meta.campaignId || meta.adAccountId || meta.thumbnailUrl) {
+    // Meta не міняє campaignId/adAccountId заднім числом, але назва кампанії/фото креативу могли оновитись.
     ad = await db.ad.update({
       where: { id: ad.id },
-      data: { ...(meta.campaignId ? { campaignId: meta.campaignId } : {}), ...(meta.campaignName ? { campaignName: meta.campaignName } : {}), ...(meta.adAccountId ? { adAccountId: meta.adAccountId } : {}) },
+      data: { ...(meta.campaignId ? { campaignId: meta.campaignId } : {}), ...(meta.campaignName ? { campaignName: meta.campaignName } : {}), ...(meta.adAccountId ? { adAccountId: meta.adAccountId } : {}), ...(meta.thumbnailUrl ? { thumbnailUrl: meta.thumbnailUrl } : {}) },
     });
   }
   return ad;
@@ -111,11 +111,11 @@ async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {})
 // §5: `POST /ad-spend-daily` — щоденні витрати від Flows-автоматизації (Zernio/Meta Ads).
 // impressions/clicks — платформні метрики самого Facebook (для CPC/CTR/CPM), не наш AdClick.
 router.post('/ad-spend-daily', asyncHandler(async (req, res) => {
-  const { externalId, adId, name, date, amount, currency, impressions, clicks, campaignId, campaignName, adAccountId } = req.body || {};
+  const { externalId, adId, name, date, amount, currency, impressions, clicks, campaignId, campaignName, adAccountId, thumbnailUrl } = req.body || {};
   if (!date || amount === undefined) throw new ValidationError('date і amount обовʼязкові');
   const ad = adId
     ? await db.ad.findFirst({ where: { id: adId, tenantId: req.tenant.id } })
-    : await findOrCreateAdByExternalId(req.tenant.id, String(externalId || 'unknown'), name, { campaignId, campaignName, adAccountId });
+    : await findOrCreateAdByExternalId(req.tenant.id, String(externalId || 'unknown'), name, { campaignId, campaignName, adAccountId, thumbnailUrl });
   if (!ad) throw new NotFoundError('Ad', adId);
   const row = await db.adSpendDaily.upsert({
     where: { adId_date: { adId: ad.id, date: new Date(date) } },
