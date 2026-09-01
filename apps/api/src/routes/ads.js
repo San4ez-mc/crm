@@ -9,17 +9,27 @@ const { parseFrom, parseTo } = require('../lib/dateRange');
 
 const router = express.Router();
 
+// §9.13 — картка оголошення (не залежить від дати: назва/фото/привʼязка товару стабільні,
+// на відміну від AdSpendDaily, де та сама прив'язка інакше довелось би повторювати на
+// кожному денному рядку). Разом віддаємо агреговані totalSpend/lastSyncedAt.
 router.get('/ads', asyncHandler(async (req, res) => {
   const { productId, take = '100', skip = '0' } = req.query;
   const where = { tenantId: req.tenant.id, ...(productId ? { productId: String(productId) } : {}) };
   const ads = await db.ad.findMany({
     where,
-    include: { product: { select: { id: true, name: true } } },
+    include: { product: { select: { id: true, name: true } }, _count: { select: { spendDaily: true } } },
     orderBy: { createdAt: 'desc' },
     take: Number(take),
     skip: Number(skip),
   });
-  res.json({ ok: true, data: ads });
+  const totals = await db.adSpendDaily.groupBy({
+    by: ['adId'],
+    where: { adId: { in: ads.map((a) => a.id) } },
+    _sum: { amount: true },
+    _max: { date: true },
+  });
+  const totalsByAd = Object.fromEntries(totals.map((t) => [t.adId, { totalSpend: t._sum.amount, lastSyncedAt: t._max.date }]));
+  res.json({ ok: true, data: ads.map((a) => ({ ...a, spendDailyCount: a._count.spendDaily, _count: undefined, ...(totalsByAd[a.id] || { totalSpend: 0, lastSyncedAt: null }) })) });
 }));
 
 router.post('/ads', asyncHandler(async (req, res) => {
@@ -41,6 +51,7 @@ router.patch('/ads/:id', asyncHandler(async (req, res) => {
   const ad = await db.ad.update({
     where: { id: existing.id },
     data: { ...(productId !== undefined ? { productId: productId || null } : {}), ...(name !== undefined ? { name } : {}) },
+    include: { product: { select: { id: true, name: true } } },
   });
   res.json({ ok: true, data: ad });
 }));

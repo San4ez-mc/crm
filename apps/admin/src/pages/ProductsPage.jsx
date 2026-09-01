@@ -1,11 +1,16 @@
 // §9.2 Товари — список.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, IconButton, Input, Select, Card, EmptyState, ErrorBanner, money } from '../components/common/Common';
+import { PageHeader, Button, IconButton, Input, Select, Card, EmptyState, ErrorBanner, Pagination, money } from '../components/common/Common';
 import ProductFormModal from './ProductFormModal';
+
+const PAGE_SIZE = 50;
 
 export default function ProductsPage() {
   const [items, setItems] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [allProducts, setAllProducts] = useState([]); // без пагінації — для пікерів (допродажі/склад комплекту)
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [q, setQ] = useState('');
@@ -17,15 +22,16 @@ export default function ProductsPage() {
   async function load() {
     setError('');
     try {
-      const params = { isSet: 'false' }; // «Комплекти» — окремий пункт меню, тут лише звичайні товари
+      const params = { isSet: 'false', take: String(PAGE_SIZE), skip: String((page - 1) * PAGE_SIZE) }; // «Комплекти» — окремий пункт меню, тут лише звичайні товари
       if (q) params.q = q;
       if (categoryId) params.categoryId = categoryId;
       if (supplierId) params.supplierId = supplierId;
-      const [p, c, s] = await Promise.all([api.listProducts(params), api.listCategories(), api.listSuppliers()]);
-      setItems(p.data); setCategories(c.data); setSuppliers(s.data);
+      const [p, all, c, s] = await Promise.all([api.listProducts(params), api.listProducts({ isSet: 'false', take: '1000' }), api.listCategories(), api.listSuppliers()]);
+      setItems(p.data); setTotal(p.meta?.total || p.data.length); setAllProducts(all.data); setCategories(c.data); setSuppliers(s.data);
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [q, categoryId, supplierId]);
+  useEffect(() => { load(); }, [q, categoryId, supplierId, page]);
+  function resetAnd(setter) { return (v) => { setter(v); setPage(1); }; }
 
   async function handleDelete(id) {
     if (!confirm('Видалити товар?')) return;
@@ -38,12 +44,12 @@ export default function ProductsPage() {
       <ErrorBanner message={error} />
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <Input className="max-w-xs" placeholder="Пошук за назвою/sku…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select className="max-w-xs" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+        <Input className="max-w-xs" placeholder="Пошук за назвою/sku…" value={q} onChange={(e) => resetAnd(setQ)(e.target.value)} />
+        <Select className="max-w-xs" value={categoryId} onChange={(e) => resetAnd(setCategoryId)(e.target.value)}>
           <option value="">Усі категорії</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </Select>
-        <Select className="max-w-xs" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+        <Select className="max-w-xs" value={supplierId} onChange={(e) => resetAnd(setSupplierId)(e.target.value)}>
           <option value="">Усі постачальники</option>
           {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </Select>
@@ -99,13 +105,14 @@ export default function ProductsPage() {
           </table>
         </Card>
       )}
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
 
       {editing !== null && (
         <ProductFormModal
           product={editing.id ? editing : null}
           categories={categories}
           suppliers={suppliers}
-          allProducts={items || []}
+          allProducts={allProducts}
           onClose={() => setEditing(null)}
           onSaved={load}
           onSupplierCreated={async (data) => {

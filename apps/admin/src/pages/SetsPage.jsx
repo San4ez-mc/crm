@@ -72,6 +72,7 @@ export default function SetsPage() {
       {editing !== null && (
         <ProductFormModal
           product={editing.id ? editing : null}
+          forceSet
           categories={categories}
           suppliers={suppliers}
           allProducts={allProducts}

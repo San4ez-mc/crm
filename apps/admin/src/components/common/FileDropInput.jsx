@@ -21,7 +21,7 @@ export function SingleFileDrop({ value, onChange }) {
   return (
     <div>
       <div
-        className="flex h-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-700 bg-slate-800/50 text-xs text-slate-500 hover:border-brand"
+        className="flex h-56 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-700 bg-slate-800/50 text-xs text-slate-500 hover:border-brand"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
         onClick={() => document.getElementById('single-file-input')?.click()}
@@ -62,7 +62,7 @@ export function MultiImageDrop({ value = [], onChange, max = 10 }) {
   return (
     <div>
       <div
-        className="mb-2 flex h-16 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-slate-700 bg-slate-800/50 text-xs text-slate-500 hover:border-brand"
+        className="mb-2 flex h-20 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-slate-700 bg-slate-800/50 text-xs text-slate-500 hover:border-brand"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
         onClick={() => document.getElementById(`multi-file-input-${max}`)?.click()}
@@ -73,7 +73,7 @@ export function MultiImageDrop({ value = [], onChange, max = 10 }) {
       {error && <p className="mb-1 text-xs text-red-400">{error}</p>}
       <div className="flex flex-wrap gap-2">
         {value.map((url, i) => (
-          <div key={url} className="relative h-16 w-16 overflow-hidden rounded-lg border border-slate-700">
+          <div key={url} className="relative h-32 w-32 overflow-hidden rounded-lg border border-slate-700">
             <img src={url} alt="" className="h-full w-full cursor-zoom-in object-cover" onClick={() => setLightbox(url)} />
             {i === 0 && <span className="absolute left-0.5 top-0.5 rounded bg-brand px-1 text-[10px]">гол.</span>}
             <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/60 px-0.5">

@@ -16,10 +16,10 @@ router.get('/categories', asyncHandler(async (req, res) => {
 }));
 
 router.post('/categories', asyncHandler(async (req, res) => {
-  const { name, description, aiInstructions } = req.body || {};
+  const { name, description, aiInstructions, requiredParams } = req.body || {};
   if (!name || !String(name).trim()) throw new ValidationError('name обовʼязкове');
   const category = await db.category.create({
-    data: { tenantId: req.tenant.id, name: String(name).trim(), description: description || null, aiInstructions: aiInstructions || null },
+    data: { tenantId: req.tenant.id, name: String(name).trim(), description: description || null, aiInstructions: aiInstructions || null, requiredParams: Array.isArray(requiredParams) ? requiredParams : [] },
   });
   res.status(201).json({ ok: true, data: category });
 }));
@@ -33,13 +33,14 @@ router.get('/categories/:id', asyncHandler(async (req, res) => {
 router.patch('/categories/:id', asyncHandler(async (req, res) => {
   const existing = await db.category.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
   if (!existing) throw new NotFoundError('Category', req.params.id);
-  const { name, description, aiInstructions } = req.body || {};
+  const { name, description, aiInstructions, requiredParams } = req.body || {};
   const category = await db.category.update({
     where: { id: existing.id },
     data: {
       ...(name !== undefined ? { name: String(name).trim() } : {}),
       ...(description !== undefined ? { description } : {}),
       ...(aiInstructions !== undefined ? { aiInstructions } : {}),
+      ...(requiredParams !== undefined ? { requiredParams: Array.isArray(requiredParams) ? requiredParams : [] } : {}),
     },
   });
   res.json({ ok: true, data: category });

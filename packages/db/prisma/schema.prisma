@@ -40,6 +40,30 @@ model Tenant {
   payments         Payment[]
   fops             Fop[]
   secrets          TenantSecret[]
+  funnelEvents     FunnelEvent[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// ДОПОВНЕННЯ 2026-09-01 — Етапи воронки (аналітика конверсії).
+// Джерело подій — окрема нода "Етап воронки" у FINEKO Flows (не хардкод, довільна
+// назва/порядок на розсуд автора воронки, тому й немає фіксованого enum stageName).
+// Дедуп по (tenantId, sessionId, stageName) — повторний прохід через ту саму ноду
+// в тій самій розмові не роздуває лічильник, лише оновлює occurredAt.
+// ─────────────────────────────────────────────────────────────
+model FunnelEvent {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  funnelSlug String? // slug бота Flows — щоб на дашборді розрізняти воронки одного tenant
+  sessionId  String // session.id з Flows — унікальний ідентифікатор розмови
+  stageName  String
+  stageOrder Int      @default(0) // порядок на графіку-воронці, задає автор ноди
+  occurredAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, sessionId, stageName])
+  @@index([tenantId, funnelSlug])
+  @@index([tenantId, stageName])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -51,7 +75,11 @@ model Category {
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name           String
   description    String?
-  aiInstructions String? // що бот має дізнатись у клієнта для товарів цієї категорії
+  aiInstructions String? // що бот має дізнатись у клієнта для товарів цієї категорії (вільний текст)
+  // ДОПОВНЕННЯ 2026-09-01 — структурований список параметрів для збору перед оформленням
+  // (зріст/вага для одягу, розмір стопи для взуття тощо) — [{name,unit,hint}], щоб воронка
+  // питала програмно, а не парсила вільний aiInstructions.
+  requiredParams Json     @default("[]")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -134,7 +162,8 @@ model Product {
   id                  String   @id @default(uuid())
   tenantId            String
   tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name                String
+  name                String // внутрішня назва (від постачальника/для CRM)
+  customerName        String? // ДОПОВНЕННЯ 2026-09-01 — назва, яку бачить клієнт у боті; порожньо → показуємо `name`
   sku                 String
   price               Decimal  @db.Decimal(12, 2)
   minPrice            Decimal? @db.Decimal(12, 2)
@@ -325,6 +354,7 @@ model Ad {
   campaignId   String? // id кампанії в Meta
   campaignName String?
   adAccountId  String? // id рекламного кабінету, з якого прийшли дані
+  thumbnailUrl String? // мініатюра креативу (Meta Graph creative.thumbnail_url) — заповнює той самий крон
   createdAt  DateTime @default(now())
 
   spendDaily      AdSpendDaily[]

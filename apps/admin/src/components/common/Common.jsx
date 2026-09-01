@@ -1,4 +1,19 @@
 // Дрібні спільні елементи, щоб не дублювати класи по сторінках.
+export function Pagination({ page, pageSize, total, onChange }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (pages <= 1) return null;
+  return (
+    <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+      <span>Всього: {total}</span>
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={page <= 1} onClick={() => onChange(page - 1)} className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:opacity-30 hover:bg-slate-800">← Назад</button>
+        <span>Сторінка {page} з {pages}</span>
+        <button type="button" disabled={page >= pages} onClick={() => onChange(page + 1)} className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:opacity-30 hover:bg-slate-800">Далі →</button>
+      </div>
+    </div>
+  );
+}
+
 export function PageHeader({ title, action }) {
   return (
     <div className="mb-5 flex items-center justify-between">

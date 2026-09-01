@@ -18,6 +18,7 @@ const PRODUCT_INCLUDE = {
 function serializeProduct(p) {
   return {
     ...p,
+    displayName: p.customerName || p.name, // те, що фактично має бачити клієнт у боті
     offersCount: p.offers ? p.offers.length : undefined,
     setComponents: p.setOf ? p.setOf.map((sc) => ({ productId: sc.componentProductId, name: sc.componentProduct.name, sku: sc.componentProduct.sku, qty: sc.qty })) : undefined,
     setOf: undefined,
@@ -60,6 +61,7 @@ router.post('/products', asyncHandler(async (req, res) => {
     data: {
       tenantId: req.tenant.id,
       name: String(b.name).trim(),
+      customerName: b.customerName || null,
       sku: String(b.sku).trim(),
       price: b.price,
       minPrice: b.minPrice ?? null,
@@ -100,6 +102,7 @@ router.patch('/products/:id', asyncHandler(async (req, res) => {
     where: { id: existing.id },
     data: {
       ...(b.name !== undefined ? { name: String(b.name).trim() } : {}),
+      ...(b.customerName !== undefined ? { customerName: b.customerName || null } : {}),
       ...(b.sku !== undefined ? { sku: String(b.sku).trim() } : {}),
       ...(b.price !== undefined ? { price: b.price } : {}),
       ...(b.minPrice !== undefined ? { minPrice: b.minPrice } : {}),
