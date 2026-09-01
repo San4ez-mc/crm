@@ -75,6 +75,7 @@ router.get('/api/auth/sso/projects', requireSsoSecret, asyncHandler(async (req, 
 // Меню §3 ТЗ — статичний список пунктів для гранулярного per-page доступу в SSO-панелі.
 const PAGES = [
   { id: 'products', label: 'Товари' },
+  { id: 'sets', label: 'Комплекти' },
   { id: 'categories', label: 'Категорії' },
   { id: 'suppliers', label: 'Постачальники' },
   { id: 'pipelines', label: 'Воронки' },
@@ -82,11 +83,13 @@ const PAGES = [
   { id: 'buyers', label: 'Покупці' },
   { id: 'returns', label: 'Повернення/обміни' },
   { id: 'analytics', label: 'Дашборд аналітики' },
+  { id: 'daily-analytics', label: 'Щоденна аналітика' },
+  { id: 'ads', label: 'Оголошення' },
   { id: 'ad-spend', label: 'Рекламні витрати' },
   { id: 'payments', label: 'Журнал платежів' },
   { id: 'product-expenses', label: 'Витрати по товару' },
   { id: 'settings-general', label: 'Налаштування — Загальні' },
-  { id: 'settings-integrations', label: 'Налаштування — Інтеграції' },
+  { id: 'automations', label: 'Автоматизації' },
 ];
 
 router.get('/api/auth/sso/pages', requireSsoSecret, (req, res) => {
