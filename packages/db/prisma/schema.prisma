@@ -247,6 +247,11 @@ model Buyer {
   fullName    String?
   phone       String // дедуп-ключ
   igUsername  String?
+  // Пам'ять вимірів клієнта — гнучкий об'єкт {[paramName]: value}, напр. {"зріст":"175","вага":"65"}.
+  // Ключі — ТІ САМІ назви параметрів, що в Category.requiredParams (жодного хардкоду категорій),
+  // щоб воронка могла звірити "чи всі потрібні параметри поточного товару вже відомі" прямим
+  // порівнянням імен. Заповнюється PATCH /buyers/:id, читається воронкою на кроці підбору розміру.
+  knownMeasurements Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
