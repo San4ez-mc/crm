@@ -25,11 +25,23 @@ router.get('/ads', asyncHandler(async (req, res) => {
   const totals = await db.adSpendDaily.groupBy({
     by: ['adId'],
     where: { adId: { in: ads.map((a) => a.id) } },
-    _sum: { amount: true },
+    _sum: { amount: true, impressions: true, clicks: true },
     _max: { date: true },
   });
-  const totalsByAd = Object.fromEntries(totals.map((t) => [t.adId, { totalSpend: t._sum.amount, lastSyncedAt: t._max.date }]));
-  res.json({ ok: true, data: ads.map((a) => ({ ...a, spendDailyCount: a._count.spendDaily, _count: undefined, ...(totalsByAd[a.id] || { totalSpend: 0, lastSyncedAt: null }) })) });
+  const totalsByAd = Object.fromEntries(totals.map((t) => {
+    const spend = Number(t._sum.amount || 0);
+    const impressions = Number(t._sum.impressions || 0);
+    const clicks = Number(t._sum.clicks || 0);
+    return [t.adId, {
+      totalSpend: t._sum.amount,
+      lastSyncedAt: t._max.date,
+      impressions: impressions || null,
+      clicks: clicks || null,
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : null,
+      cpc: clicks > 0 ? spend / clicks : null,
+    }];
+  }));
+  res.json({ ok: true, data: ads.map((a) => ({ ...a, spendDailyCount: a._count.spendDaily, _count: undefined, ...(totalsByAd[a.id] || { totalSpend: 0, lastSyncedAt: null, impressions: null, clicks: null, ctr: null, cpc: null }) })) });
 }));
 
 router.post('/ads', asyncHandler(async (req, res) => {

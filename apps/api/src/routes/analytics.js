@@ -38,18 +38,25 @@ router.get('/analytics/top-products', asyncHandler(async (req, res) => {
 }));
 
 // ── §6.2 Реклама: кліки → покупки (first-touch і last-touch окремо) ──────
+// Два різних "кліки": AdClick — наші власні (перехід у діалог з реклами), AdSpendDaily.clicks/
+// impressions — платформні метрики Meta (для CTR/CPC/CPM). revenueFirstTouch/roas — дохід із
+// замовлень, де це оголошення було first-touch (без Return), ROAS = дохід/витрата.
 router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const ads = await db.ad.findMany({ where: { tenantId: req.tenant.id }, include: { product: { select: { id: true, name: true } } } });
 
   const data = await Promise.all(ads.map(async (ad) => {
-    const [clicks, spendAgg, firstTouchOrders, lastTouchOrders] = await Promise.all([
+    const [clicks, spendAgg, firstTouchOrders, lastTouchOrders, revenueOrders] = await Promise.all([
       db.adClick.count({ where: { adId: ad.id, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
-      db.adSpendDaily.aggregate({ where: { adId: ad.id, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) }, _sum: { amount: true } }),
+      db.adSpendDaily.aggregate({ where: { adId: ad.id, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) }, _sum: { amount: true, impressions: true, clicks: true } }),
       db.order.count({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } } }),
       db.order.count({ where: { tenantId: req.tenant.id, lastTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } } }),
+      db.order.findMany({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } }, select: { items: { select: { price: true, quantity: true } } } }),
     ]);
     const spend = Number(spendAgg._sum.amount || 0);
+    const impressions = Number(spendAgg._sum.impressions || 0);
+    const platformClicks = Number(spendAgg._sum.clicks || 0);
+    const revenueFirstTouch = revenueOrders.reduce((sum, o) => sum + o.items.reduce((s, it) => s + Number(it.price) * it.quantity, 0), 0);
     return {
       adId: ad.id,
       name: ad.name || ad.externalId || ad.id,
@@ -58,11 +65,17 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
       clicks,
       purchasesFirstTouch: firstTouchOrders,
       purchasesLastTouch: lastTouchOrders,
-      ctr: null, // імпресії не зберігаємо в моделі — CTR по кліках/показах порахувати нема з чого
+      impressions: impressions || null,
+      platformClicks: platformClicks || null,
+      ctr: impressions > 0 ? (platformClicks / impressions) * 100 : null,
+      cpc: platformClicks > 0 ? spend / platformClicks : null,
+      cpm: impressions > 0 ? (spend / impressions) * 1000 : null,
       conversionFirstTouch: clicks > 0 ? firstTouchOrders / clicks : null,
       conversionLastTouch: clicks > 0 ? lastTouchOrders / clicks : null,
       spend,
       costPerPurchase: firstTouchOrders > 0 ? spend / firstTouchOrders : null,
+      revenueFirstTouch,
+      roas: spend > 0 ? revenueFirstTouch / spend : null,
     };
   }));
   res.json({ ok: true, data: data.sort((a, b) => b.spend - a.spend) });

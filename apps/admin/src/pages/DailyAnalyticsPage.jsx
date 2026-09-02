@@ -2,7 +2,7 @@
 // Одна картка = один день, той самий порядок міток, що в оригінальній Google Sheets.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Input, Select, ErrorBanner } from '../components/common/Common';
+import { PageHeader, Card, Input, Select, ErrorBanner, TrendChart, money } from '../components/common/Common';
 
 function periodPreset(preset) {
   const to = new Date();
@@ -83,6 +83,13 @@ export default function DailyAnalyticsPage() {
       </div>
 
       {tab === 'summary' && (
+        <div>
+          {(summary || []).length > 1 && (
+            <Card className="mb-4 p-4">
+              <h3 className="mb-3 text-sm font-semibold">Прибуток по днях <span className="font-normal text-slate-500">(тренд за обраний період)</span></h3>
+              <TrendChart data={summary} valueKey="expectedProfit" formatValue={(v) => money(v)} />
+            </Card>
+          )}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {(summary || []).length === 0 && summary !== null && <Card className="p-5 text-sm text-slate-500">Даних за період немає.</Card>}
           {(summary || []).slice().reverse().map((d) => (
@@ -121,12 +128,20 @@ export default function DailyAnalyticsPage() {
             </Card>
           ))}
         </div>
+        </div>
       )}
 
       {tab === 'product' && (
         !productId ? (
           <Card className="p-5 text-sm text-slate-500">Оберіть товар вище.</Card>
         ) : (
+          <div>
+          {(productDaily || []).length > 1 && (
+            <Card className="mb-4 p-4">
+              <h3 className="mb-3 text-sm font-semibold">Прибуток по днях <span className="font-normal text-slate-500">(тренд за обраний період)</span></h3>
+              <TrendChart data={productDaily} valueKey="profit" formatValue={(v) => money(v)} />
+            </Card>
+          )}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {(productDaily || []).length === 0 && productDaily !== null && <Card className="p-5 text-sm text-slate-500">Даних за період немає.</Card>}
             {(productDaily || []).slice().reverse().map((d) => (
@@ -148,6 +163,7 @@ export default function DailyAnalyticsPage() {
                 <Row label="Прибуток" value={usd(d.profit)} highlight />
               </Card>
             ))}
+          </div>
           </div>
         )
       )}

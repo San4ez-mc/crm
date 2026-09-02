@@ -55,7 +55,7 @@ export default function AdsPage() {
         <Card>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-              <tr><th className="px-4 py-3"></th><th className="px-4 py-3">Оголошення</th><th className="px-4 py-3">Кампанія</th><th className="px-4 py-3">Товар</th><th className="px-4 py-3">Всього витрачено</th><th className="px-4 py-3">Синхр.</th></tr>
+              <tr><th className="px-4 py-3"></th><th className="px-4 py-3">Оголошення</th><th className="px-4 py-3">Кампанія</th><th className="px-4 py-3">Товар</th><th className="px-4 py-3">Всього витрачено</th><th className="px-4 py-3">CTR</th><th className="px-4 py-3">CPC</th><th className="px-4 py-3">Синхр.</th></tr>
             </thead>
             <tbody>
               {items.map((ad) => (
@@ -74,6 +74,8 @@ export default function AdsPage() {
                     </Select>
                   </td>
                   <td className="px-4 py-3">{money(ad.totalSpend || 0)}</td>
+                  <td className="px-4 py-3 text-slate-400">{ad.ctr !== null && ad.ctr !== undefined ? `${Number(ad.ctr).toFixed(1)}%` : '—'}</td>
+                  <td className="px-4 py-3 text-slate-400">{ad.cpc !== null && ad.cpc !== undefined ? money(ad.cpc) : '—'}</td>
                   <td className="px-4 py-3">{ad.lastSyncedAt ? <Badge color="green">{new Date(ad.lastSyncedAt).toLocaleDateString('uk-UA')}</Badge> : <Badge color="amber">ще ні</Badge>}</td>
                 </tr>
               ))}

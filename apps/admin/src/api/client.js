@@ -105,6 +105,7 @@ export const api = {
 
   listFunnelSlugs: () => get('/funnel-events/funnels'),
   getFunnelSummary: (params = {}) => get(`/funnel-events/summary?${new URLSearchParams(params)}`),
+  getFunnelStuck: (params = {}) => get(`/funnel-events/stuck?${new URLSearchParams(params)}`),
 
   listProductExpenses: (params = {}) => get(`/product-expenses?${new URLSearchParams(params)}`),
   updateProductExpense: (productId, data) => put(`/product-expenses/${productId}`, data),

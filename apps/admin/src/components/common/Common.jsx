@@ -101,6 +101,64 @@ export function ErrorBanner({ message }) {
   return <div className="mb-4 rounded-lg border border-red-900/60 bg-red-900/20 px-3 py-2 text-sm text-red-300">{message}</div>;
 }
 
+// KPI-картка з дельтою до попереднього періоду (2026-09-02, редизайн аналітики).
+// deltaGood='up' — зростання зелене (виручка/маржа/прибуток), 'down' — зростання червоне
+// (напр. рекламний бюджет як витрата: більше не завжди краще, тому '=' не фарбуємо взагалі).
+export function KpiCard({ label, value, delta, deltaGood = 'up' }) {
+  const hasDelta = delta !== null && delta !== undefined && Number.isFinite(delta);
+  const colorClass = !hasDelta ? '' : deltaGood === 'neutral' ? 'text-slate-400' : (deltaGood === 'up' ? delta >= 0 : delta <= 0) ? 'text-emerald-400' : 'text-red-400';
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="mt-1 text-xl font-semibold text-slate-100">{value}</div>
+      {hasDelta && (
+        <div className={`mt-1 text-xs ${colorClass}`}>
+          {delta >= 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(0)}% від попереднього періоду
+        </div>
+      )}
+    </div>
+  );
+}
+
+function fmtChartDate(v) {
+  return new Date(v).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+}
+
+// Легкий бар-чарт тренду по днях, без сторонніх бібліотек (той самий "чистими дівами" підхід,
+// що й решта чартів у застосунку). Якщо в серії є і плюс, і мінус (напр. прибуток по днях) —
+// бари ростуть від центральної нульової лінії вгору/вниз; якщо серія завжди ≥0 (напр. витрата) —
+// звичайні стовпчики від низу.
+export function TrendChart({ data, valueKey, labelKey = 'date', height = 112, formatValue = (v) => v, negativeColor = 'bg-red-500/70', positiveColor = 'bg-brand' }) {
+  if (!data || !data.length) return null;
+  const values = data.map((d) => Number(d[valueKey]) || 0);
+  const hasNegative = values.some((v) => v < 0);
+  const maxAbs = Math.max(1, ...values.map((v) => Math.abs(v)));
+  return (
+    <div>
+      <div className="relative flex items-stretch gap-0.5" style={{ height }}>
+        {hasNegative && <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-slate-700" />}
+        {data.map((d, i) => {
+          const v = values[i];
+          const positive = v >= 0;
+          const pct = hasNegative ? (Math.abs(v) / maxAbs) * 50 : (Math.abs(v) / maxAbs) * 100;
+          return (
+            <div key={d[labelKey] ?? i} className="relative flex-1" title={`${fmtChartDate(d[labelKey])}: ${formatValue(v)}`}>
+              <div
+                className={`absolute inset-x-0 rounded-sm ${positive ? positiveColor : negativeColor}`}
+                style={hasNegative ? { height: `${pct}%`, ...(positive ? { bottom: '50%' } : { top: '50%' }) } : { height: `${pct}%`, bottom: 0 }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-slate-600">
+        <span>{fmtChartDate(data[0][labelKey])}</span>
+        <span>{fmtChartDate(data[data.length - 1][labelKey])}</span>
+      </div>
+    </div>
+  );
+}
+
 export function money(value) {
   const n = Number(value || 0);
   return `${n.toLocaleString('uk-UA', { maximumFractionDigits: 2 })} ₴`;

@@ -49,6 +49,39 @@ router.get('/funnel-events/summary', asyncHandler(async (req, res) => {
   res.json({ ok: true, data: stages });
 }));
 
+// "Застрягли" — сесії, які дійшли до якогось етапу, але вже давно (thresholdHours, дефолт 48г)
+// не просунулись далі і не дійшли до фінального етапу воронки. Рахуємо в JS (не groupBy),
+// бо треба саме ОСТАННІЙ (максимальний stageOrder) етап на сесію — Prisma groupBy так не вміє.
+router.get('/funnel-events/stuck', asyncHandler(async (req, res) => {
+  const { funnelSlug, thresholdHours } = req.query;
+  const threshold = Number(thresholdHours) || 48;
+  const cutoff = new Date(Date.now() - threshold * 3600 * 1000);
+  const rows = await db.funnelEvent.findMany({
+    where: { tenantId: req.tenant.id, ...(funnelSlug ? { funnelSlug: String(funnelSlug) } : {}) },
+    select: { sessionId: true, stageName: true, stageOrder: true, occurredAt: true },
+  });
+  if (!rows.length) return void res.json({ ok: true, data: { stuckByStage: [], totalStuck: 0, thresholdHours: threshold } });
+
+  const finalStageOrder = Math.max(...rows.map((r) => r.stageOrder));
+  const lastEventBySession = new Map();
+  for (const r of rows) {
+    const cur = lastEventBySession.get(r.sessionId);
+    if (!cur || r.stageOrder > cur.stageOrder) lastEventBySession.set(r.sessionId, r);
+  }
+
+  const stuckByStage = new Map();
+  let totalStuck = 0;
+  for (const s of lastEventBySession.values()) {
+    if (s.stageOrder < finalStageOrder && s.occurredAt < cutoff) {
+      totalStuck += 1;
+      const row = stuckByStage.get(s.stageName) || { stageName: s.stageName, stageOrder: s.stageOrder, count: 0 };
+      row.count += 1;
+      stuckByStage.set(s.stageName, row);
+    }
+  }
+  res.json({ ok: true, data: { stuckByStage: [...stuckByStage.values()].sort((a, b) => a.stageOrder - b.stageOrder), totalStuck, thresholdHours: threshold } });
+}));
+
 // Список воронок (funnelSlug), для яких взагалі є події — щоб наповнити фільтр на сторінці.
 router.get('/funnel-events/funnels', asyncHandler(async (req, res) => {
   const rows = await db.funnelEvent.findMany({ where: { tenantId: req.tenant.id }, select: { funnelSlug: true }, distinct: ['funnelSlug'] });

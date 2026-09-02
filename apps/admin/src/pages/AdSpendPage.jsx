@@ -2,7 +2,18 @@
 // (стала, не залежить від дати) редагується на сторінці «Оголошення», не тут.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, EmptyState, ErrorBanner, money } from '../components/common/Common';
+import { PageHeader, Card, EmptyState, ErrorBanner, TrendChart, money } from '../components/common/Common';
+
+// Групуємо журнал (він і так дата×оголошення, тобто кілька рядків на день) у суму витрат
+// по днях для міні-графіка зверху — таблицю це не чіпає, вона лишається деталізацією.
+function dailyTotals(items) {
+  const byDate = new Map();
+  for (const row of items) {
+    const key = new Date(row.date).toISOString().slice(0, 10);
+    byDate.set(key, (byDate.get(key) || 0) + Number(row.amount));
+  }
+  return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, amount]) => ({ date, amount }));
+}
 
 export default function AdSpendPage() {
   const [items, setItems] = useState(null);
@@ -25,6 +36,13 @@ export default function AdSpendPage() {
       {items === null ? null : items.length === 0 ? (
         <EmptyState title="Витрат ще немає" hint="Дані підтягнуться автоматично, щойно запрацює синхронізація реклами." />
       ) : (
+        <>
+        {dailyTotals(items).length > 1 && (
+          <Card className="mb-4 p-4">
+            <h3 className="mb-3 text-sm font-semibold">Витрата по днях</h3>
+            <TrendChart data={dailyTotals(items)} valueKey="amount" formatValue={(v) => money(v)} />
+          </Card>
+        )}
         <Card>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
@@ -42,6 +60,7 @@ export default function AdSpendPage() {
             </tbody>
           </table>
         </Card>
+        </>
       )}
     </div>
   );
