@@ -1,5 +1,8 @@
 // "Рука на пульсі" — щоденне зведення (весь tenant) + по товару, за зразком таблиць користувача.
-// Одна картка = один день, той самий порядок міток, що в оригінальній Google Sheets.
+// 2026-09-03: картки-по-дню замінено на таблицю (показник — рядок, день — колонка) за проханням
+// власника — так природніше порівнювати кілька днів одразу, а не гортати картки. Перша колонка
+// (назви показників) приклеєна (`sticky left-0`) — лишається видимою при горизонтальному скролі
+// вправо по днях.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { PageHeader, Card, Input, Select, ErrorBanner, TrendChart, money } from '../components/common/Common';
@@ -19,15 +22,82 @@ function fmt(v, digits = 2) {
 }
 function pct(v) { return v === null || v === undefined ? '—' : `${fmt(v, 1)}%`; }
 function usd(v) { return v === null || v === undefined || Number.isNaN(v) ? '—' : `$${fmt(v)}`; }
+function fmtDay(v) { return new Date(v).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'short' }); }
 
-function Row({ label, value, highlight }) {
+// rows: [{ label, get:(d)=>string, highlight?, sep? }] — sep=true малює товсту риску НАД цим рядком
+// (межа секції, як раніше було <div className="my-2 border-t"/> між групами показників).
+function MetricsTable({ days, rows }) {
   return (
-    <div className={`flex justify-between py-1 text-sm ${highlight ? 'font-semibold text-brand-light' : ''}`}>
-      <span className="text-slate-400">{label}</span>
-      <span>{value}</span>
+    <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+      <table className="text-sm">
+        <thead>
+          <tr>
+            <th className="sticky left-0 z-10 border-b border-r border-slate-800 bg-slate-900 px-3 py-2 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Показник</th>
+            {days.map((d) => (
+              <th key={d.date} className="border-b border-slate-800 px-3 py-2 text-right text-xs font-medium text-slate-400 whitespace-nowrap">{fmtDay(d.date)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className={row.sep ? 'border-t-4 border-t-slate-950' : ''}>
+              <td className={`sticky left-0 z-10 border-r border-slate-800 bg-slate-900 px-3 py-1.5 text-xs whitespace-nowrap ${row.highlight ? 'font-semibold text-brand-light' : 'text-slate-400'}`}>{row.label}</td>
+              {days.map((d) => (
+                <td key={d.date} className={`px-3 py-1.5 text-right text-xs whitespace-nowrap ${row.highlight ? 'font-semibold text-brand-light' : 'text-slate-200'}`}>{row.get(d)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
+
+const SUMMARY_ROWS = [
+  { label: 'Маржа ср. без відмов, $', get: (d) => fmt(d.marginAvgNonRefused) },
+  { label: 'Маржа ср. з відмовами, $', get: (d) => fmt(d.marginAvgWithRefused) },
+  { label: 'Ціна замовлення, $', get: (d) => fmt(d.orderPrice) },
+  { label: 'Прибуток з клієнта без ЗП, $', get: (d) => fmt(d.profitPerClientNoPayroll) },
+  { label: 'Прибуток з клієнта із ЗП, $', get: (d) => fmt(d.profitPerClientWithPayroll) },
+  { label: 'Ціна повідомлення, $', get: (d) => fmt(d.messagePrice) },
+  { label: 'Конверсія у продаж, %', get: (d) => pct(d.conversionToSale !== null ? d.conversionToSale * 100 : null) },
+  { label: 'Маржа всього, $', get: (d) => usd(d.marginTotal), sep: true },
+  { label: 'Рекламний бюджет, $', get: (d) => usd(d.adSpend) },
+  { label: 'Нові контакти в повідомленнях', get: (d) => d.newMessages },
+  { label: 'Продано товарів, к-сть', get: (d) => d.qtySold },
+  { label: 'Повторно продані товари', get: (d) => d.qtyRepeat },
+  { label: 'Кліки', get: (d) => d.clicks },
+  { label: 'Покази', get: (d) => d.impressions },
+  { label: 'Окупність', get: (d) => fmt(d.roi), highlight: true, sep: true },
+  { label: 'Очікуваний прибуток, $', get: (d) => usd(d.expectedProfit), highlight: true },
+  { label: 'Курс доллара, грн', get: (d) => fmt(d.usdExchangeRate, 2), sep: true },
+  { label: 'Відсоток відмов, %', get: (d) => pct(d.refusalRate) },
+  { label: 'Відсоток повернень, %', get: (d) => pct(d.returnRate) },
+  { label: 'Постійні витрати, $', get: (d) => fmt(d.dailyFixedCosts) },
+  { label: 'Витрати на оплату праці, $', get: (d) => fmt(d.dailyPayrollCosts) },
+  { label: 'Прибуток без ЗП, $', get: (d) => usd(d.profitNoPayroll) },
+  { label: 'Ціна клієнта нового, $', get: (d) => fmt(d.newCustomerCost) },
+  { label: 'CPC (ціна за клік)', get: (d) => fmt(d.cpc) },
+  { label: 'CTR (кліків зі 100 показів)', get: (d) => pct(d.ctr) },
+  { label: 'CPM (ціна 1000 показів)', get: (d) => fmt(d.cpm) },
+  { label: 'Повторних продажів, %', get: (d) => pct(d.repeatSalesRate) },
+];
+
+const PRODUCT_ROWS = [
+  { label: 'Реклама, дол', get: (d) => usd(d.adSpend) },
+  { label: 'Повідомлень з реклам', get: (d) => d.messages },
+  { label: 'Замовлень (шт)', get: (d) => d.ordersCount },
+  { label: 'Маржа із замовлення', get: (d) => fmt(d.marginPerOrder) },
+  { label: 'Маржа всього', get: (d) => usd(d.marginTotal) },
+  { label: 'Маржа всього із відмовами', get: (d) => usd(d.marginTotalWithRefused) },
+  { label: 'Ціна за лід', get: (d) => fmt(d.messagePrice) },
+  { label: 'Ціна за замовлення', get: (d) => fmt(d.orderPrice) },
+  { label: 'Конверсія із повідом. в замов', get: (d) => fmt(d.conversionToOrder) },
+  { label: 'Відмови', get: (d) => pct(d.refusalRate) },
+  { label: 'Курс', get: (d) => fmt(d.usdExchangeRate, 0) },
+  { label: 'Окупність', get: (d) => fmt(d.roi), highlight: true, sep: true },
+  { label: 'Прибуток', get: (d) => usd(d.profit), highlight: true },
+];
 
 export default function DailyAnalyticsPage() {
   const [tab, setTab] = useState('summary'); // summary | product
@@ -48,6 +118,9 @@ export default function DailyAnalyticsPage() {
       api.analyticsProductDaily({ ...range, productId }).then((r) => setProductDaily(r.data)).catch((e) => setError(e.message));
     }
   }, [tab, range.from, range.to, productId]);
+
+  const summaryDays = (summary || []).slice().reverse(); // новий день — лівіша колонка
+  const productDays = (productDaily || []).slice().reverse();
 
   return (
     <div>
@@ -84,50 +157,17 @@ export default function DailyAnalyticsPage() {
 
       {tab === 'summary' && (
         <div>
-          {(summary || []).length > 1 && (
+          {summaryDays.length > 1 && (
             <Card className="mb-4 p-4">
               <h3 className="mb-3 text-sm font-semibold">Прибуток по днях <span className="font-normal text-slate-500">(тренд за обраний період)</span></h3>
               <TrendChart data={summary} valueKey="expectedProfit" formatValue={(v) => money(v)} />
             </Card>
           )}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {(summary || []).length === 0 && summary !== null && <Card className="p-5 text-sm text-slate-500">Даних за період немає.</Card>}
-          {(summary || []).slice().reverse().map((d) => (
-            <Card key={d.date} className="p-4">
-              <h3 className="mb-2 border-b border-slate-800 pb-2 text-sm font-semibold">{new Date(d.date).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'short' })}</h3>
-              <Row label="Маржа ср. без відмов, $" value={fmt(d.marginAvgNonRefused)} />
-              <Row label="Маржа ср. з відмовами, $" value={fmt(d.marginAvgWithRefused)} />
-              <Row label="Ціна замовлення, $" value={fmt(d.orderPrice)} />
-              <Row label="Прибуток з клієнта без ЗП, $" value={fmt(d.profitPerClientNoPayroll)} />
-              <Row label="Прибуток з клієнта із ЗП, $" value={fmt(d.profitPerClientWithPayroll)} />
-              <Row label="Ціна повідомлення, $" value={fmt(d.messagePrice)} />
-              <Row label="Конверсія у продаж, %" value={pct(d.conversionToSale !== null ? d.conversionToSale * 100 : null)} />
-              <div className="my-2 border-t border-slate-800" />
-              <Row label="Маржа всього, $" value={usd(d.marginTotal)} />
-              <Row label="Рекламний бюджет, $" value={usd(d.adSpend)} />
-              <Row label="Нові контакти в повідомленнях" value={d.newMessages} />
-              <Row label="Продано товарів, к-сть" value={d.qtySold} />
-              <Row label="Повторно продані товари" value={d.qtyRepeat} />
-              <Row label="Кліки" value={d.clicks} />
-              <Row label="Покази" value={d.impressions} />
-              <div className="my-2 border-t border-slate-800" />
-              <Row label="Окупність" value={fmt(d.roi)} highlight />
-              <Row label="Очікуваний прибуток, $" value={usd(d.expectedProfit)} highlight />
-              <div className="my-2 border-t border-slate-800" />
-              <Row label="Курс доллара, грн" value={fmt(d.usdExchangeRate, 2)} />
-              <Row label="Відсоток відмов, %" value={pct(d.refusalRate)} />
-              <Row label="Відсоток повернень, %" value={pct(d.returnRate)} />
-              <Row label="Постійні витрати, $" value={fmt(d.dailyFixedCosts)} />
-              <Row label="Витрати на оплату праці, $" value={fmt(d.dailyPayrollCosts)} />
-              <Row label="Прибуток без ЗП, $" value={usd(d.profitNoPayroll)} />
-              <Row label="Ціна клієнта нового, $" value={fmt(d.newCustomerCost)} />
-              <Row label="CPC (ціна за клік)" value={fmt(d.cpc)} />
-              <Row label="CTR (кліків зі 100 показів)" value={pct(d.ctr)} />
-              <Row label="CPM (ціна 1000 показів)" value={fmt(d.cpm)} />
-              <Row label="Повторних продажів, %" value={pct(d.repeatSalesRate)} />
-            </Card>
-          ))}
-        </div>
+          {summaryDays.length === 0 ? (
+            <Card className="p-5 text-sm text-slate-500">Даних за період немає.</Card>
+          ) : (
+            <MetricsTable days={summaryDays} rows={SUMMARY_ROWS} />
+          )}
         </div>
       )}
 
@@ -136,34 +176,17 @@ export default function DailyAnalyticsPage() {
           <Card className="p-5 text-sm text-slate-500">Оберіть товар вище.</Card>
         ) : (
           <div>
-          {(productDaily || []).length > 1 && (
-            <Card className="mb-4 p-4">
-              <h3 className="mb-3 text-sm font-semibold">Прибуток по днях <span className="font-normal text-slate-500">(тренд за обраний період)</span></h3>
-              <TrendChart data={productDaily} valueKey="profit" formatValue={(v) => money(v)} />
-            </Card>
-          )}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {(productDaily || []).length === 0 && productDaily !== null && <Card className="p-5 text-sm text-slate-500">Даних за період немає.</Card>}
-            {(productDaily || []).slice().reverse().map((d) => (
-              <Card key={d.date} className="p-4">
-                <h3 className="mb-2 border-b border-slate-800 pb-2 text-sm font-semibold">{new Date(d.date).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'short' })}</h3>
-                <Row label="Реклама, дол" value={usd(d.adSpend)} />
-                <Row label="Повідомлень з реклам" value={d.messages} />
-                <Row label="Замовлень (шт)" value={d.ordersCount} />
-                <Row label="Маржа із замовлення" value={fmt(d.marginPerOrder)} />
-                <Row label="Маржа всього" value={usd(d.marginTotal)} />
-                <Row label="Маржа всього із відмовами" value={usd(d.marginTotalWithRefused)} />
-                <Row label="Ціна за лід" value={fmt(d.messagePrice)} />
-                <Row label="Ціна за замовлення" value={fmt(d.orderPrice)} />
-                <Row label="Конверсія із повідом. в замов" value={fmt(d.conversionToOrder)} />
-                <Row label="Відмови" value={pct(d.refusalRate)} />
-                <Row label="Курс" value={fmt(d.usdExchangeRate, 0)} />
-                <div className="my-2 border-t border-slate-800" />
-                <Row label="Окупність" value={fmt(d.roi)} highlight />
-                <Row label="Прибуток" value={usd(d.profit)} highlight />
+            {productDays.length > 1 && (
+              <Card className="mb-4 p-4">
+                <h3 className="mb-3 text-sm font-semibold">Прибуток по днях <span className="font-normal text-slate-500">(тренд за обраний період)</span></h3>
+                <TrendChart data={productDaily} valueKey="profit" formatValue={(v) => money(v)} />
               </Card>
-            ))}
-          </div>
+            )}
+            {productDays.length === 0 ? (
+              <Card className="p-5 text-sm text-slate-500">Даних за період немає.</Card>
+            ) : (
+              <MetricsTable days={productDays} rows={PRODUCT_ROWS} />
+            )}
           </div>
         )
       )}
