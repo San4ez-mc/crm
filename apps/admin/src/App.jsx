@@ -17,6 +17,7 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import FunnelAnalyticsPage from './pages/FunnelAnalyticsPage';
 import DailyAnalyticsPage from './pages/DailyAnalyticsPage';
 import AdSpendPage from './pages/AdSpendPage';
+import AdSpendDetailPage from './pages/AdSpendDetailPage';
 import AdsPage from './pages/AdsPage';
 import PaymentsPage from './pages/PaymentsPage';
 import ProductExpensesPage from './pages/ProductExpensesPage';
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="/daily-analytics" element={<DailyAnalyticsPage />} />
             <Route path="/ads" element={<AdsPage />} />
             <Route path="/ad-spend" element={<AdSpendPage />} />
+            <Route path="/ad-spend/:id" element={<AdSpendDetailPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/product-expenses" element={<ProductExpensesPage />} />
             <Route path="/settings/general" element={<SettingsGeneralPage />} />

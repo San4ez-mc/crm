@@ -6,8 +6,97 @@ const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
+const { loadExpenseMap, marginPerOrderItem } = require('../lib/margin');
 
 const router = express.Router();
+
+// ── Спільний розрахунок для «Рекламні витрати»/детальної сторінки оголошення ─────
+// (2026-09-03, за проханням власника): вся маржа ФАКТИЧНОГО кошика замовлення (навіть
+// якщо там інші товари/допродажі) зараховується оголошенню, яке привело клієнта
+// (firstTouchAdId) — так само як в /analytics/ads-conversion, просто тут ще й з
+// виручкою/маржею, а не тільки лічильниками. "Забрано" = !isRefused; виручку/маржу
+// рахуємо лише по неповернутих (без Return) і не-відмовлених замовленнях — так само,
+// як решта аналітики виключає Return (§4.11), інакше цифри будуть завищені.
+async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct) {
+  const [spendAgg, contacts, orders] = await Promise.all([
+    db.adSpendDaily.aggregate({ where: { adId: ad.id, ...(dateWhere ? { date: dateWhere } : {}) }, _sum: { amount: true } }),
+    db.adClick.count({ where: { adId: ad.id, ...(dateWhere ? { timestamp: dateWhere } : {}) } }),
+    db.order.findMany({
+      where: { tenantId, firstTouchAdId: ad.id, ...(dateWhere ? { createdAt: dateWhere } : {}) },
+      select: {
+        id: true, createdAt: true, isRefused: true,
+        returns: { select: { id: true } },
+        items: { select: { productId: true, name: true, price: true, quantity: true, product: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+  ]);
+
+  const spend = Number(spendAgg._sum.amount || 0);
+  const ordersCreated = orders.length;
+  const pickedUp = orders.filter((o) => !o.isRefused);
+  const ordersPickedUp = pickedUp.length;
+  const refusedCount = ordersCreated - ordersPickedUp;
+  const revenueOrders = pickedUp.filter((o) => o.returns.length === 0); // "фактична" виручка — без відмов і без повернень
+
+  let revenue = 0, margin = 0;
+  const productsMap = new Map(); // productId||name -> {name, qty}
+  const orderRows = [];
+  for (const o of orders) {
+    let orderRevenue = 0, orderMargin = 0;
+    for (const it of o.items) {
+      orderRevenue += Number(it.price) * it.quantity;
+      orderMargin += marginPerOrderItem(it, expenseByProduct);
+    }
+    if (revenueOrders.includes(o)) {
+      revenue += orderRevenue;
+      margin += orderMargin;
+      for (const it of o.items) {
+        const key = it.productId || it.name;
+        const row = productsMap.get(key) || { name: it.product?.name || it.name, qty: 0 };
+        row.qty += it.quantity;
+        productsMap.set(key, row);
+      }
+    }
+    orderRows.push({
+      id: o.id,
+      createdAt: o.createdAt,
+      itemsLabel: o.items.map((it) => it.product?.name || it.name).join(', ') || '—',
+      status: o.isRefused ? 'refused' : (o.returns.length > 0 ? 'returned' : 'picked_up'),
+      revenue: orderRevenue,
+      margin: orderMargin,
+    });
+  }
+
+  const profit = margin - spend;
+  return {
+    adId: ad.id,
+    spend,
+    contacts,
+    ordersCreated,
+    ordersPickedUp,
+    refusedCount,
+    revenue,
+    margin,
+    profit,
+    roi: spend > 0 ? margin / spend : null,
+    romi: spend > 0 ? (profit / spend) * 100 : null,
+    costPerContact: contacts > 0 ? spend / contacts : null,
+    cpa: ordersCreated > 0 ? spend / ordersCreated : null,
+    cpaPickedUp: ordersPickedUp > 0 ? spend / ordersPickedUp : null,
+    conversionToOrder: contacts > 0 ? (ordersCreated / contacts) * 100 : null,
+    pickupRate: ordersCreated > 0 ? (ordersPickedUp / ordersCreated) * 100 : null,
+    avgCheck: ordersPickedUp > 0 ? revenue / ordersPickedUp : null,
+    avgMargin: ordersPickedUp > 0 ? margin / ordersPickedUp : null,
+    products: [...productsMap.values()].sort((a, b) => b.qty - a.qty),
+    orders: orderRows,
+  };
+}
+
+function periodDateWhere(from, to) {
+  if (!from && !to) return null;
+  return { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) };
+}
 
 // §9.13 — картка оголошення (не залежить від дати: назва/фото/привʼязка товару стабільні,
 // на відміну від AdSpendDaily, де та сама прив'язка інакше довелось би повторювати на
@@ -80,6 +169,82 @@ router.get('/ad-spend', asyncHandler(async (req, res) => {
     db.adSpendDaily.count({ where }),
   ]);
   res.json({ ok: true, data: items, meta: { total, take: Number(take), skip: Number(skip) } });
+}));
+
+// «Рекламні витрати» (2026-09-03, редизайн за референсом власника) — список оголошень
+// з витратою/замовленнями/окупністю/прибутком за обраний період, з пошуком.
+router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
+  const { from, to, search, take = '10', skip = '0' } = req.query;
+  const dateWhere = periodDateWhere(from, to);
+  const where = {
+    tenantId: req.tenant.id,
+    ...(search ? { OR: [{ name: { contains: String(search), mode: 'insensitive' } }, { externalId: { contains: String(search) } }] } : {}),
+  };
+  const [ads, total] = await Promise.all([
+    db.ad.findMany({ where, include: { product: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' } }),
+    db.ad.count({ where }),
+  ]);
+  const expenseByProduct = await loadExpenseMap(req.tenant.id);
+  const all = await Promise.all(ads.map((ad) => computeAdStats(req.tenant.id, ad, dateWhere, expenseByProduct)));
+  const statsByAd = new Map(all.map((s) => [s.adId, s]));
+
+  const totals = all.reduce((acc, s) => {
+    acc.spend += s.spend; acc.margin += s.margin; acc.orders += s.ordersCreated;
+    if (s.spend > 0) acc.activeAds += 1;
+    return acc;
+  }, { spend: 0, margin: 0, orders: 0, activeAds: 0 });
+
+  const rows = ads.map((ad) => ({
+    id: ad.id, name: ad.name, externalId: ad.externalId, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName,
+    productId: ad.productId, productName: ad.product?.name || null,
+    ...statsByAd.get(ad.id),
+  }));
+  const paged = rows.slice(Number(skip), Number(skip) + Number(take));
+
+  res.json({
+    ok: true,
+    data: paged,
+    meta: { total, take: Number(take), skip: Number(skip) },
+    totals: { activeAds: totals.activeAds, spend: totals.spend, orders: totals.orders, roi: totals.spend > 0 ? totals.margin / totals.spend : null },
+  });
+}));
+
+// Детальна аналітика одного оголошення (drill-down з «Рекламні витрати»).
+router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
+  const ad = await db.ad.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id }, include: { product: { select: { id: true, name: true } } } });
+  if (!ad) throw new NotFoundError('Ad', req.params.id);
+  const { from, to } = req.query;
+  const dateWhere = periodDateWhere(from, to);
+  const expenseByProduct = await loadExpenseMap(req.tenant.id);
+  const stats = await computeAdStats(req.tenant.id, ad, dateWhere, expenseByProduct);
+
+  // Тренд по днях — та сама межа періоду, спред по днях (спенд з AdSpendDaily, маржа з
+  // замовлень, створених того дня, по тій самій "фактичній" логіці — не відмова, без Return).
+  const [spendRows, orders] = await Promise.all([
+    db.adSpendDaily.findMany({ where: { adId: ad.id, ...(dateWhere ? { date: dateWhere } : {}) }, select: { date: true, amount: true } }),
+    db.order.findMany({
+      where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...(dateWhere ? { createdAt: dateWhere } : {}), isRefused: false, returns: { none: {} } },
+      select: { createdAt: true, items: { select: { productId: true, price: true, quantity: true } } },
+    }),
+  ]);
+  const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+  const days = new Map();
+  const bucket = (k) => { if (!days.has(k)) days.set(k, { date: k, spend: 0, margin: 0 }); return days.get(k); };
+  for (const row of spendRows) bucket(dayKey(row.date)).spend += Number(row.amount);
+  for (const o of orders) {
+    const b = bucket(dayKey(o.createdAt));
+    for (const it of o.items) b.margin += marginPerOrderItem(it, expenseByProduct);
+  }
+  const trend = [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ ...d, profit: d.margin - d.spend }));
+
+  res.json({
+    ok: true,
+    data: {
+      ad: { id: ad.id, name: ad.name, externalId: ad.externalId, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName, productId: ad.productId, productName: ad.product?.name || null },
+      ...stats,
+      trend,
+    },
+  });
 }));
 
 // ДОПОВНЕННЯ 2026-09-01 — кнопка "Отримати дані зараз" на сторінці реклами: тригерить

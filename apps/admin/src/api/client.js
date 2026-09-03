@@ -102,6 +102,8 @@ export const api = {
   updateAd: (id, data) => patch(`/ads/${id}`, data),
   listAdSpend: (params = {}) => get(`/ad-spend?${new URLSearchParams(params)}`),
   syncAdSpendNow: () => post('/ad-spend/sync-now'),
+  getAdSpendSummary: (params = {}) => get(`/ads/spend-summary?${new URLSearchParams(params)}`),
+  getAdDetail: (id, params = {}) => get(`/ads/${id}/detail?${new URLSearchParams(params)}`),
 
   listFunnelSlugs: () => get('/funnel-events/funnels'),
   getFunnelSummary: (params = {}) => get(`/funnel-events/summary?${new URLSearchParams(params)}`),

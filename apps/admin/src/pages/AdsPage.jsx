@@ -1,9 +1,10 @@
-// "Оголошення" — прив'язка товару до оголошення живе тут (Ad не залежить від дати,
-// на відміну від AdSpendPage, де раніше та сама прив'язка повторювалась на кожному
-// денному рядку). Тут же — стан синхронізації і фото креативу (якщо крон його підтяг).
+// "Оголошення" — чисто технічна сторінка (2026-09-03, за проханням власника): лише
+// фото/назва/кампанія + прив'язка товару. Всі показники (витрата, CTR, CPC, окупність,
+// прибуток) переїхали на «Рекламні витрати» (AdSpendPage) — там і per-оголошення список,
+// і детальна аналітика по кліку. Ad не залежить від дати, тому прив'язка робиться тут один раз.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, Select, Card, EmptyState, ErrorBanner, Badge, money } from '../components/common/Common';
+import { PageHeader, Button, Select, Card, EmptyState, ErrorBanner } from '../components/common/Common';
 import ImageLightbox from '../components/common/ImageLightbox';
 
 export default function AdsPage() {
@@ -48,14 +49,14 @@ export default function AdsPage() {
           {syncResult.status === 'error' && `Помилка Meta Ads API: ${syncResult.error}`}
         </div>
       )}
-      <p className="mb-4 text-xs text-slate-500">Прив'язка товару робиться один раз тут (оголошення не змінюється щодня, на відміну від суми витрат — та дивись на сторінці «Рекламні витрати»). Автоматичне підтягування — крон-Flows о 00:00.</p>
+      <p className="mb-4 text-xs text-slate-500">Прив'язка товару робиться один раз тут (оголошення не змінюється щодня). Показники витрат/окупності/прибутку — на сторінці «Рекламні витрати».</p>
       {items === null ? null : items.length === 0 ? (
         <EmptyState title="Оголошень ще немає" hint="Дані підтягнуться автоматично, щойно запрацює синхронізація реклами." />
       ) : (
         <Card>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-              <tr><th className="px-4 py-3"></th><th className="px-4 py-3">Оголошення</th><th className="px-4 py-3">Кампанія</th><th className="px-4 py-3">Товар</th><th className="px-4 py-3">Всього витрачено</th><th className="px-4 py-3">CTR</th><th className="px-4 py-3">CPC</th><th className="px-4 py-3">Синхр.</th></tr>
+              <tr><th className="px-4 py-3"></th><th className="px-4 py-3">Оголошення</th><th className="px-4 py-3">Кампанія</th><th className="px-4 py-3">Товар</th></tr>
             </thead>
             <tbody>
               {items.map((ad) => (
@@ -73,10 +74,6 @@ export default function AdsPage() {
                       {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </Select>
                   </td>
-                  <td className="px-4 py-3">{money(ad.totalSpend || 0)}</td>
-                  <td className="px-4 py-3 text-slate-400">{ad.ctr !== null && ad.ctr !== undefined ? `${Number(ad.ctr).toFixed(1)}%` : '—'}</td>
-                  <td className="px-4 py-3 text-slate-400">{ad.cpc !== null && ad.cpc !== undefined ? money(ad.cpc) : '—'}</td>
-                  <td className="px-4 py-3">{ad.lastSyncedAt ? <Badge color="green">{new Date(ad.lastSyncedAt).toLocaleDateString('uk-UA')}</Badge> : <Badge color="amber">ще ні</Badge>}</td>
                 </tr>
               ))}
             </tbody>
