@@ -151,7 +151,7 @@ router.get('/knowledge/search', asyncHandler(async (req, res) => {
     ORDER BY rank DESC, priority DESC
     LIMIT ${Number(limit) || 3}
   `;
-  res.json({ ok: true, data: rows, _debug: { tenantId: req.tenant.id, q: String(q), scope: scope || null } });
+  res.json({ ok: true, data: rows });
 }));
 
 // ── askManager → чернетка запису (звідси росте база) ─────────────────────

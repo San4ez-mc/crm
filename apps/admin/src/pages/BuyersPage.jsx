@@ -1,20 +1,30 @@
 // §9.9/§9.10 Покупці — список + картка.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Input, Card, EmptyState, ErrorBanner, Field, Label, Button, money } from '../components/common/Common';
+import { PageHeader, Input, Card, EmptyState, ErrorBanner, Field, Label, Button, Pagination, money, formatPhone } from '../components/common/Common';
 import Modal from '../components/common/Modal';
+
+const PAGE_SIZE = 50;
 
 export default function BuyersPage() {
   const [items, setItems] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
 
   async function load() {
     setError('');
-    try { setItems((await api.listBuyers(q ? { q } : {})).data); } catch (e) { setError(e.message); }
+    try {
+      const params = { take: String(PAGE_SIZE), skip: String((page - 1) * PAGE_SIZE) };
+      if (q) params.q = q;
+      const { data, meta } = await api.listBuyers(params);
+      setItems(data); setTotal(meta.total);
+    } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [q]);
+  useEffect(() => { load(); }, [q, page]);
+  useEffect(() => { setPage(1); }, [q]);
 
   return (
     <div>
@@ -34,8 +44,10 @@ export default function BuyersPage() {
               {items.map((b) => (
                 <tr key={b.id} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30" onClick={() => setSelected(b)}>
                   <td className="px-4 py-3">{b.fullName || '—'}</td>
-                  <td className="px-4 py-3 text-slate-400">{b.phone}</td>
-                  <td className="px-4 py-3 text-slate-400">{b.igUsername ? `@${b.igUsername}` : '—'}</td>
+                  <td className="px-4 py-3 text-slate-400">{formatPhone(b.phone)}</td>
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    {b.igUsername ? <a className="text-brand-light hover:underline" href={`https://instagram.com/${b.igUsername}`} target="_blank" rel="noreferrer">@{b.igUsername}</a> : <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-4 py-3">{b.ordersCount}</td>
                   <td className="px-4 py-3">{money(b.totalSpent)}</td>
                   <td className="px-4 py-3 text-slate-400">{b.lastOrderAt ? new Date(b.lastOrderAt).toLocaleDateString('uk-UA') : '—'}</td>
@@ -45,6 +57,7 @@ export default function BuyersPage() {
           </table>
         </Card>
       )}
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
 
       {selected && <BuyerDetailModal id={selected.id} onClose={() => setSelected(null)} onSaved={load} />}
     </div>

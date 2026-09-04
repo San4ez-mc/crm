@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { PageHeader, Card, Input, Select, EmptyState, ErrorBanner, KpiCard, Badge, money } from '../components/common/Common';
+import { PageHeader, Card, Input, Select, EmptyState, ErrorBanner, KpiCard, Badge, Pagination, money } from '../components/common/Common';
 
 function periodPreset(preset) {
   const to = new Date();
@@ -44,8 +44,6 @@ export default function AdSpendPage() {
     if (filter === 'unlinked') return !ad.productId;
     return true;
   });
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
   return (
     <div>
       <PageHeader title="Рекламні оголошення" />
@@ -127,14 +125,7 @@ export default function AdSpendPage() {
               </tbody>
             </table>
           </Card>
-          <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
-            <span>Показано {filtered.length} із {total} оголошень</span>
-            <div className="flex items-center gap-2">
-              <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:opacity-30 hover:bg-slate-800">←</button>
-              <span>Сторінка {page} з {pages}</span>
-              <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)} className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:opacity-30 hover:bg-slate-800">→</button>
-            </div>
-          </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
         </>
       )}
     </div>

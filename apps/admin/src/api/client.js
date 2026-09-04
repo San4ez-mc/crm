@@ -82,6 +82,7 @@ export const api = {
 
   listPipelines: () => get('/pipelines'),
   createPipeline: (data) => post('/pipelines', data),
+  updatePipeline: (id, data) => patch(`/pipelines/${id}`, data),
   createStage: (pipelineId, data) => post(`/pipelines/${pipelineId}/stages`, data),
   updateStage: (id, data) => patch(`/stages/${id}`, data),
   deleteStage: (id) => del(`/stages/${id}`),

@@ -1,22 +1,53 @@
 // Дрібні спільні елементи, щоб не дублювати класи по сторінках.
+
+// Номери сторінок з "…" для великої кількості — завжди показує 1, останню, поточну±1.
+function pageList(current, total) {
+  const set = new Set([1, total, current - 1, current, current + 1]);
+  const nums = [...set].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+  const out = [];
+  let prev = 0;
+  for (const n of nums) {
+    if (prev && n - prev > 1) out.push('…');
+    out.push(n);
+    prev = n;
+  }
+  return out;
+}
+
+// 2026-09-05: додано номери сторінок (клікабельні, не лише "Назад/Далі") — щоб можна було
+// перейти одразу на будь-яку сторінку, а не гортати послідовно.
 export function Pagination({ page, pageSize, total, onChange }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   if (pages <= 1) return null;
   return (
-    <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-400">
       <span>Всього: {total}</span>
-      <div className="flex items-center gap-2">
-        <button type="button" disabled={page <= 1} onClick={() => onChange(page - 1)} className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:opacity-30 hover:bg-slate-800">← Назад</button>
-        <span>Сторінка {page} з {pages}</span>
-        <button type="button" disabled={page >= pages} onClick={() => onChange(page + 1)} className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:opacity-30 hover:bg-slate-800">Далі →</button>
+      <div className="flex items-center gap-1">
+        <button type="button" disabled={page <= 1} onClick={() => onChange(page - 1)} className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:opacity-30 hover:bg-slate-800">←</button>
+        {pageList(page, pages).map((n, i) => n === '…' ? (
+          <span key={`e${i}`} className="px-1.5 text-slate-600">…</span>
+        ) : (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(n)}
+            className={`min-w-[2.25rem] rounded-lg border px-2.5 py-1.5 ${n === page ? 'border-brand bg-brand/15 text-brand-light' : 'border-slate-700 hover:bg-slate-800'}`}
+          >
+            {n}
+          </button>
+        ))}
+        <button type="button" disabled={page >= pages} onClick={() => onChange(page + 1)} className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:opacity-30 hover:bg-slate-800">→</button>
       </div>
     </div>
   );
 }
 
+// flex-wrap — без цього дії (кнопки/select у "action") на вузькому екрані просто вилазили
+// за межі viewport і ставали недоступними (overflow-x-hidden на <main> ховає їх без скролу),
+// замість того щоб перенестись на новий рядок під заголовком (2026-09-05).
 export function PageHeader({ title, action }) {
   return (
-    <div className="mb-5 flex items-center justify-between">
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
       <h1 className="text-lg font-semibold text-slate-100">{title}</h1>
       {action}
     </div>
@@ -157,6 +188,27 @@ export function TrendChart({ data, valueKey, labelKey = 'date', height = 112, fo
       </div>
     </div>
   );
+}
+
+// Єдине форматування телефону (2026-09-05) — дані приходять у різних виглядах (з/без "+",
+// з/без "38", "0..." замість "380...") залежно від того, звідки взявся Buyer (воронка/ручне
+// створення/KeyCRM-міграція); показуємо всюди однаково: +380 XX XXX XX XX.
+export function formatPhone(phone) {
+  if (!phone) return '—';
+  let digits = String(phone).replace(/\D/g, '');
+  if (digits.startsWith('0')) digits = '380' + digits.slice(1);
+  else if (!digits.startsWith('380') && digits.length === 9) digits = '380' + digits;
+  if (digits.length === 12 && digits.startsWith('380')) {
+    return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 10)} ${digits.slice(10, 12)}`;
+  }
+  return String(phone).startsWith('+') ? String(phone) : `+${digits || phone}`;
+}
+
+// Мініатюра товару — єдиний розмір усюди (Товари, Комплекти), 2026-09-05.
+export function Thumb({ url }) {
+  return url
+    ? <img src={url} alt="" className="h-28 w-28 rounded-md object-cover" />
+    : <div className="flex h-28 w-28 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>;
 }
 
 export function money(value) {

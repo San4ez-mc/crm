@@ -1,11 +1,16 @@
 // «Комплекти» — окремий пункт меню, технічно ті самі Product з isSet=true (не категорія).
+// 2026-09-05: додано мініатюру (той самий розмір, що на «Товарах») і пагінацію.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, IconButton, Input, Card, EmptyState, ErrorBanner, money } from '../components/common/Common';
+import { PageHeader, Button, IconButton, Input, Card, EmptyState, ErrorBanner, Pagination, Thumb, money } from '../components/common/Common';
 import ProductFormModal from './ProductFormModal';
+
+const PAGE_SIZE = 50;
 
 export default function SetsPage() {
   const [items, setItems] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [allProducts, setAllProducts] = useState([]); // для вибору складу комплекту — БЕЗ фільтра isSet
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -16,13 +21,14 @@ export default function SetsPage() {
   async function load() {
     setError('');
     try {
-      const params = { isSet: 'true' };
+      const params = { isSet: 'true', take: String(PAGE_SIZE), skip: String((page - 1) * PAGE_SIZE) };
       if (q) params.q = q;
-      const [p, all, c, s] = await Promise.all([api.listProducts(params), api.listProducts({}), api.listCategories(), api.listSuppliers()]);
-      setItems(p.data); setAllProducts(all.data); setCategories(c.data); setSuppliers(s.data);
+      const [p, all, c, s] = await Promise.all([api.listProducts(params), api.listProducts({ take: '1000' }), api.listCategories(), api.listSuppliers()]);
+      setItems(p.data); setTotal(p.meta?.total || p.data.length); setAllProducts(all.data); setCategories(c.data); setSuppliers(s.data);
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [q]);
+  useEffect(() => { load(); }, [q, page]);
+  useEffect(() => { setPage(1); }, [q]);
 
   async function handleDelete(id) {
     if (!confirm('Видалити комплект?')) return;
@@ -45,13 +51,14 @@ export default function SetsPage() {
           <table className="w-full table-fixed text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
               <tr>
-                <th className="w-48 px-4 py-3">Назва</th><th className="w-24 px-4 py-3">Артикул</th>
+                <th className="w-32 px-4 py-3"></th><th className="w-48 px-4 py-3">Назва</th><th className="w-24 px-4 py-3">Артикул</th>
                 <th className="w-28 px-4 py-3">Ціна</th><th className="px-4 py-3">Складається з</th><th className="w-20 px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
               {items.map((p) => (
                 <tr key={p.id} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30" onClick={() => setEditing(p)}>
+                  <td className="px-4 py-3"><Thumb url={p.thumbnailUrl} /></td>
                   <td className="truncate px-4 py-3">{p.name}</td>
                   <td className="truncate px-4 py-3 text-slate-400">{p.sku}</td>
                   <td className="whitespace-nowrap px-4 py-3">{money(p.price)}</td>
@@ -68,6 +75,7 @@ export default function SetsPage() {
           </table>
         </Card>
       )}
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
 
       {editing !== null && (
         <ProductFormModal

@@ -1,7 +1,7 @@
 // §9.2 Товари — список.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, IconButton, Input, Select, Card, EmptyState, ErrorBanner, Pagination, money } from '../components/common/Common';
+import { PageHeader, Button, IconButton, Input, Select, Card, EmptyState, ErrorBanner, Pagination, Thumb, money } from '../components/common/Common';
 import ProductFormModal from './ProductFormModal';
 
 const PAGE_SIZE = 50;
@@ -123,10 +123,4 @@ export default function ProductsPage() {
       )}
     </div>
   );
-}
-
-function Thumb({ url }) {
-  return url
-    ? <img src={url} alt="" className="h-28 w-28 rounded-md object-cover" />
-    : <div className="flex h-28 w-28 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>;
 }

@@ -46,7 +46,7 @@ async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct) {
     let orderRevenue = 0, orderMargin = 0;
     for (const it of o.items) {
       orderRevenue += Number(it.price) * it.quantity;
-      orderMargin += marginPerOrderItem(it, expenseByProduct);
+      orderMargin += marginPerOrderItem(it, expenseByProduct, o.isRefused);
     }
     if (revenueOrders.includes(o)) {
       revenue += orderRevenue;

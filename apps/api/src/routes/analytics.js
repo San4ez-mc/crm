@@ -6,6 +6,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { parseFrom, parseTo } = require('../lib/dateRange');
+const { loadExpenseMap, marginPerOrderItem } = require('../lib/margin');
 const { ValidationError } = require('@crm/errors');
 
 const router = express.Router();
@@ -91,9 +92,10 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     where: { tenantId: req.tenant.id },
     include: {
       productExpense: true,
-      orderItems: { where: { order: { returns: { none: {} }, ...periodWhere(from, to) } } },
+      orderItems: { where: { order: { returns: { none: {} }, ...periodWhere(from, to) } }, include: { order: { select: { isRefused: true } } } },
     },
   });
+  const expenseByProduct = await loadExpenseMap(req.tenant.id);
 
   const data = await Promise.all(products.map(async (p) => {
     const qty = p.orderItems.reduce((s, it) => s + it.quantity, 0);
@@ -104,10 +106,12 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     });
     const adSpend = Number(spendAgg._sum.amount || 0);
     const cogs = Number(p.productExpense?.cogs || 0);
-    const managerCostFixed = Number(p.productExpense?.managerCostFixed || 0);
-    const managerCostPercent = Number(p.productExpense?.managerCostPercent || 0);
-    const margin = revenue - cogs * qty - adSpend - managerCostFixed * qty - (revenue * managerCostPercent) / 100;
-    return { productId: p.id, name: p.name, sku: p.sku, revenue, qty, adSpend, cogs: cogs * qty, managerCost: managerCostFixed * qty + (revenue * managerCostPercent) / 100, margin, marginPercent: revenue > 0 ? (margin / revenue) * 100 : null };
+    // ЗП менеджера — per-item через спільну формулу (10% від націнки, 0 за відмову),
+    // не флет-формула по всій виручці товару (2026-09-05, правило власника).
+    const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused), 0);
+    const managerCost = revenue - cogs * qty - marginBeforeAdSpend;
+    const margin = marginBeforeAdSpend - adSpend;
+    return { productId: p.id, name: p.name, sku: p.sku, revenue, qty, adSpend, cogs: cogs * qty, managerCost, margin, marginPercent: revenue > 0 ? (margin / revenue) * 100 : null };
   }));
   res.json({ ok: true, data: data.filter((r) => r.qty > 0).sort((a, b) => b.margin - a.margin) });
 }));
@@ -180,20 +184,6 @@ function dayKey(date) {
   return new Date(date).toISOString().slice(0, 10);
 }
 
-async function marginPerOrderItem(item, expenseByProduct) {
-  const exp = item.productId ? expenseByProduct.get(item.productId) : null;
-  const cogs = Number(exp?.cogs || 0);
-  const managerCostFixed = Number(exp?.managerCostFixed || 0);
-  const managerCostPercent = Number(exp?.managerCostPercent || 0);
-  const revenue = Number(item.price) * item.quantity;
-  return revenue - cogs * item.quantity - managerCostFixed * item.quantity - (revenue * managerCostPercent) / 100;
-}
-
-async function loadExpenseMap(tenantId) {
-  const rows = await db.productExpense.findMany({ where: { tenantId } });
-  return new Map(rows.map((r) => [r.productId, r]));
-}
-
 // ── Щоденне зведення по всьому tenant (скріншот "День") ─────────────────
 router.get('/analytics/daily', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
@@ -235,7 +225,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 
     let orderMargin = 0;
     for (const item of order.items) {
-      orderMargin += await marginPerOrderItem(item, expenseByProduct);
+      orderMargin += await marginPerOrderItem(item, expenseByProduct, order.isRefused);
       if (!item.isUpsell) b.qtySold += item.quantity;
       const isRepeat = order.buyerId && firstOrderAtByBuyer.get(order.buyerId) && firstOrderAtByBuyer.get(order.buyerId).getTime() < order.createdAt.getTime();
       if (isRepeat) b.qtyRepeat += item.quantity;
@@ -340,7 +330,7 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
     b.ordersCount += 1;
     if (order.isRefused) b.refusedCount += 1;
     let m = 0;
-    for (const item of order.items) m += await marginPerOrderItem(item, expenseByProduct);
+    for (const item of order.items) m += await marginPerOrderItem(item, expenseByProduct, order.isRefused);
     b.marginGrossTotal += m; // "Маржа всього" — до врахування відмов
     if (!order.isRefused) b.marginNetTotal += m; // "...із відмовами" — фактична (виключені відмовлені)
   }

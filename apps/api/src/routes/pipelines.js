@@ -35,6 +35,18 @@ router.post('/pipelines', asyncHandler(async (req, res) => {
   res.status(201).json({ ok: true, data: pipeline });
 }));
 
+router.patch('/pipelines/:id', asyncHandler(async (req, res) => {
+  const existing = await db.pipeline.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+  if (!existing) throw new NotFoundError('Pipeline', req.params.id);
+  const { name } = req.body || {};
+  if (name !== undefined && !String(name).trim()) throw new ValidationError('name не може бути порожнім');
+  const pipeline = await db.pipeline.update({
+    where: { id: existing.id },
+    data: { ...(name !== undefined ? { name: String(name).trim() } : {}) },
+  });
+  res.json({ ok: true, data: pipeline });
+}));
+
 // ── Stage ────────────────────────────────────────────────────────────────
 router.post('/pipelines/:pipelineId/stages', asyncHandler(async (req, res) => {
   const pipeline = await db.pipeline.findFirst({ where: { id: req.params.pipelineId, tenantId: req.tenant.id } });
