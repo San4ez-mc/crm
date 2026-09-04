@@ -23,16 +23,21 @@ async function defaultStageId(tenantId) {
 
 // ── Список (kanban/таблиця) ──────────────────────────────────────────────
 router.get('/orders', asyncHandler(async (req, res) => {
-  const { stageId, from, to, productId, q, take = '100', skip = '0' } = req.query;
+  const { stageId, from, to, productId, adId, q, take = '100', skip = '0' } = req.query;
+  // q і adId — обидва OR-блоки, тому комбінуємо через AND (інакше другий спред перезаписав би
+  // перший ключ "OR" в об'єкті where — знайдено під час додавання фільтра по рекламі 2026-09-04).
+  const andClauses = [];
+  if (q) andClauses.push({ OR: [
+    { ttn: { has: String(q) } },
+    { buyer: { is: { OR: [{ phone: { contains: String(q) } }, { fullName: { contains: String(q), mode: 'insensitive' } }] } } },
+  ] });
+  if (adId) andClauses.push({ OR: [{ firstTouchAdId: String(adId) }, { lastTouchAdId: String(adId) }] });
   const where = {
     tenantId: req.tenant.id,
     ...(stageId ? { stageId: String(stageId) } : {}),
     ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}),
     ...(productId ? { items: { some: { productId: String(productId) } } } : {}),
-    ...(q ? { OR: [
-      { ttn: { has: String(q) } },
-      { buyer: { is: { OR: [{ phone: { contains: String(q) } }, { fullName: { contains: String(q), mode: 'insensitive' } }] } } },
-    ] } : {}),
+    ...(andClauses.length ? { AND: andClauses } : {}),
   };
   const [items, total] = await Promise.all([
     db.order.findMany({ where, include: ORDER_INCLUDE, orderBy: { createdAt: 'desc' }, take: Number(take), skip: Number(skip) }),

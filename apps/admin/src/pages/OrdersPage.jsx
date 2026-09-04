@@ -10,11 +10,15 @@ export default function OrdersPage() {
   const [view, setView] = useState('board');
   const [orders, setOrders] = useState(null);
   const [pipelines, setPipelines] = useState([]);
+  const [ads, setAds] = useState([]);
   const [q, setQ] = useState('');
   const [stageId, setStageId] = useState('');
+  const [adId, setAdId] = useState('');
   const [error, setError] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [returnForOrder, setReturnForOrder] = useState(null);
+
+  useEffect(() => { api.listAds().then((r) => setAds(r.data)).catch(() => {}); }, []);
 
   async function load() {
     setError('');
@@ -22,11 +26,12 @@ export default function OrdersPage() {
       const params = {};
       if (q) params.q = q;
       if (stageId) params.stageId = stageId;
+      if (adId) params.adId = adId;
       const [o, p] = await Promise.all([api.listOrders(params), api.listPipelines()]);
       setOrders(o.data); setPipelines(p.data);
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [q, stageId]);
+  useEffect(() => { load(); }, [q, stageId, adId]);
 
   const stages = pipelines.flatMap((p) => p.stages);
 
@@ -59,6 +64,10 @@ export default function OrdersPage() {
           <option value="">Усі стадії</option>
           {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </Select>
+        <Select className="max-w-xs" value={adId} onChange={(e) => setAdId(e.target.value)}>
+          <option value="">Усі оголошення</option>
+          {ads.map((a) => <option key={a.id} value={a.id}>{a.name || a.externalId || a.id.slice(0, 8)}</option>)}
+        </Select>
       </div>
 
       {orders === null ? null : orders.length === 0 ? (
@@ -82,11 +91,13 @@ export default function OrdersPage() {
                     onClick={() => setSelectedOrder(o)}
                   >
                     <div className="text-sm font-medium">{o.buyer?.fullName || o.buyer?.phone || 'Без покупця'}</div>
+                    {o.buyer?.igUsername && <div className="text-xs text-brand-light">@{o.buyer.igUsername}</div>}
                     <div className="mt-1 text-xs text-slate-500 line-clamp-1">{o.items.map((it) => it.name).join(', ')}</div>
                     <div className="mt-1.5 flex items-center justify-between">
                       <span className="text-sm">{money(orderTotal(o))}</span>
                       {o.ttnStatus && <Badge color="green">{o.ttnStatus}</Badge>}
                     </div>
+                    {o.firstTouchAd?.name && <div className="mt-1 truncate text-[11px] text-slate-500" title={o.firstTouchAd.name}>📢 {o.firstTouchAd.name}</div>}
                   </Card>
                 ))}
               </div>
@@ -112,7 +123,7 @@ export default function OrdersPage() {
                     </Select>
                   </td>
                   <td className="px-4 py-3 text-slate-400">{o.ttn?.join(', ') || '—'} {o.ttnStatus && <Badge color="green">{o.ttnStatus}</Badge>}</td>
-                  <td className="px-4 py-3 text-slate-400">{o.sourceName || (o.firstTouchAdId ? 'реклама' : 'органіка')}</td>
+                  <td className="px-4 py-3 text-slate-400">{o.firstTouchAd?.name || o.sourceName || 'органіка'}</td>
                 </tr>
               ))}
             </tbody>

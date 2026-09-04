@@ -4,12 +4,13 @@
 // і детальна аналітика по кліку. Ad не залежить від дати, тому прив'язка робиться тут один раз.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, Select, Card, EmptyState, ErrorBanner } from '../components/common/Common';
+import { PageHeader, Button, Input, Select, Card, EmptyState, ErrorBanner } from '../components/common/Common';
 import ImageLightbox from '../components/common/ImageLightbox';
 
 export default function AdsPage() {
   const [items, setItems] = useState(null);
   const [products, setProducts] = useState([]);
+  const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
@@ -50,6 +51,9 @@ export default function AdsPage() {
         </div>
       )}
       <p className="mb-4 text-xs text-slate-500">Прив'язка товару робиться один раз тут (оголошення не змінюється щодня). Показники витрат/окупності/прибутку — на сторінці «Рекламні витрати».</p>
+      <div className="mb-4">
+        <Input className="max-w-xs" placeholder="Пошук за назвою або ad_id" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
       {items === null ? null : items.length === 0 ? (
         <EmptyState title="Оголошень ще немає" hint="Дані підтягнуться автоматично, щойно запрацює синхронізація реклами." />
       ) : (
@@ -59,7 +63,11 @@ export default function AdsPage() {
               <tr><th className="px-4 py-3"></th><th className="px-4 py-3">Оголошення</th><th className="px-4 py-3">Кампанія</th><th className="px-4 py-3">Товар</th></tr>
             </thead>
             <tbody>
-              {items.map((ad) => (
+              {items.filter((ad) => {
+                if (!search.trim()) return true;
+                const s = search.trim().toLowerCase();
+                return (ad.name || '').toLowerCase().includes(s) || (ad.externalId || '').toLowerCase().includes(s);
+              }).map((ad) => (
                 <tr key={ad.id} className={`border-b border-slate-800/60 last:border-0 ${!ad.productId ? 'bg-amber-900/10' : ''}`}>
                   <td className="px-4 py-3">
                     {ad.thumbnailUrl

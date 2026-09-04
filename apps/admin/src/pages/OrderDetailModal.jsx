@@ -30,6 +30,13 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
           <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Покупець</h4>
           <div>{order.buyer?.fullName || '—'} · {order.buyer?.phone}</div>
           {order.buyer?.igUsername && <a className="text-brand-light" href={`https://instagram.com/${order.buyer.igUsername}`} target="_blank" rel="noreferrer">@{order.buyer.igUsername}</a>}
+          {order.buyer?.knownMeasurements && Object.keys(order.buyer.knownMeasurements).length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {Object.entries(order.buyer.knownMeasurements).map(([k, v]) => (
+                <Badge key={k}>{k}: {v}</Badge>
+              ))}
+            </div>
+          )}
         </section>
 
         <section>
@@ -37,7 +44,12 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
           <div className="space-y-1">
             {order.items.map((it) => (
               <div key={it.id} className="flex justify-between rounded-lg bg-slate-800/50 px-3 py-2">
-                <span>{it.name} × {it.quantity} {it.isUpsell && <Badge color="teal">Допродаж</Badge>}</span>
+                <span>
+                  {it.name} × {it.quantity} {it.isUpsell && <Badge color="teal">Допродаж</Badge>}
+                  {Array.isArray(it.properties) && it.properties.length > 0 && (
+                    <span className="ml-2 text-xs text-slate-400">({it.properties.map((p) => `${p.name}: ${p.value}`).join(', ')})</span>
+                  )}
+                </span>
                 <span>{money(Number(it.price) * it.quantity)}</span>
               </div>
             ))}
