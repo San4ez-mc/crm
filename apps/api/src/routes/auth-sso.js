@@ -78,6 +78,7 @@ const PAGES = [
   { id: 'sets', label: 'Комплекти' },
   { id: 'categories', label: 'Категорії' },
   { id: 'suppliers', label: 'Постачальники' },
+  { id: 'knowledge', label: 'База знань' },
   { id: 'pipelines', label: 'Воронки' },
   { id: 'orders', label: 'Замовлення' },
   { id: 'buyers', label: 'Покупці' },

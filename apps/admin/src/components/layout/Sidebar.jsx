@@ -8,6 +8,7 @@ const SECTIONS = [
     { to: '/sets', label: 'Комплекти' },
     { to: '/categories', label: 'Категорії' },
     { to: '/suppliers', label: 'Постачальники' },
+    { to: '/knowledge', label: 'База знань' },
   ] },
   { title: 'Продажі', items: [
     { to: '/pipelines', label: 'Воронки' },

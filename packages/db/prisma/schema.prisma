@@ -41,6 +41,8 @@ model Tenant {
   fops             Fop[]
   secrets          TenantSecret[]
   funnelEvents     FunnelEvent[]
+  knowledgeEntries KnowledgeEntry[]
+  knowledgeProfile KnowledgeProfile?
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -84,6 +86,7 @@ model Category {
   updatedAt      DateTime @updatedAt
 
   products Product[]
+  knowledgeEntries KnowledgeEntry[]
 
   @@index([tenantId])
 }
@@ -197,6 +200,7 @@ model Product {
   orderItems      OrderItem[]
   ads             Ad[]
   productExpense  ProductExpense?
+  knowledgeEntries KnowledgeEntry[]
 
   @@unique([tenantId, sku])
   @@index([tenantId])
@@ -470,4 +474,50 @@ model Return {
 
   @@index([tenantId])
   @@index([orderId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// База знань магазину (ТЗ-база-знань-магазину.md, 2026-09-04) — одне місце в CRM, де
+// менеджер веде FAQ/політики/заперечення/скрипти, а воронки беруть їх автоматично замість
+// funnelKey SHOP_FAQ (дублювався в кожному боті) і векторної бази (шукала на кожне
+// повідомлення, без історії хто що редагував). Перенесення самих воронок на ці ендпойнти —
+// окрема робота (§3, §6 ТЗ), тут лише сторона CRM: модель+API+UI.
+model KnowledgeEntry {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind       String // faq | policy | objection | script
+  question   String? // як клієнт питає; кілька варіантів через "|"; порожньо для policy/script
+  answer     String
+  tags       String[] @default([])
+  scope      String   @default("shop") // shop | category | product
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+  productId  String?
+  product    Product? @relation(fields: [productId], references: [id])
+  priority   Int      @default(0) // вище = раніше в промпті
+  isActive   Boolean  @default(true)
+  source     String   @default("manual") // manual | imported_gdoc | from_dialog
+  createdBy  String?
+  sessionId  String? // для from_dialog — посилання на сесію-джерело у Flows
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, kind])
+  @@index([tenantId, isActive])
+}
+
+// Короткі "завжди в промпті" факти — те, що зараз розкидано по funnelKey SHOP_FAQ/
+// ORDER_TERMS_LINE кожного бота; один запис на tenant.
+model KnowledgeProfile {
+  id           String   @id @default(uuid())
+  tenantId     String   @unique
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  producerLine String?
+  shippingLine String?
+  fittingLine  String?
+  paymentLine  String?
+  termsLine    String?
+  updatedAt    DateTime @updatedAt
 }

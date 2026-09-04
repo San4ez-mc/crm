@@ -22,6 +22,7 @@ import AdsPage from './pages/AdsPage';
 import PaymentsPage from './pages/PaymentsPage';
 import ProductExpensesPage from './pages/ProductExpensesPage';
 import SettingsGeneralPage from './pages/SettingsGeneralPage';
+import KnowledgeBasePage from './pages/KnowledgeBasePage';
 
 function ProtectedShell({ children }) {
   const { isLoading, isAuthenticated, tenants } = useAuthStore();
@@ -59,6 +60,7 @@ export default function App() {
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/product-expenses" element={<ProductExpensesPage />} />
             <Route path="/settings/general" element={<SettingsGeneralPage />} />
+            <Route path="/knowledge" element={<KnowledgeBasePage />} />
             <Route path="*" element={<Navigate to="/orders" replace />} />
           </Route>
         </Routes>

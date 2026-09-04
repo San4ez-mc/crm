@@ -122,6 +122,16 @@ export const api = {
   analyticsDaily: (params = {}) => get(`/analytics/daily?${new URLSearchParams(params)}`),
   analyticsProductDaily: (params = {}) => get(`/analytics/product-daily?${new URLSearchParams(params)}`),
 
+  // База знань
+  getKnowledgeProfile: () => get('/knowledge/profile'),
+  updateKnowledgeProfile: (data) => put('/knowledge/profile', data),
+  listKnowledge: (params = {}) => get(`/knowledge?${new URLSearchParams(params)}`),
+  createKnowledge: (data) => post('/knowledge', data),
+  updateKnowledge: (id, data) => patch(`/knowledge/${id}`, data),
+  deleteKnowledge: (id) => del(`/knowledge/${id}`),
+  searchKnowledge: (params = {}) => get(`/knowledge/search?${new URLSearchParams(params)}`),
+  importKnowledge: (data) => post('/knowledge/import', data),
+
   // Налаштування
   getTenantSettings: () => get('/tenant'),
   updateTenantSettings: (data) => patch('/tenant', data),
