@@ -78,6 +78,7 @@ export const api = {
   // Продажі
   listBuyers: (params = {}) => get(`/buyers?${new URLSearchParams(params)}`),
   getBuyer: (id) => get(`/buyers/${id}`),
+  updateBuyer: (id, data) => patch(`/buyers/${id}`, data),
 
   listPipelines: () => get('/pipelines'),
   createPipeline: (data) => post('/pipelines', data),

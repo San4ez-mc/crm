@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { PageHeader, Button, Input, Select, Card, EmptyState, ErrorBanner, Badge, money } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 import OrderDetailModal from './OrderDetailModal';
+import NewOrderModal from './NewOrderModal';
 import { ReturnForm } from './ReturnsPage';
 
 export default function OrdersPage() {
@@ -17,6 +18,7 @@ export default function OrdersPage() {
   const [error, setError] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [returnForOrder, setReturnForOrder] = useState(null);
+  const [showNewOrder, setShowNewOrder] = useState(false);
 
   useEffect(() => { api.listAds().then((r) => setAds(r.data)).catch(() => {}); }, []);
 
@@ -53,6 +55,7 @@ export default function OrdersPage() {
               <option value="board">Дошка</option>
               <option value="table">Таблиця</option>
             </Select>
+            <Button onClick={() => setShowNewOrder(true)}>+ Замовлення</Button>
           </div>
         }
       />
@@ -98,6 +101,12 @@ export default function OrdersPage() {
                       {o.ttnStatus && <Badge color="green">{o.ttnStatus}</Badge>}
                     </div>
                     {o.firstTouchAd?.name && <div className="mt-1 truncate text-[11px] text-slate-500" title={o.firstTouchAd.name}>📢 {o.firstTouchAd.name}</div>}
+                    {/* Дублюємо зміну стадії звичайним select на самій картці — нативний
+                        HTML5 drag&drop на мобільних браузерах не працює взагалі (тач-events
+                        його не підтримують), тому це єдиний надійний спосіб для телефону. */}
+                    <Select className="mt-2 !w-auto !py-1 text-xs" value={o.stageId || ''} onClick={(e) => e.stopPropagation()} onChange={(e) => moveOrderToStage(o.id, e.target.value)}>
+                      {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </Select>
                   </Card>
                 ))}
               </div>
@@ -138,6 +147,15 @@ export default function OrdersPage() {
           onClose={() => setSelectedOrder(null)}
           onChanged={() => { load(); }}
           onOpenReturn={(o) => { setReturnForOrder(o); setSelectedOrder(null); }}
+        />
+      )}
+
+      {showNewOrder && (
+        <NewOrderModal
+          stages={stages}
+          ads={ads}
+          onClose={() => setShowNewOrder(false)}
+          onCreated={() => load()}
         />
       )}
 

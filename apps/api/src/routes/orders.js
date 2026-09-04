@@ -62,6 +62,26 @@ router.post('/orders', asyncHandler(async (req, res) => {
     buyerId = buyer.id;
   }
 
+  // Реквізити доставки з цього замовлення запам'ятовуємо на покупцеві (Buyer.knownShipping) —
+  // щоб наступного разу воронка могла запропонувати вже відомі дані замість повторного
+  // запитування (2026-09-04, за проханням власника). Best-effort: помилка тут не має зривати
+  // створення самого замовлення.
+  if (buyerId && b.shipping && (b.shipping.city || b.shipping.warehouse)) {
+    const existingBuyer = await db.buyer.findUnique({ where: { id: buyerId }, select: { knownShipping: true, fullName: true, phone: true } });
+    await db.buyer.update({
+      where: { id: buyerId },
+      data: {
+        knownShipping: {
+          ...(existingBuyer?.knownShipping || {}),
+          fullName: b.shipping.fullName || existingBuyer?.fullName || undefined,
+          phone: b.shipping.phone || existingBuyer?.phone || undefined,
+          ...(b.shipping.city ? { city: b.shipping.city } : {}),
+          ...(b.shipping.warehouse ? { warehouse: b.shipping.warehouse } : {}),
+        },
+      },
+    }).catch(() => {});
+  }
+
   const stageId = b.stageId || await defaultStageId(req.tenant.id);
 
   const order = await db.order.create({

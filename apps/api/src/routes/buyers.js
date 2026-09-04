@@ -85,7 +85,7 @@ router.get('/buyers/:id', asyncHandler(async (req, res) => {
 router.patch('/buyers/:id', asyncHandler(async (req, res) => {
   const existing = await db.buyer.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
   if (!existing) throw new NotFoundError('Buyer', req.params.id);
-  const { fullName, phone, igUsername, knownMeasurements } = req.body || {};
+  const { fullName, phone, igUsername, knownMeasurements, knownShipping } = req.body || {};
   // knownMeasurements — MERGE по ключах (param name), не overwrite: одна воронка може оновити
   // лише параметри поточної категорії (напр. "зріст"/"вага"), інша сесія раніше — інші
   // (напр. "розмір ноги" з іншої категорії товару того ж клієнта). Обидва мають зберігатись.
@@ -99,6 +99,18 @@ router.patch('/buyers/:id', asyncHandler(async (req, res) => {
       throw new ValidationError('knownMeasurements має бути обʼєктом {[param]: value} або null');
     }
   }
+  // knownShipping — теж MERGE (можна оновити лише "місто", лишивши раніше збережений ПІБ
+  // отримувача незмінним), той самий принцип, що knownMeasurements.
+  let mergedShipping;
+  if (knownShipping !== undefined) {
+    if (knownShipping === null) {
+      mergedShipping = null;
+    } else if (typeof knownShipping === 'object' && !Array.isArray(knownShipping)) {
+      mergedShipping = { ...(existing.knownShipping || {}), ...knownShipping };
+    } else {
+      throw new ValidationError('knownShipping має бути обʼєктом {fullName?,phone?,city?,warehouse?} або null');
+    }
+  }
   const buyer = await db.buyer.update({
     where: { id: existing.id },
     data: {
@@ -106,6 +118,7 @@ router.patch('/buyers/:id', asyncHandler(async (req, res) => {
       ...(phone !== undefined ? { phone: normalizePhone(phone) } : {}),
       ...(igUsername !== undefined ? { igUsername } : {}),
       ...(knownMeasurements !== undefined ? { knownMeasurements: mergedMeasurements } : {}),
+      ...(knownShipping !== undefined ? { knownShipping: mergedShipping } : {}),
     },
   });
   res.json({ ok: true, data: buyer });
