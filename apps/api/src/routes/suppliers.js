@@ -16,7 +16,7 @@ router.get('/suppliers', asyncHandler(async (req, res) => {
 }));
 
 router.post('/suppliers', asyncHandler(async (req, res) => {
-  const { name, mechanism, contactInfo, description, aiNotes, website, telegramGroupId, loginUsername, loginPassword } = req.body || {};
+  const { name, mechanism, contactInfo, description, aiNotes, website, telegramGroupId, loginUsername, loginPassword, apiConfig, orderRecipe } = req.body || {};
   if (!name || !String(name).trim()) throw new ValidationError('name обовʼязкове');
   const supplier = await db.supplier.create({
     data: {
@@ -30,6 +30,8 @@ router.post('/suppliers', asyncHandler(async (req, res) => {
       telegramGroupId: telegramGroupId || null,
       loginUsername: loginUsername || null,
       loginPassword: loginPassword || null,
+      apiConfig: apiConfig && typeof apiConfig === 'object' && !Array.isArray(apiConfig) ? apiConfig : undefined,
+      orderRecipe: orderRecipe || null,
     },
   });
   res.status(201).json({ ok: true, data: supplier });
@@ -44,7 +46,10 @@ router.get('/suppliers/:id', asyncHandler(async (req, res) => {
 router.patch('/suppliers/:id', asyncHandler(async (req, res) => {
   const existing = await db.supplier.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
   if (!existing) throw new NotFoundError('Supplier', req.params.id);
-  const { name, mechanism, contactInfo, description, aiNotes, website, telegramGroupId, loginUsername, loginPassword } = req.body || {};
+  const { name, mechanism, contactInfo, description, aiNotes, website, telegramGroupId, loginUsername, loginPassword, apiConfig, orderRecipe } = req.body || {};
+  if (apiConfig !== undefined && apiConfig !== null && (typeof apiConfig !== 'object' || Array.isArray(apiConfig))) {
+    throw new ValidationError('apiConfig має бути обʼєктом {[назва]: значення} або null');
+  }
   const supplier = await db.supplier.update({
     where: { id: existing.id },
     data: {
@@ -57,6 +62,8 @@ router.patch('/suppliers/:id', asyncHandler(async (req, res) => {
       ...(telegramGroupId !== undefined ? { telegramGroupId } : {}),
       ...(loginUsername !== undefined ? { loginUsername } : {}),
       ...(loginPassword !== undefined ? { loginPassword } : {}),
+      ...(apiConfig !== undefined ? { apiConfig } : {}),
+      ...(orderRecipe !== undefined ? { orderRecipe } : {}),
     },
   });
   res.json({ ok: true, data: supplier });
