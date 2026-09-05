@@ -4,7 +4,7 @@
 // не для щоденного погляду, а для рідкісного глибокого аналізу.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Input, Card, ErrorBanner, KpiCard, TrendChart, money } from '../components/common/Common';
+import { PageHeader, Input, Card, ErrorBanner, KpiCard, DonutChart, HorizontalBarList, ComboTrendChart, money } from '../components/common/Common';
 
 function periodPreset(preset) {
   const to = new Date();
@@ -117,11 +117,38 @@ export default function AnalyticsPage() {
             <KpiCard label="Окупність (ROI)" value={data.kpi.roi !== null ? `×${data.kpi.roi.toFixed(2)}` : '—'} delta={deltaPct(data.kpi.roi || 0, data.kpi.prevRoi || 0)} deltaGood="up" />
           </div>
 
-          {/* 2. Чи росте прибуток день у день — тренд одразу під цифрами, поки вони ще на екрані */}
+          {/* 2. Головний графік: маржа й рекламний бюджет по днях стовпчиками, прибуток — лінією зверху */}
           <Card className="p-4">
-            <h3 className="mb-3 text-sm font-semibold">Прибуток по днях <span className="font-normal text-slate-500">(після реклами, постійних витрат і ЗП)</span></h3>
-            <TrendChart data={data.trend} valueKey="expectedProfit" formatValue={(v) => money(v)} />
+            <h3 className="mb-3 text-sm font-semibold">Маржа, реклама і прибуток по днях</h3>
+            <ComboTrendChart
+              data={data.trend}
+              bars={[
+                { key: 'marginTotal', label: 'Маржа', color: '#14b8a6' },
+                { key: 'adSpend', label: 'Реклама', color: '#fb923c' },
+              ]}
+              line={{ key: 'expectedProfit', label: 'Прибуток (після ЗП і постійних витрат)', color: '#38bdf8' }}
+              formatValue={(v) => money(v)}
+            />
           </Card>
+
+          {/* 2.1 Структура: звідки виручка (топ товарів) і куди йде рекламний бюджет (топ оголошень) */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card className="p-4">
+              <h3 className="mb-3 text-sm font-semibold">Виручка за товарами</h3>
+              <DonutChart
+                data={data.products.slice(0, 6).map((p) => ({ label: p.name, value: p.revenue }))}
+                formatValue={(v) => money(v)}
+              />
+            </Card>
+            <Card className="p-4">
+              <h3 className="mb-3 text-sm font-semibold">Рекламний бюджет за оголошеннями</h3>
+              <HorizontalBarList
+                items={data.ads.slice(0, 6).map((a) => ({ label: a.name, value: a.spend, sub: a.roas !== null ? `×${a.roas.toFixed(1)} ROAS` : null }))}
+                formatValue={(v) => money(v)}
+                color="bg-orange-400"
+              />
+            </Card>
+          </div>
 
           {/* 3. Що продається і наскільки прибутково — топ товарів і маржа в одній таблиці */}
           <Card className="p-4">

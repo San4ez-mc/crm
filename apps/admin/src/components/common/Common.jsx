@@ -194,6 +194,110 @@ export function TrendChart({ data, valueKey, labelKey = 'date', height = 112, fo
   );
 }
 
+// ── Графіки для Дашборду аналітики (2026-09-05) — та сама "чистими дівами/SVG" філософія,
+// без сторонніх бібліотек, узгоджена кольорова палітра.
+export const CHART_COLORS = ['#14b8a6', '#38bdf8', '#a78bfa', '#fb923c', '#f472b6', '#facc15', '#94a3b8'];
+
+// Кільцева діаграма (CSS conic-gradient) + легенда з % — для "структури" (топ товарів,
+// частка каналів тощо), а не для трендів у часі (для того — TrendChart/ComboTrendChart).
+export function DonutChart({ data, formatValue = (v) => v, size = 150 }) {
+  const total = data.reduce((s, d) => s + d.value, 0) || 1;
+  let acc = 0;
+  const stops = data.map((d, i) => {
+    const start = (acc / total) * 360;
+    acc += d.value;
+    const end = (acc / total) * 360;
+    return `${CHART_COLORS[i % CHART_COLORS.length]} ${start}deg ${end}deg`;
+  });
+  return (
+    <div className="flex flex-wrap items-center gap-5">
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <div className="h-full w-full rounded-full" style={{ background: data.length ? `conic-gradient(${stops.join(',')})` : '#1e293b' }} />
+        <div className="absolute inset-[20%] rounded-full bg-slate-900" />
+      </div>
+      <div className="min-w-0 flex-1 space-y-1.5 text-xs">
+        {data.map((d, i) => (
+          <div key={d.label} className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+            <span className="truncate text-slate-300">{d.label}</span>
+            <span className="ml-auto shrink-0 text-slate-500">{formatValue(d.value)} · {((d.value / total) * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+        {data.length === 0 && <div className="text-slate-500">Даних немає.</div>}
+      </div>
+    </div>
+  );
+}
+
+// Горизонтальні бари з підписом+значенням — заміна голої таблиці, коли важливо одразу
+// бачити пропорції (топ товарів/реклами за сумою).
+export function HorizontalBarList({ items, formatValue = (v) => v, color = 'bg-brand' }) {
+  const max = Math.max(1, ...items.map((i) => i.value));
+  return (
+    <div className="space-y-2.5">
+      {items.map((i, idx) => (
+        <div key={i.label ?? idx}>
+          <div className="mb-1 flex justify-between gap-2 text-xs">
+            <span className="truncate">{i.label}</span>
+            <span className="shrink-0 text-slate-400">{i.sub ? `${i.sub} · ` : ''}{formatValue(i.value)}</span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-800"><div className={`h-2 rounded-full ${color}`} style={{ width: `${Math.max(2, (i.value / max) * 100)}%` }} /></div>
+        </div>
+      ))}
+      {items.length === 0 && <div className="text-xs text-slate-500">Даних немає.</div>}
+    </div>
+  );
+}
+
+// Комбо-графік по днях: до кількох стовпчикових серій (bars) + одна лінійна (line) —
+// той самий підхід, що ResultChart на детальній сторінці оголошення, винесений сюди для
+// перевикористання (Дашборд: Витрати/Маржа стовпцями + Прибуток лінією).
+export function ComboTrendChart({ data, bars = [], line, labelKey = 'date', height = 220 }) {
+  if (!data || data.length < 2) return <div className="py-8 text-center text-sm text-slate-500">Замало даних за період для графіка.</div>;
+  const W = Math.max(560, data.length * 70);
+  const H = height;
+  const padL = 44, padB = 24, padT = 10;
+  const allVals = data.flatMap((d) => [...bars.map((b) => Number(d[b.key]) || 0), line ? Number(d[line.key]) || 0 : 0]);
+  const maxV = Math.max(1, ...allVals);
+  const minV = Math.min(0, ...allVals);
+  const scaleY = (v) => H - padB - ((v - minV) / (maxV - minV || 1)) * (H - padB - padT);
+  const slot = (W - padL) / data.length;
+  const barW = Math.min(16, (slot * 0.6) / Math.max(1, bars.length));
+  const zeroY = scaleY(0);
+  return (
+    <div className="overflow-x-auto">
+      <svg width={W} height={H + 30} className="min-w-full">
+        <line x1={padL} y1={zeroY} x2={W} y2={zeroY} stroke="#334155" strokeWidth="1" />
+        {data.map((d, i) => {
+          const xCenter = padL + slot * i + slot / 2;
+          const groupW = barW * bars.length + Math.max(0, bars.length - 1) * 2;
+          return (
+            <g key={d[labelKey] ?? i}>
+              {bars.map((b, bi) => {
+                const x = xCenter - groupW / 2 + bi * (barW + 2);
+                const v = Number(d[b.key]) || 0;
+                const y = scaleY(v);
+                return <rect key={b.key} x={x} y={Math.min(y, zeroY)} width={barW} height={Math.max(0.5, Math.abs(y - zeroY))} fill={b.color} opacity="0.85" />;
+              })}
+              <text x={xCenter} y={H + 18} textAnchor="middle" fontSize="10" fill="#64748b">{fmtChartDate(d[labelKey])}</text>
+            </g>
+          );
+        })}
+        {line && (
+          <>
+            <polyline points={data.map((d, i) => `${padL + slot * i + slot / 2},${scaleY(Number(d[line.key]) || 0)}`).join(' ')} fill="none" stroke={line.color} strokeWidth="2" />
+            {data.map((d, i) => <circle key={i} cx={padL + slot * i + slot / 2} cy={scaleY(Number(d[line.key]) || 0)} r="3.5" fill={line.color} />)}
+          </>
+        )}
+      </svg>
+      <div className="flex flex-wrap gap-4 px-2 text-xs text-slate-400">
+        {bars.map((b) => <span key={b.key}><span className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: b.color }} />{b.label}</span>)}
+        {line && <span><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: line.color }} />{line.label}</span>}
+      </div>
+    </div>
+  );
+}
+
 // Єдине форматування телефону (2026-09-05) — дані приходять у різних виглядах (з/без "+",
 // з/без "38", "0..." замість "380...") залежно від того, звідки взявся Buyer (воронка/ручне
 // створення/KeyCRM-міграція); показуємо всюди однаково: +380 XX XXX XX XX.
