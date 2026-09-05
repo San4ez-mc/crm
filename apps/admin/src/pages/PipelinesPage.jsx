@@ -84,26 +84,24 @@ export default function PipelinesPage() {
 
       {current && (
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-slate-300">Стадії воронки «{current.name}»</h3>
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {current.stages.map((stage, i) => (
-              <Card key={stage.id} className="w-64 shrink-0 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <button onClick={() => renameStage(stage)} className="text-left text-sm font-medium hover:text-brand-light">{stage.name}</button>
+          <h3 className="mb-2 text-sm font-semibold text-slate-300">Стадії воронки «{current.name}»</h3>
+          <Card className="max-w-xl">
+            <div className="divide-y divide-slate-800/60">
+              {current.stages.map((stage, i) => (
+                <div key={stage.id} className="flex items-center gap-2 px-3 py-2">
+                  <span className="w-4 shrink-0 text-xs text-slate-600">{i + 1}</span>
+                  <button onClick={() => renameStage(stage)} className="flex-1 truncate text-left text-sm hover:text-brand-light">{stage.name}</button>
+                  <button disabled={i === 0} onClick={() => moveStage(stage, -1)} className="rounded bg-slate-800 px-2 py-1 text-xs disabled:opacity-30 hover:bg-slate-700">←</button>
+                  <button disabled={i === current.stages.length - 1} onClick={() => moveStage(stage, 1)} className="rounded bg-slate-800 px-2 py-1 text-xs disabled:opacity-30 hover:bg-slate-700">→</button>
                   <button onClick={() => deleteStage(stage)} className="text-slate-500 hover:text-red-400">🗑️</button>
                 </div>
-                <div className="text-xs text-slate-500">{stage.ordersCount} замовлень</div>
-                <div className="mt-2 flex gap-1">
-                  <button disabled={i === 0} onClick={() => moveStage(stage, -1)} className="rounded bg-slate-800 px-2 py-0.5 text-xs disabled:opacity-30">←</button>
-                  <button disabled={i === current.stages.length - 1} onClick={() => moveStage(stage, 1)} className="rounded bg-slate-800 px-2 py-0.5 text-xs disabled:opacity-30">→</button>
-                </div>
-              </Card>
-            ))}
-            <Card className="flex w-64 shrink-0 flex-col justify-center gap-2 p-3">
-              <Input placeholder="Назва стадії" value={newStageName} onChange={(e) => setNewStageName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addStage()} />
-              <Button variant="secondary" onClick={addStage}>+ Стадія</Button>
-            </Card>
-          </div>
+              ))}
+              <div className="flex items-center gap-2 px-3 py-2">
+                <Input className="!py-1.5" placeholder="Назва нової стадії" value={newStageName} onChange={(e) => setNewStageName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addStage()} />
+                <Button variant="secondary" onClick={addStage}>+ Додати</Button>
+              </div>
+            </div>
+          </Card>
         </div>
       )}
     </div>

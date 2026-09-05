@@ -97,6 +97,12 @@ function ApiConfigEditor({ value, onChange }) {
   );
 }
 
+// Постачальники часто мають "назву" = домен сайту (напр. "brewdrop.in.ua") — не змушуємо
+// вписувати те саме двічі в поле "Сайт" (2026-09-05, за проханням власника).
+function looksLikeDomain(s) {
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(s || '').trim());
+}
+
 export function SupplierForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState({
     id: initial.id,
@@ -107,17 +113,25 @@ export function SupplierForm({ initial, onSave, onCancel }) {
     aiNotes: initial.aiNotes || '',
     website: initial.website || '',
     telegramGroupId: initial.telegramGroupId || '',
+    telegramName: initial.telegramName || '',
+    telegramLink: initial.telegramLink || '',
     loginUsername: initial.loginUsername || '',
     loginPassword: initial.loginPassword || '',
     apiConfig: initial.apiConfig || {},
     orderRecipe: initial.orderRecipe || '',
   });
 
+  function onNameBlur() {
+    if (!form.website.trim() && looksLikeDomain(form.name)) {
+      setForm((f) => ({ ...f, website: `https://${f.name.trim()}` }));
+    }
+  }
+
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="space-y-5">
       <section>
         <h4 className="mb-2 text-xs font-semibold uppercase text-slate-500">Основне</h4>
-        <Field label="Назва"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="Назва"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} onBlur={onNameBlur} /></Field>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Field label="Контактна інформація"><Input value={form.contactInfo} onChange={(e) => setForm({ ...form, contactInfo: e.target.value })} /></Field>
           <Field label="Механізм оформлення (технічне — визначає, яку логіку воронки викликати)">
@@ -140,7 +154,11 @@ export function SupplierForm({ initial, onSave, onCancel }) {
 
       <section className="border-t border-slate-800 pt-4">
         <h4 className="mb-2 text-xs font-semibold uppercase text-slate-500">Telegram</h4>
-        <Field label="Телеграм-група (id)"><Input value={form.telegramGroupId} onChange={(e) => setForm({ ...form, telegramGroupId: e.target.value })} /></Field>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Field label="Назва групи/чату"><Input value={form.telegramName} onChange={(e) => setForm({ ...form, telegramName: e.target.value })} placeholder="напр. Постачальник — Одяг" /></Field>
+          <Field label="Телеграм-група (id)"><Input value={form.telegramGroupId} onChange={(e) => setForm({ ...form, telegramGroupId: e.target.value })} /></Field>
+        </div>
+        <Field label="Посилання-запрошення"><Input value={form.telegramLink} onChange={(e) => setForm({ ...form, telegramLink: e.target.value })} placeholder="https://t.me/…" /></Field>
       </section>
 
       <section className="border-t border-slate-800 pt-4">

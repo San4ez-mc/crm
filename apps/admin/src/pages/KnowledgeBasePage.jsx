@@ -23,6 +23,13 @@ export default function KnowledgeBasePage() {
           </div>
         }
       />
+      <p className="mb-4 max-w-3xl text-sm text-slate-400">
+        Тут менеджер веде знання магазину (FAQ, політики, заперечення, скрипти відповідей) в одному місці —
+        замість того щоб дублювати їх у ключах кожної окремої воронки. Дані звідси автоматично підтягує бот
+        у діалозі з клієнтом: короткий «Профіль» — завжди в промпті (виробник/доставка/примірка/оплата),
+        а «Записи» — за потреби, коли питання клієнта схоже на щось із бази. Питання, на які бот не знайшов
+        відповіді, самі зʼявляються у вкладці «Без відповіді» — досить один раз дописати відповідь.
+      </p>
       {tab === 'profile' && <ProfileTab />}
       {tab === 'entries' && <EntriesTab />}
       {tab === 'unanswered' && <UnansweredTab />}
@@ -61,14 +68,14 @@ function ProfileTab() {
   return (
     <div>
       <ErrorBanner message={error} />
-      <Card className="max-w-2xl space-y-4 p-5">
+      <Card className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
         {fields.map(([key, label, hint]) => (
           <Field key={key} label={label}>
             <Textarea rows={2} value={form[key] || ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
             <div className="mt-1 text-xs text-slate-500">{hint}</div>
           </Field>
         ))}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 lg:col-span-2">
           <Button onClick={save}>Зберегти</Button>
           {saved && <span className="text-xs text-emerald-400">Збережено ✓</span>}
         </div>
@@ -296,7 +303,7 @@ function ImportTab() {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-4xl">
       <ErrorBanner message={error} />
       <p className="mb-3 text-xs text-slate-500">Разовий перенос старої бази (Google-документ / векторна колекція). Один рядок — один запис: <code>питання;відповідь;тег1,тег2</code></p>
       <Textarea rows={10} placeholder={'Хто виробник?;Ми шиємо самі в Україні;виробник\nЧи можна приміряти?;Так, при отриманні на Новій Пошті;примірка,повернення'} value={text} onChange={(e) => setText(e.target.value)} />

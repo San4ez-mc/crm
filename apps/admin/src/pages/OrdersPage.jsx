@@ -88,7 +88,10 @@ export default function OrdersPage() {
             const stageOrders = orders.filter((o) => o.stageId === stage.id);
             const stageSum = stageOrders.reduce((s, o) => s + orderTotal(o), 0);
             return (
-              <div key={stage.id} className="w-72 shrink-0">
+              <div key={stage.id} className="w-72 shrink-0"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { const id = e.dataTransfer.getData('orderId'); if (id) moveOrderToStage(id, stage.id); }}
+              >
                 <div className="mb-1 flex items-center justify-between px-1">
                   <span className="text-sm font-medium">{stage.name}</span>
                   <span className="text-xs text-slate-500">{stageOrders.length}</span>
@@ -96,7 +99,13 @@ export default function OrdersPage() {
                 <div className="mb-2 px-1 text-xs font-medium text-brand-light">{money(stageSum)}</div>
                 <div className="space-y-2">
                   {stageOrders.map((o) => (
-                    <Card key={o.id} className="cursor-pointer p-3 hover:border-brand" onClick={() => setSelectedOrder(o)}>
+                    <Card
+                      key={o.id}
+                      className="cursor-pointer p-3 hover:border-brand"
+                      onClick={() => setSelectedOrder(o)}
+                      draggable
+                      onDragStart={(e) => e.dataTransfer.setData('orderId', o.id)}
+                    >
                       <div className="text-sm font-medium">{o.buyer?.fullName || o.buyer?.phone || 'Без покупця'}</div>
                       {o.buyer?.igUsername && <div className="text-xs text-brand-light">@{o.buyer.igUsername}</div>}
                       <div className="mt-1 text-xs text-slate-500 line-clamp-1">{o.items.map((it) => it.name).join(', ')}</div>
@@ -105,7 +114,7 @@ export default function OrdersPage() {
                         {o.ttnStatus && <Badge color="green">{o.ttnStatus}</Badge>}
                       </div>
                       {o.firstTouchAd?.name && <div className="mt-1 truncate text-[11px] text-slate-500" title={o.firstTouchAd.name}>📢 {o.firstTouchAd.name}</div>}
-                      <Select className="mt-2 !w-auto !py-1 text-xs" value={o.stageId || ''} onClick={(e) => e.stopPropagation()} onChange={(e) => moveOrderToStage(o.id, e.target.value)}>
+                      <Select className="mt-2 w-full !py-1 text-xs" value={o.stageId || ''} onClick={(e) => e.stopPropagation()} onChange={(e) => moveOrderToStage(o.id, e.target.value)}>
                         {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </Select>
                     </Card>

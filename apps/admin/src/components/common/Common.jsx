@@ -102,8 +102,12 @@ export function Field({ label, children }) {
 
 // overflow-x-auto тут — щоб широкі таблиці скролились ГОРИЗОНТАЛЬНО всередині картки
 // на мобільних, а не ламали всю сторінку (мобільна верстка, 2026-09-01).
-export function Card({ children, className = '' }) {
-  return <div className={`overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 ${className}`}>{children}</div>;
+// 2026-09-05 — КРИТИЧНИЙ ФІКС: компонент приймав лише children/className і ТИХО ГУБИВ усі
+// інші проп'си (onClick, draggable, onDragStart тощо) — тому <Card onClick={...}> ніде не
+// працював (замовлення/воронки не відкривались по кліку), хоча сам обробник був написаний
+// правильно. Тепер решта проп'сів (...props) спредяться на div, як у Button/Input/Select.
+export function Card({ children, className = '', ...props }) {
+  return <div {...props} className={`overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 ${className}`}>{children}</div>;
 }
 
 export function Badge({ children, color = 'slate' }) {

@@ -25,11 +25,21 @@ router.post('/returns', asyncHandler(async (req, res) => {
   const { orderId, type, reason, status } = req.body || {};
   if (!orderId) throw new ValidationError('orderId обовʼязковий');
   if (!['return', 'exchange'].includes(type)) throw new ValidationError('type: return | exchange');
-  const order = await db.order.findFirst({ where: { id: orderId, tenantId: req.tenant.id } });
+  const order = await db.order.findFirst({ where: { id: orderId, tenantId: req.tenant.id }, include: { stage: { select: { pipelineId: true } } } });
   if (!order) throw new NotFoundError('Order', orderId);
   const ret = await db.return.create({
     data: { tenantId: req.tenant.id, orderId, type, reason: reason || null, status: status || 'new' },
   });
+  // Best-effort: переносимо замовлення на стадію "Повернення/обмін" тієї ж воронки, якщо вона
+  // є (2026-09-05, за проханням власника) — щоб факт повернення/обміну було видно на дошці
+  // замовлень, не лише в журналі повернень. Немає такої стадії — тихо пропускаємо, не блокуючи
+  // створення самого Return.
+  if (order.stage?.pipelineId) {
+    const returnStage = await db.stage.findFirst({ where: { pipelineId: order.stage.pipelineId, name: 'Повернення/обмін' } });
+    if (returnStage && returnStage.id !== order.stageId) {
+      await db.order.update({ where: { id: order.id }, data: { stageId: returnStage.id } }).catch(() => {});
+    }
+  }
   res.status(201).json({ ok: true, data: ret });
 }));
 
