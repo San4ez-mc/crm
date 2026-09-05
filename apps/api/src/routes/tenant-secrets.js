@@ -21,6 +21,35 @@ function mask(value) {
   return `${'•'.repeat(Math.max(4, s.length - 4))}${s.slice(-4)}`;
 }
 
+// ДОПОВНЕННЯ 2026-09-05 — push секретів у воронки Flows (запит власника: «коли міняю ключ у CRM,
+// у воронках має оновитись автоматично»). Flows сам знаходить воронки магазину за tenant.apiKey
+// (funnelKey CRM_API_KEY) і оновлює лише білий список ключів, нічого не видаляє. Викликається
+// (а) автоматично після POST/PATCH секрету, best-effort; (б) кнопкою «Передати ключі у воронку».
+// FLOWS_API_URL / FLOWS_API_SECRET — системні, у .env (ті самі, що для ad-spend/sync-now).
+async function pushSecretsToFunnel(tenant, { dryRun = false } = {}) {
+  if (!process.env.FLOWS_API_URL || !process.env.FLOWS_API_SECRET) throw new ValidationError('FLOWS_API_URL/FLOWS_API_SECRET не налаштовані на сервері CRM');
+  const rows = await db.tenantSecret.findMany({ where: { tenantId: tenant.id } });
+  const secrets = {};
+  for (const s of rows) secrets[s.key] = s.value;
+  const resp = await fetch(`${process.env.FLOWS_API_URL}/api/funnels/crm-secrets-sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Api-Secret': process.env.FLOWS_API_SECRET },
+    body: JSON.stringify({ crmApiKey: tenant.apiKey, secrets, dryRun }),
+  });
+  const json = await resp.json().catch(() => null);
+  if (!resp.ok || !json?.ok) throw new ValidationError('Flows не прийняв ключі: ' + (json?.error?.message || resp.status));
+  if (!dryRun) await db.tenantSecret.updateMany({ where: { tenantId: tenant.id }, data: { syncedToFunnelAt: new Date() } });
+  return json.data;
+}
+function pushSecretsToFunnelSilently(tenant) {
+  pushSecretsToFunnel(tenant).catch((e) => console.warn('[secrets] auto-push to Flows failed:', e.message));
+}
+
+router.post('/secrets/sync-to-funnel', asyncHandler(async (req, res) => {
+  const data = await pushSecretsToFunnel(req.tenant, { dryRun: !!(req.body && req.body.dryRun) });
+  res.json({ ok: true, data });
+}));
+
 router.get('/secrets/export', asyncHandler(async (req, res) => {
   const secrets = await db.tenantSecret.findMany({ where: { tenantId: req.tenant.id } });
   await db.tenantSecret.updateMany({ where: { tenantId: req.tenant.id }, data: { syncedToFunnelAt: new Date() } });
@@ -43,6 +72,7 @@ router.post('/secrets', asyncHandler(async (req, res) => {
     update: { value: String(value), label: label ?? undefined, isSecret: isSecret !== undefined ? !!isSecret : undefined },
     create: { tenantId: req.tenant.id, key: String(key).trim(), label: label || null, value: String(value), isSecret: isSecret !== undefined ? !!isSecret : true },
   });
+  pushSecretsToFunnelSilently(req.tenant);
   res.status(201).json({ ok: true, data: secret });
 }));
 
@@ -64,6 +94,7 @@ router.patch('/secrets/:id', asyncHandler(async (req, res) => {
       ...(isSecret !== undefined ? { isSecret: !!isSecret } : {}),
     },
   });
+  pushSecretsToFunnelSilently(req.tenant);
   res.json({ ok: true, data: secret });
 }));
 

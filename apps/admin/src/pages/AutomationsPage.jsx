@@ -47,11 +47,11 @@ const SERVICE_GROUPS = [
   {
     title: 'Оплата',
     icon: '💳', color: '#2563EB', logoSlug: null,
-    desc: 'Прийом оплат і звірка надходжень (IBAN-посилання + виписка Monobank).',
+    // MONO_TOKEN/MONO_ACCOUNT_ID тут більше нема (2026-09-05): токен Monobank — поле активного ФОП вище,
+    // рахунок воронка визначає сама за IBAN ФОПа. Перемкнув ФОП — воронка підхопила.
+    desc: 'Прийом оплат (IBAN-посилання). Виписка Monobank береться за токеном активного ФОП.',
     keys: [
       { key: 'IBANOPLATA_API_KEY', label: 'IbanOplata — API Key', isSecret: true },
-      { key: 'MONO_TOKEN', label: 'Monobank — X-Token', isSecret: true },
-      { key: 'MONO_ACCOUNT_ID', label: 'Monobank — id рахунку', isSecret: false },
     ],
   },
   {
@@ -64,16 +64,40 @@ const SERVICE_GROUPS = [
     ],
   },
   {
-    title: 'ШІ та FAQ',
+    title: 'ШІ',
     icon: '✨', color: '#4285F4', logoSlug: 'googlegemini',
-    desc: 'Резервний аналіз фото/скріншотів і база готових відповідей на типові питання.',
+    // VECTOR_TOKEN/VECTOR_URL прибрано (2026-09-05): FAQ живе у розділі «База знань» CRM.
+    desc: 'Резервний аналіз фото/скріншотів. Готові відповіді на питання клієнтів — у розділі «База знань».',
     keys: [
       { key: 'GEMINI_API_KEY', label: 'Gemini API Key (vision fallback)', isSecret: true },
-      { key: 'VECTOR_TOKEN', label: 'Вектор-база FAQ — токен', isSecret: true },
-      { key: 'VECTOR_URL', label: 'Вектор-база FAQ — URL', isSecret: false },
     ],
   },
 ];
+
+// Ключі, які Flows приймає при синхронізації (білий список на боці Flows, /api/funnels/crm-secrets-sync).
+const SYNCED_KEYS = new Set(['INSTAGRAM_ACCESS_TOKEN', 'INSTAGRAM_BUSINESS_ID', 'INSTAGRAM_USERNAME', 'INSTAGRAM_VERIFY_TOKEN', 'META_SYSTEM_USER_TOKEN', 'META_AD_ACCOUNT_ID', 'ZERNIO_ACCOUNT_ID', 'ZERNIO_API_TOKEN', 'ZERNIO_SEND_URL', 'IBANOPLATA_API_KEY', 'TELEGRAM_BOT_TOKEN', 'ADMIN_TELEGRAM_ID', 'GEMINI_API_KEY', 'BREWDROP_TOKEN', 'EASYDROP_LOGIN', 'EASYDROP_PASS']);
+
+function SyncReport({ report }) {
+  if (!report) return null;
+  const bots = report.bots || [];
+  if (!bots.length) return <p className="text-xs text-amber-400">Flows не знайшов активних воронок цього магазину (ключ CRM_API_KEY у воронці має збігатися з API-ключем магазину).</p>;
+  return (
+    <ul className="space-y-1 text-xs">
+      {bots.map((b) => (
+        <li key={b.botId} className="text-slate-400">
+          <span className="text-slate-200">{b.name}</span>{' — '}
+          {b.skippedBot ? <span>пропущено: {b.skippedBot}</span> : (
+            <>
+              {(b.updated || []).length ? <span className="text-emerald-400">оновлено: {b.updated.join(', ')}</span> : null}
+              {(b.created || []).length ? <span className="text-emerald-400">{(b.updated || []).length ? '; ' : ''}додано: {b.created.join(', ')}</span> : null}
+              {!(b.updated || []).length && !(b.created || []).length ? <span>усе вже актуальне ({(b.unchanged || []).length} ключів)</span> : null}
+            </>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function ServiceLogo({ slug, icon, color }) {
   return (
@@ -102,6 +126,14 @@ export default function AutomationsPage() {
   const [error, setError] = useState('');
   const [editingSecret, setEditingSecret] = useState(null); // {id?, key, label, value, isSecret}
   const [editingFop, setEditingFop] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncReport, setSyncReport] = useState(null);
+  const [syncError, setSyncError] = useState('');
+
+  async function syncToFunnel() {
+    setSyncing(true); setSyncError(''); setSyncReport(null);
+    try { setSyncReport((await api.syncSecretsToFunnel()).data); load(); } catch (e) { setSyncError(e.message); } finally { setSyncing(false); }
+  }
 
   async function load() {
     setError('');
@@ -159,9 +191,25 @@ export default function AutomationsPage() {
       <ErrorBanner message={error} />
       <p className="max-w-3xl text-sm text-slate-400">
         Усі ключі й сервіси, які реально використовує ваша Instagram-воронка продажів і
-        щоденний крон реклами — в одному місці. Заповніть тут — і це буде звідки підтягувати
-        значення у воронку (кнопка синхронізації додається окремо для кожного сервісу за потреби).
+        щоденний крон реклами — в одному місці. Збережений тут ключ автоматично передається у
+        воронки магазину. Кнопка нижче робить те саме вручну і показує, що саме змінилось.
       </p>
+
+      {/* ── Синхронізація у воронку ─────────────────────────────────── */}
+      <Card className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold">Ключі у воронці</h3>
+            <p className="text-xs text-slate-500">
+              Передаються: Instagram / Meta, Zernio, IbanOplata, Telegram, Gemini, постачальники. Токен Monobank — з активного ФОП, довідка — з Бази знань.
+              {secrets && secrets.some((s) => SYNCED_KEYS.has(s.key) && s.syncedToFunnelAt) ? ' Останній раз передано: ' + new Date(Math.max(...secrets.filter((s) => s.syncedToFunnelAt).map((s) => +new Date(s.syncedToFunnelAt)))).toLocaleString('uk-UA') + '.' : ' Ще не передавались.'}
+            </p>
+          </div>
+          <Button onClick={syncToFunnel} disabled={syncing}>{syncing ? 'Передаю…' : 'Передати ключі у воронку'}</Button>
+        </div>
+        {syncError && <p className="mt-2 text-xs text-red-400">{syncError}</p>}
+        <div className="mt-2"><SyncReport report={syncReport} /></div>
+      </Card>
 
       {/* ── ФОП ─────────────────────────────────────────────────────── */}
       <Card className="p-5">

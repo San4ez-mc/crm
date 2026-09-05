@@ -64,6 +64,7 @@ export const api = {
   createSecret: (data) => post('/secrets', data),
   updateSecret: (id, data) => patch(`/secrets/${id}`, data),
   deleteSecret: (id) => del(`/secrets/${id}`),
+  syncSecretsToFunnel: (dryRun = false) => post('/secrets/sync-to-funnel', { dryRun }),
 
   listProducts: (params = {}) => get(`/products?${new URLSearchParams(params)}`),
   getProduct: (id) => get(`/products/${id}`),
