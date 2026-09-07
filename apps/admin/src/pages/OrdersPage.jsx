@@ -26,6 +26,13 @@ export default function OrdersPage() {
 
   useEffect(() => { api.listAds().then((r) => setAds(r.data)).catch(() => {}); }, []);
 
+  // 2026-09-07: посилання зі сповіщень Telegram — /orders?open=<orderId> одразу відкриває картку.
+  useEffect(() => {
+    const openId = new URLSearchParams(window.location.search).get('open');
+    if (!openId) return;
+    api.getOrder(openId).then((r) => { if (r.data) setSelectedOrder(r.data); }).catch((e) => setError('Замовлення ' + openId + ' не знайдено: ' + e.message));
+  }, []);
+
   async function load() {
     setError('');
     try {
