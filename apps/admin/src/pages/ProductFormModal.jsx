@@ -75,6 +75,26 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
   const [showNewSupplier, setShowNewSupplier] = useState(false);
   const [savedProductId, setSavedProductId] = useState(product?.id || null);
 
+  // ДОПОВНЕННЯ 2026-09-07 (фідбек власника): ціна постачальника редагується прямо тут, у
+  // картці товару, а не лише на окремій сторінці "Витрати по товару" — блоком [{ціна, діє з
+  // дати}], бо постачальники міняють ціну, і маржа кожного замовлення має рахуватись за
+  // ціною, що діяла НА ДАТУ того замовлення (backend: ProductExpense.cogsHistory, lib/margin.js
+  // cogsAt), а не поточною.
+  const [cogsHistory, setCogsHistory] = useState(product?.productExpense?.cogsHistory?.length ? product.productExpense.cogsHistory : []);
+  const [cogsSaving, setCogsSaving] = useState(false);
+  const [cogsSaved, setCogsSaved] = useState(false);
+
+  async function saveCogsHistory() {
+    if (!savedProductId) { setError('Спершу збережіть товар'); return; }
+    setCogsSaving(true); setCogsSaved(false); setError('');
+    try {
+      await api.updateProductExpense(savedProductId, {
+        cogsHistory: cogsHistory.map((h) => ({ cost: Number(h.cost) || 0, validFrom: h.validFrom })),
+      });
+      setCogsSaved(true);
+    } catch (e) { setError(e.message); } finally { setCogsSaving(false); }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
@@ -136,6 +156,19 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
           </div>
           <Field label="Ціна за кількість (та сама для всіх кольорів)">
             <BulkPricingEditor value={form.bulkPricing} onChange={(v) => setForm({ ...form, bulkPricing: v })} />
+          </Field>
+          <Field label="Ціна постачальника (для розрахунку маржі)">
+            {!savedProductId ? (
+              <p className="text-xs text-slate-500">Спершу збережіть товар, щоб додати ціну постачальника.</p>
+            ) : (
+              <CogsHistoryEditor
+                value={cogsHistory}
+                onChange={(v) => { setCogsHistory(v); setCogsSaved(false); }}
+                onSave={saveCogsHistory}
+                saving={cogsSaving}
+                saved={cogsSaved}
+              />
+            )}
           </Field>
           {!forceSet && (
             <Field label="Категорія">
@@ -270,6 +303,38 @@ function BulkPricingEditor({ value = [], onChange }) {
         </div>
       ))}
       <Button type="button" variant="secondary" onClick={add}>+ Ціна за кількість</Button>
+    </div>
+  );
+}
+
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+// Ціна постачальника — окремий бекенд-запис (ProductExpense), тому має власну кнопку
+// "Зберегти" замість загального сабміту форми товару (як і "Варіанти" нижче).
+function CogsHistoryEditor({ value = [], onChange, onSave, saving, saved }) {
+  function update(i, field, v) { onChange(value.map((row, idx) => (idx === i ? { ...row, [field]: v } : row))); }
+  function remove(i) { onChange(value.filter((_, idx) => idx !== i)); }
+  function add() { onChange([...value, { cost: '', validFrom: todayStr() }]); }
+  const sorted = [...value].sort((a, b) => String(a.validFrom).localeCompare(String(b.validFrom)));
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-slate-500">Постачальники міняють ціну — додайте новий рядок із датою, з якої вона діє.</p>
+      {sorted.map((row) => {
+        const i = value.indexOf(row);
+        return (
+          <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
+            <Input type="number" step="0.01" min="0" placeholder="ціна постачальника" value={row.cost ?? ''} onChange={(e) => update(i, 'cost', e.target.value)} />
+            <Input type="date" value={row.validFrom ?? ''} onChange={(e) => update(i, 'validFrom', e.target.value)} />
+            <IconButton onClick={() => remove(i)}>🗑️</IconButton>
+          </div>
+        );
+      })}
+      {sorted.length === 0 && <p className="text-xs text-slate-500">Ціни ще немає — додайте перший рядок.</p>}
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="secondary" onClick={add}>+ Нова ціна з дати</Button>
+        <Button type="button" onClick={onSave} disabled={saving}>{saving ? 'Зберігаю…' : 'Зберегти ціну постачальника'}</Button>
+        {saved && <span className="text-xs text-emerald-400">Збережено</span>}
+      </div>
     </div>
   );
 }

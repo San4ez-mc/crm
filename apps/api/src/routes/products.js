@@ -13,6 +13,9 @@ const PRODUCT_INCLUDE = {
   offers: { orderBy: { sortOrder: 'asc' } },
   setOf: { include: { componentProduct: { select: { id: true, name: true, sku: true } } } },
   _count: { select: { orderItems: true } },
+  // 2026-09-07 (фідбек власника): ціна постачальника редагується прямо в картці товару,
+  // не лише на окремій сторінці "Витрати по товару" — тож картці потрібна поточна історія.
+  productExpense: { select: { cogs: true, cogsHistory: true } },
 };
 
 function serializeProduct(p) {
