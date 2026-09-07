@@ -1,7 +1,7 @@
 // §9.11 Повернення/обміни — список + форма.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, Select, Field, Textarea, Card, EmptyState, ErrorBanner, Badge } from '../components/common/Common';
+import { PageHeader, Button, Select, Field, Textarea, Card, EmptyState, ErrorBanner, Badge, formatDate } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 
 const STATUS_COLOR = { new: 'amber', confirmed: 'teal', completed: 'green' };
@@ -38,7 +38,7 @@ export default function ReturnsPage() {
             <tbody>
               {items.map((r) => (
                 <tr key={r.id} className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30">
-                  <td className="px-4 py-3 text-slate-400">{new Date(r.createdAt).toLocaleDateString('uk-UA')}</td>
+                  <td className="px-4 py-3 text-slate-400">{formatDate(r.createdAt)}</td>
                   <td className="px-4 py-3">#{r.orderId.slice(0, 8)}</td>
                   <td className="px-4 py-3 text-slate-400">{r.order?.buyer?.fullName || r.order?.buyer?.phone || '—'}</td>
                   <td className="px-4 py-3">{TYPE_LABEL[r.type]}</td>

@@ -1,7 +1,7 @@
 // §9.9/§9.10 Покупці — список + картка.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Input, Card, EmptyState, ErrorBanner, Field, Label, Button, Pagination, money, formatPhone } from '../components/common/Common';
+import { PageHeader, Input, Card, EmptyState, ErrorBanner, Field, Label, Button, Pagination, money, formatPhone, formatDate } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 
 const PAGE_SIZE = 50;
@@ -50,7 +50,7 @@ export default function BuyersPage() {
                   </td>
                   <td className="px-4 py-3">{b.ordersCount}</td>
                   <td className="px-4 py-3">{money(b.totalSpent)}</td>
-                  <td className="px-4 py-3 text-slate-400">{b.lastOrderAt ? new Date(b.lastOrderAt).toLocaleDateString('uk-UA') : '—'}</td>
+                  <td className="px-4 py-3 text-slate-400">{formatDate(b.lastOrderAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -178,7 +178,7 @@ function BuyerDetailModal({ id, onClose, onSaved }) {
           <tbody>
             {buyer.orders.map((o) => (
               <tr key={o.id} className="border-b border-slate-800/60 last:border-0">
-                <td className="py-2 text-slate-400">{new Date(o.createdAt).toLocaleDateString('uk-UA')}</td>
+                <td className="py-2 text-slate-400">{formatDate(o.createdAt)}</td>
                 <td className="py-2">{o.items.map((it) => it.name).join(', ')}</td>
                 <td className="py-2">{money(o.items.reduce((s, it) => s + Number(it.price) * it.quantity, 0))}</td>
                 <td className="py-2 text-slate-400">{o.stage?.name || '—'}</td>

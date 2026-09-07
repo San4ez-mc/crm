@@ -5,7 +5,7 @@
 // вправо по днях.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Input, Select, ErrorBanner, TrendChart, money } from '../components/common/Common';
+import { PageHeader, Card, Input, Select, ErrorBanner, TrendChart, money, formatDate } from '../components/common/Common';
 
 function periodPreset(preset) {
   const to = new Date();
@@ -21,7 +21,9 @@ function fmt(v, digits = 2) {
   return Number(v).toLocaleString('uk-UA', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 function pct(v) { return v === null || v === undefined ? '—' : `${fmt(v, 1)}%`; }
-function fmtDay(v) { return new Date(v).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'short' }); }
+// Єдиний формат дати (DD.MM.YY, §Common.jsx formatDate) + день тижня коротко — тут це
+// заголовок колонки таблиці, весь тиждень одразу перед очима, тож день тижня лишаємо.
+function fmtDay(v) { return `${new Date(v).toLocaleDateString('uk-UA', { weekday: 'short' })} ${formatDate(v)}`; }
 
 // rows: [{ label, get:(d)=>string, highlight?, sep? }] — sep=true малює товсту риску НАД цим рядком
 // (межа секції, як раніше було <div className="my-2 border-t"/> між групами показників).

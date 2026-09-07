@@ -2,7 +2,7 @@
 // + фінансові вхідні для щоденної аналітики (курс, постійні витрати, ЗП).
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Field, Input, Button, ErrorBanner } from '../components/common/Common';
+import { PageHeader, Card, Field, Input, Button, ErrorBanner, formatDateTime } from '../components/common/Common';
 
 export default function SettingsGeneralPage() {
   const [tenant, setTenant] = useState(null);
@@ -95,7 +95,7 @@ export default function SettingsGeneralPage() {
               <Button type="button" variant="secondary" onClick={refreshRate} disabled={refreshingRate}>{refreshingRate ? 'Оновлюю…' : 'Оновити з НБУ'}</Button>
             </div>
             {tenant.usdExchangeRateUpdatedAt && (
-              <p className="mt-1 text-xs text-slate-500">Оновлено: {new Date(tenant.usdExchangeRateUpdatedAt).toLocaleString('uk-UA')}</p>
+              <p className="mt-1 text-xs text-slate-500">Оновлено: {formatDateTime(tenant.usdExchangeRateUpdatedAt)}</p>
             )}
           </Field>
           <Field label="Постійні витрати за добу, грн"><Input type="number" step="0.01" value={finance.dailyFixedCosts} onChange={(e) => setFinance({ ...finance, dailyFixedCosts: e.target.value })} /></Field>

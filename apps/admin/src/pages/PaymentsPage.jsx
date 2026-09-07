@@ -1,7 +1,7 @@
 // §9.14 Журнал платежів — лише відображення (звірка йде на боці воронки, Monobank/ibanoplata).
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, EmptyState, ErrorBanner, Badge, money } from '../components/common/Common';
+import { PageHeader, Card, EmptyState, ErrorBanner, Badge, money, formatDateTime } from '../components/common/Common';
 
 const STATUS_COLOR = { success: 'green', pending: 'amber', failed: 'red' };
 
@@ -28,7 +28,7 @@ export default function PaymentsPage() {
             <tbody>
               {items.map((p) => (
                 <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-4 py-3 text-slate-400">{new Date(p.createdAt).toLocaleString('uk-UA')}</td>
+                  <td className="px-4 py-3 text-slate-400">{formatDateTime(p.createdAt)}</td>
                   <td className="px-4 py-3">#{p.orderId.slice(0, 8)} · {p.order?.buyer?.fullName || p.order?.buyer?.phone || '—'}</td>
                   <td className="px-4 py-3">{money(p.amount)}</td>
                   <td className="px-4 py-3 text-slate-400">{p.method || '—'}</td>

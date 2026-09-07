@@ -155,8 +155,28 @@ export function KpiCard({ label, value, delta, deltaGood = 'up' }) {
   );
 }
 
+// Єдиний формат дати по всій системі (2026-09-07, за проханням власника) — DD.MM.YY,
+// напр. 22.03.26. Використовувати ЦІ хелпери всюди, де показується дата/час, а не інлайн
+// new Date(...).toLocaleDateString('uk-UA') — той дає рік повністю (DD.MM.YYYY) і не єдиний
+// формат по сторінках.
+function pad2(n) { return String(n).padStart(2, '0'); }
+export function formatDate(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${String(d.getFullYear()).slice(-2)}`;
+}
+export function formatDateTime(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${formatDate(v)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+// Компактно для осі графіка (без року — там і так лише кілька тижнів/місяців у полі зору).
 function fmtChartDate(v) {
-  return new Date(v).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
 }
 
 // Легкий бар-чарт тренду по днях, без сторонніх бібліотек (той самий "чистими дівами" підхід,

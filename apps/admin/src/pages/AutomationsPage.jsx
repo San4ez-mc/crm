@@ -9,7 +9,7 @@
 // Синхронізація реклами і Webhook-креденшли — на сторінках Оголошення / Загальні.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Field, Input, Button, IconButton, ErrorBanner } from '../components/common/Common';
+import { PageHeader, Card, Field, Input, Button, IconButton, ErrorBanner, formatDateTime } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 
 const SERVICE_GROUPS = [
@@ -202,7 +202,7 @@ export default function AutomationsPage() {
             <h3 className="text-sm font-semibold">Ключі у воронці</h3>
             <p className="text-xs text-slate-500">
               Передаються: Instagram / Meta, Zernio, IbanOplata, Telegram, Gemini, постачальники. Токен Monobank — з активного ФОП, довідка — з Бази знань.
-              {secrets && secrets.some((s) => SYNCED_KEYS.has(s.key) && s.syncedToFunnelAt) ? ' Останній раз передано: ' + new Date(Math.max(...secrets.filter((s) => s.syncedToFunnelAt).map((s) => +new Date(s.syncedToFunnelAt)))).toLocaleString('uk-UA') + '.' : ' Ще не передавались.'}
+              {secrets && secrets.some((s) => SYNCED_KEYS.has(s.key) && s.syncedToFunnelAt) ? ' Останній раз передано: ' + formatDateTime(Math.max(...secrets.filter((s) => s.syncedToFunnelAt).map((s) => +new Date(s.syncedToFunnelAt)))) + '.' : ' Ще не передавались.'}
             </p>
           </div>
           <Button onClick={syncToFunnel} disabled={syncing}>{syncing ? 'Передаю…' : 'Передати ключі у воронку'}</Button>

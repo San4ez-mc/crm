@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { PageHeader, Card, ErrorBanner, KpiCard, Badge, money } from '../components/common/Common';
+import { PageHeader, Card, ErrorBanner, KpiCard, Badge, money, formatDate } from '../components/common/Common';
 
 // Проста KPI-картка з підсвіткою (зелена рамка, коли значення "хороше") — на відміну від
 // KpiCard (для дельти vs попередній період), тут немає порівняння з іншим періодом, тож
@@ -20,7 +20,6 @@ function HighlightCard({ label, value, good }) {
   );
 }
 
-function fmtDay(v) { return new Date(v).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' }); }
 const STATUS_LABEL = { picked_up: 'Забрано', refused: 'Відмова', returned: 'Повернення' };
 const STATUS_COLOR = { picked_up: 'green', refused: 'red', returned: 'amber' };
 
@@ -75,7 +74,7 @@ function ResultChart({ data }) {
             <g key={d.date}>
               <rect x={x - barW - 2} y={Math.min(scaleY(d.spend), zeroY)} width={barW} height={Math.abs(scaleY(d.spend) - zeroY)} fill="#3b82f6" opacity="0.85" />
               <rect x={x + 2} y={Math.min(scaleY(d.margin), zeroY)} width={barW} height={Math.abs(scaleY(d.margin) - zeroY)} fill="#10b981" opacity="0.85" />
-              <text x={x} y={H + 18} textAnchor="middle" fontSize="10" fill="#64748b">{fmtDay(d.date)}</text>
+              <text x={x} y={H + 18} textAnchor="middle" fontSize="10" fill="#64748b">{formatDate(d.date)}</text>
             </g>
           );
         })}

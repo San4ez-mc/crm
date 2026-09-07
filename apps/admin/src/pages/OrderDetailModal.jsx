@@ -1,7 +1,7 @@
 // §9.8 Замовлення — деталі (drawer/модалка з рядка списку).
 import { useState } from 'react';
 import { api } from '../api/client';
-import { Field, Input, Textarea, Select, Button, Badge, ErrorBanner, money } from '../components/common/Common';
+import { Field, Input, Textarea, Select, Button, Badge, ErrorBanner, money, formatDateTime } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 
 export default function OrderDetailModal({ order, pipelines, onClose, onChanged, onOpenReturn }) {
@@ -23,7 +23,7 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
   }
 
   return (
-    <Modal isOpen title={`Замовлення від ${new Date(order.createdAt).toLocaleString('uk-UA')}`} onClose={onClose} wide>
+    <Modal isOpen title={`Замовлення від ${formatDateTime(order.createdAt)}`} onClose={onClose} wide>
       <ErrorBanner message={error} />
       <div className="space-y-5 text-sm">
         <section>

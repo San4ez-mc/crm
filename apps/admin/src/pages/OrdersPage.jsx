@@ -5,7 +5,7 @@
 // мобільних браузерах не працює й ще й глушив клік на відкриття картки).
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, Input, Select, Card, EmptyState, ErrorBanner, Badge, money } from '../components/common/Common';
+import { PageHeader, Button, Input, Select, Card, EmptyState, ErrorBanner, Badge, money, formatDate } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 import OrderDetailModal from './OrderDetailModal';
 import NewOrderModal from './NewOrderModal';
@@ -140,7 +140,7 @@ export default function OrdersPage() {
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30" onClick={() => setSelectedOrder(o)}>
-                  <td className="px-4 py-3 text-slate-400">{new Date(o.createdAt).toLocaleDateString('uk-UA')}</td>
+                  <td className="px-4 py-3 text-slate-400">{formatDate(o.createdAt)}</td>
                   <td className="px-4 py-3">{o.buyer?.fullName || o.buyer?.phone || '—'}</td>
                   <td className="px-4 py-3 text-slate-400">{o.items.map((it) => it.name).join(', ')}</td>
                   <td className="px-4 py-3">{money(orderTotal(o))}</td>
