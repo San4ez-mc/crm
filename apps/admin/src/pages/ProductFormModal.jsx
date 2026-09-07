@@ -80,7 +80,14 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
   // дати}], бо постачальники міняють ціну, і маржа кожного замовлення має рахуватись за
   // ціною, що діяла НА ДАТУ того замовлення (backend: ProductExpense.cogsHistory, lib/margin.js
   // cogsAt), а не поточною.
-  const [cogsHistory, setCogsHistory] = useState(product?.productExpense?.cogsHistory?.length ? product.productExpense.cogsHistory : []);
+  const [cogsHistory, setCogsHistory] = useState(() => {
+    const exp = product?.productExpense;
+    if (exp?.cogsHistory?.length) return exp.cogsHistory;
+    // Товари, заповнені ДО появи історії цін, мають лише флет exp.cogs — підхоплюємо його
+    // як перший рядок, щоб картка не виглядала порожньою для вже введеної ціни.
+    if (exp?.cogs && Number(exp.cogs) > 0) return [{ cost: exp.cogs, validFrom: todayStr() }];
+    return [];
+  });
   const [cogsSaving, setCogsSaving] = useState(false);
   const [cogsSaved, setCogsSaved] = useState(false);
 
