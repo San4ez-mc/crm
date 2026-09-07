@@ -7,6 +7,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem } = require('../lib/margin');
+const { ensureFreshUsdRate, rowToUAH, sumAdSpendUAH } = require('../lib/currency');
 
 const router = express.Router();
 
@@ -17,9 +18,11 @@ const router = express.Router();
 // виручкою/маржею, а не тільки лічильниками. "Забрано" = !isRefused; виручку/маржу
 // рахуємо лише по неповернутих (без Return) і не-відмовлених замовленнях — так само,
 // як решта аналітики виключає Return (§4.11), інакше цифри будуть завищені.
-async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct) {
-  const [spendAgg, contacts, orders] = await Promise.all([
-    db.adSpendDaily.aggregate({ where: { adId: ad.id, ...(dateWhere ? { date: dateWhere } : {}) }, _sum: { amount: true } }),
+async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct, usdRate) {
+  const [spend, contacts, orders] = await Promise.all([
+    // Meta пише суму у $ — конвертуємо в грн, щоб margin/spend (ROI) не змішували валюти
+    // (2026-09-07, фідбек власника).
+    sumAdSpendUAH({ adId: ad.id, ...(dateWhere ? { date: dateWhere } : {}) }, usdRate),
     db.adClick.count({ where: { adId: ad.id, ...(dateWhere ? { timestamp: dateWhere } : {}) } }),
     db.order.findMany({
       where: { tenantId, firstTouchAdId: ad.id, ...(dateWhere ? { createdAt: dateWhere } : {}) },
@@ -31,8 +34,6 @@ async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct) {
       orderBy: { createdAt: 'desc' },
     }),
   ]);
-
-  const spend = Number(spendAgg._sum.amount || 0);
   const ordersCreated = orders.length;
   const pickedUp = orders.filter((o) => !o.isRefused);
   const ordersPickedUp = pickedUp.length;
@@ -46,7 +47,7 @@ async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct) {
     let orderRevenue = 0, orderMargin = 0;
     for (const it of o.items) {
       orderRevenue += Number(it.price) * it.quantity;
-      orderMargin += marginPerOrderItem(it, expenseByProduct, o.isRefused);
+      orderMargin += marginPerOrderItem(it, expenseByProduct, o.isRefused, o.createdAt);
     }
     if (revenueOrders.includes(o)) {
       revenue += orderRevenue;
@@ -103,6 +104,8 @@ function periodDateWhere(from, to) {
 // кожному денному рядку). Разом віддаємо агреговані totalSpend/lastSyncedAt.
 router.get('/ads', asyncHandler(async (req, res) => {
   const { productId, take = '100', skip = '0' } = req.query;
+  const tenant = await ensureFreshUsdRate(req.tenant);
+  const usdRate = Number(tenant.usdExchangeRate || 0);
   const where = { tenantId: req.tenant.id, ...(productId ? { productId: String(productId) } : {}) };
   const ads = await db.ad.findMany({
     where,
@@ -111,18 +114,19 @@ router.get('/ads', asyncHandler(async (req, res) => {
     take: Number(take),
     skip: Number(skip),
   });
-  const totals = await db.adSpendDaily.groupBy({
-    by: ['adId'],
-    where: { adId: { in: ads.map((a) => a.id) } },
-    _sum: { amount: true, impressions: true, clicks: true },
-    _max: { date: true },
-  });
-  const totalsByAd = Object.fromEntries(totals.map((t) => {
-    const spend = Number(t._sum.amount || 0);
+  // by adId+currency (не лише adId) — Meta пише $, конвертуємо в грн перед підсумком per-ad.
+  const [totalsByAdCurrency, otherTotals] = await Promise.all([
+    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { adId: { in: ads.map((a) => a.id) } }, _sum: { amount: true } }),
+    db.adSpendDaily.groupBy({ by: ['adId'], where: { adId: { in: ads.map((a) => a.id) } }, _sum: { impressions: true, clicks: true }, _max: { date: true } }),
+  ]);
+  const spendByAd = new Map();
+  for (const t of totalsByAdCurrency) spendByAd.set(t.adId, (spendByAd.get(t.adId) || 0) + rowToUAH(t._sum.amount, t.currency, usdRate));
+  const totalsByAd = Object.fromEntries(otherTotals.map((t) => {
+    const spend = spendByAd.get(t.adId) || 0;
     const impressions = Number(t._sum.impressions || 0);
     const clicks = Number(t._sum.clicks || 0);
     return [t.adId, {
-      totalSpend: t._sum.amount,
+      totalSpend: spend,
       lastSyncedAt: t._max.date,
       impressions: impressions || null,
       clicks: clicks || null,
@@ -184,8 +188,10 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
     db.ad.findMany({ where, include: { product: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' } }),
     db.ad.count({ where }),
   ]);
+  const tenant = await ensureFreshUsdRate(req.tenant);
+  const usdRate = Number(tenant.usdExchangeRate || 0);
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
-  const all = await Promise.all(ads.map((ad) => computeAdStats(req.tenant.id, ad, dateWhere, expenseByProduct)));
+  const all = await Promise.all(ads.map((ad) => computeAdStats(req.tenant.id, ad, dateWhere, expenseByProduct, usdRate)));
   const statsByAd = new Map(all.map((s) => [s.adId, s]));
 
   const totals = all.reduce((acc, s) => {
@@ -215,13 +221,15 @@ router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
   if (!ad) throw new NotFoundError('Ad', req.params.id);
   const { from, to } = req.query;
   const dateWhere = periodDateWhere(from, to);
+  const tenant = await ensureFreshUsdRate(req.tenant);
+  const usdRate = Number(tenant.usdExchangeRate || 0);
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
-  const stats = await computeAdStats(req.tenant.id, ad, dateWhere, expenseByProduct);
+  const stats = await computeAdStats(req.tenant.id, ad, dateWhere, expenseByProduct, usdRate);
 
   // Тренд по днях — та сама межа періоду, спред по днях (спенд з AdSpendDaily, маржа з
   // замовлень, створених того дня, по тій самій "фактичній" логіці — не відмова, без Return).
   const [spendRows, orders] = await Promise.all([
-    db.adSpendDaily.findMany({ where: { adId: ad.id, ...(dateWhere ? { date: dateWhere } : {}) }, select: { date: true, amount: true } }),
+    db.adSpendDaily.findMany({ where: { adId: ad.id, ...(dateWhere ? { date: dateWhere } : {}) }, select: { date: true, amount: true, currency: true } }),
     db.order.findMany({
       where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...(dateWhere ? { createdAt: dateWhere } : {}), isRefused: false, returns: { none: {} } },
       select: { createdAt: true, items: { select: { productId: true, price: true, quantity: true } } },
@@ -230,10 +238,10 @@ router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
   const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
   const days = new Map();
   const bucket = (k) => { if (!days.has(k)) days.set(k, { date: k, spend: 0, margin: 0 }); return days.get(k); };
-  for (const row of spendRows) bucket(dayKey(row.date)).spend += Number(row.amount);
+  for (const row of spendRows) bucket(dayKey(row.date)).spend += rowToUAH(row.amount, row.currency, usdRate);
   for (const o of orders) {
     const b = bucket(dayKey(o.createdAt));
-    for (const it of o.items) b.margin += marginPerOrderItem(it, expenseByProduct);
+    for (const it of o.items) b.margin += marginPerOrderItem(it, expenseByProduct, false, o.createdAt);
   }
   const trend = [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ ...d, profit: d.margin - d.spend }));
 

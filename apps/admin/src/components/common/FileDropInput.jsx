@@ -1,10 +1,20 @@
 // §9.3 — drag&drop або вибір файлу; для offers — галерея до 10 фото, перше = головне,
 // порядок можна міняти (тут — кнопками ↑/↓, функціонально еквівалентно перетягуванню).
-import { useState } from 'react';
+//
+// ВИПРАВЛЕНО 2026-09-07 (реальний баг, знайдено при "фото не завантажуються" в Олексія):
+// прихований <input id="single-file-input">/`multi-file-input-${max}`> мав ОДНАКОВИЙ id на
+// ВСІХ інстансах цього компонента на сторінці (мініатюра + розмірна сітка на одному товарі;
+// "Загальні фото" + фото КОЖНОГО варіанту — усі з max=10 за замовчуванням). Клік на будь-якому
+// дроп-зоні, крім першої, робив document.getElementById(...) → браузер повертав ПЕРШИЙ елемент
+// з таким id у DOM — файл летів у ЗОВСІМ ІНШЕ поле (перше на сторінці), а той бокс, куди
+// клацнув користувач, виглядав так, ніби "нічого не відбулось". useId() дає кожному інстансу
+// унікальний id — тепер клік завжди відкриває діалог саме для СВОГО прихованого інпута.
+import { useId, useState } from 'react';
 import { api } from '../../api/client';
 import ImageLightbox from './ImageLightbox';
 
 export function SingleFileDrop({ value, onChange }) {
+  const inputId = useId();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [lightbox, setLightbox] = useState(null);
@@ -24,11 +34,11 @@ export function SingleFileDrop({ value, onChange }) {
         className="flex h-56 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-700 bg-slate-800/50 text-xs text-slate-500 hover:border-brand"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
-        onClick={() => document.getElementById('single-file-input')?.click()}
+        onClick={() => document.getElementById(inputId)?.click()}
       >
         {value ? <img src={value} alt="" className="h-full w-full rounded-lg object-contain p-1" onClick={(e) => { e.stopPropagation(); setLightbox(value); }} /> : <span>{uploading ? 'Завантаження…' : 'Перетягніть файл або клікніть'}</span>}
       </div>
-      <input id="single-file-input" type="file" accept="image/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+      <input id={inputId} type="file" accept="image/*,.heic,.heif" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
       {value && <button type="button" onClick={() => onChange('')} className="mt-1 text-xs text-slate-500 hover:text-red-400">Видалити</button>}
       {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
       <ImageLightbox url={lightbox} onClose={() => setLightbox(null)} />
@@ -37,6 +47,7 @@ export function SingleFileDrop({ value, onChange }) {
 }
 
 export function MultiImageDrop({ value = [], onChange, max = 10 }) {
+  const inputId = useId();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [lightbox, setLightbox] = useState(null);
@@ -65,11 +76,11 @@ export function MultiImageDrop({ value = [], onChange, max = 10 }) {
         className="mb-2 flex h-20 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-slate-700 bg-slate-800/50 text-xs text-slate-500 hover:border-brand"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
-        onClick={() => document.getElementById(`multi-file-input-${max}`)?.click()}
+        onClick={() => document.getElementById(inputId)?.click()}
       >
         {uploading ? 'Завантаження…' : `Перетягніть до ${max} фото або клікніть (перше = головне)`}
       </div>
-      <input id={`multi-file-input-${max}`} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+      <input id={inputId} type="file" accept="image/*,.heic,.heif" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
       {error && <p className="mb-1 text-xs text-red-400">{error}</p>}
       <div className="flex flex-wrap gap-2">
         {value.map((url, i) => (

@@ -12,6 +12,7 @@ export default function SettingsGeneralPage() {
   const [saved, setSaved] = useState(false);
   const [finance, setFinance] = useState({ usdExchangeRate: '', dailyFixedCosts: '', dailyPayrollCosts: '' });
   const [financeSaved, setFinanceSaved] = useState(false);
+  const [refreshingRate, setRefreshingRate] = useState(false);
 
   async function load() {
     try {
@@ -25,6 +26,13 @@ export default function SettingsGeneralPage() {
     } catch (e) { setError(e.message); }
   }
   useEffect(() => { load(); }, []);
+
+  async function refreshRate() {
+    setError(''); setRefreshingRate(true);
+    try { await api.refreshExchangeRate(); await load(); }
+    catch (e) { setError('Не вдалось отримати курс з НБУ: ' + e.message); }
+    finally { setRefreshingRate(false); }
+  }
 
   async function save() {
     setError(''); setSaved(false);
@@ -75,10 +83,23 @@ export default function SettingsGeneralPage() {
 
         <Card className="p-5">
           <h3 className="mb-3 text-sm font-semibold">Фінансові параметри для щоденної аналітики</h3>
-          <p className="mb-3 text-xs text-slate-500">Вручну оновлювані значення — курс міняється щодня/щотижня, постійні витрати/ЗП зазвичай стабільні по місяцю.</p>
-          <Field label="Курс долара, грн"><Input type="number" step="0.01" value={finance.usdExchangeRate} onChange={(e) => setFinance({ ...finance, usdExchangeRate: e.target.value })} /></Field>
-          <Field label="Постійні витрати за добу, $"><Input type="number" step="0.01" value={finance.dailyFixedCosts} onChange={(e) => setFinance({ ...finance, dailyFixedCosts: e.target.value })} /></Field>
-          <Field label="Витрати на оплату праці за добу, $"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
+          <p className="mb-3 text-xs text-slate-500">
+            Курс долара підтягується автоматично з Нацбанку (раз на 12 год) — рекламний бюджет із Meta
+            приходить у доларах, а вся інша аналітика (виручка/маржа/прибуток) — у гривнях, тож без
+            курсу цифри змішувались би. Постійні витрати/ЗП — стабільні по місяцю, вводяться вручну і
+            вже в гривнях.
+          </p>
+          <Field label="Курс долара, грн">
+            <div className="flex gap-2">
+              <Input type="number" step="0.0001" value={finance.usdExchangeRate} onChange={(e) => setFinance({ ...finance, usdExchangeRate: e.target.value })} />
+              <Button type="button" variant="secondary" onClick={refreshRate} disabled={refreshingRate}>{refreshingRate ? 'Оновлюю…' : 'Оновити з НБУ'}</Button>
+            </div>
+            {tenant.usdExchangeRateUpdatedAt && (
+              <p className="mt-1 text-xs text-slate-500">Оновлено: {new Date(tenant.usdExchangeRateUpdatedAt).toLocaleString('uk-UA')}</p>
+            )}
+          </Field>
+          <Field label="Постійні витрати за добу, грн"><Input type="number" step="0.01" value={finance.dailyFixedCosts} onChange={(e) => setFinance({ ...finance, dailyFixedCosts: e.target.value })} /></Field>
+          <Field label="Витрати на оплату праці за добу, грн"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
           <div className="mt-2 flex items-center gap-2">
             <Button onClick={saveFinance}>Зберегти</Button>
             {financeSaved && <span className="text-xs text-emerald-400">Збережено</span>}

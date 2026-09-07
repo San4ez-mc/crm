@@ -138,6 +138,7 @@ export const api = {
   getTenantSettings: () => get('/tenant'),
   updateTenantSettings: (data) => patch('/tenant', data),
   regenerateApiKey: () => post('/tenant/regenerate-key'),
+  refreshExchangeRate: () => post('/tenant/refresh-exchange-rate'),
   zernioStatus: () => get('/integrations/zernio-status'),
   uploadFile,
 };

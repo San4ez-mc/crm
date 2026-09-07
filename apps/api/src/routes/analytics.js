@@ -6,7 +6,8 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { parseFrom, parseTo } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, cogsAt } = require('../lib/margin');
+const { ensureFreshUsdRate, sumAdSpendUAH, rowToUAH } = require('../lib/currency');
 const { ValidationError } = require('@crm/errors');
 
 const router = express.Router();
@@ -44,17 +45,23 @@ router.get('/analytics/top-products', asyncHandler(async (req, res) => {
 // замовлень, де це оголошення було first-touch (без Return), ROAS = дохід/витрата.
 router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
+  const tenant = await ensureFreshUsdRate(req.tenant);
+  const usdRate = Number(tenant.usdExchangeRate || 0);
+  const spendDateWhere = from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {};
   const ads = await db.ad.findMany({ where: { tenantId: req.tenant.id }, include: { product: { select: { id: true, name: true } } } });
 
   const data = await Promise.all(ads.map(async (ad) => {
-    const [clicks, spendAgg, firstTouchOrders, lastTouchOrders, revenueOrders] = await Promise.all([
+    const [clicks, spendUAH, spendAgg, firstTouchOrders, lastTouchOrders, revenueOrders] = await Promise.all([
       db.adClick.count({ where: { adId: ad.id, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
-      db.adSpendDaily.aggregate({ where: { adId: ad.id, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) }, _sum: { amount: true, impressions: true, clicks: true } }),
+      // Реклама в Meta йде в $, решта показників (виручка/маржа) — у грн; без конвертації
+      // ROAS/CPC/CPM порівнювали б несумісні валюти (2026-09-07, фідбек власника).
+      sumAdSpendUAH({ adId: ad.id, ...spendDateWhere }, usdRate),
+      db.adSpendDaily.aggregate({ where: { adId: ad.id, ...spendDateWhere }, _sum: { impressions: true, clicks: true } }),
       db.order.count({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } } }),
       db.order.count({ where: { tenantId: req.tenant.id, lastTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } } }),
       db.order.findMany({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } }, select: { items: { select: { price: true, quantity: true } } } }),
     ]);
-    const spend = Number(spendAgg._sum.amount || 0);
+    const spend = spendUAH;
     const impressions = Number(spendAgg._sum.impressions || 0);
     const platformClicks = Number(spendAgg._sum.clicks || 0);
     const revenueFirstTouch = revenueOrders.reduce((sum, o) => sum + o.items.reduce((s, it) => s + Number(it.price) * it.quantity, 0), 0);
@@ -87,12 +94,14 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const fromDate = parseFrom(from);
   const toDate = parseTo(to);
+  const tenant = await ensureFreshUsdRate(req.tenant);
+  const usdRate = Number(tenant.usdExchangeRate || 0);
 
   const products = await db.product.findMany({
     where: { tenantId: req.tenant.id },
     include: {
       productExpense: true,
-      orderItems: { where: { order: { returns: { none: {} }, ...periodWhere(from, to) } }, include: { order: { select: { isRefused: true } } } },
+      orderItems: { where: { order: { returns: { none: {} }, ...periodWhere(from, to) } }, include: { order: { select: { isRefused: true, createdAt: true } } } },
     },
   });
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
@@ -100,18 +109,21 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
   const data = await Promise.all(products.map(async (p) => {
     const qty = p.orderItems.reduce((s, it) => s + it.quantity, 0);
     const revenue = p.orderItems.reduce((s, it) => s + Number(it.price) * it.quantity, 0);
-    const spendAgg = await db.adSpendDaily.aggregate({
-      where: { ad: { tenantId: req.tenant.id, productId: p.id }, ...(fromDate || toDate ? { date: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}) },
-      _sum: { amount: true },
-    });
-    const adSpend = Number(spendAgg._sum.amount || 0);
-    const cogs = Number(p.productExpense?.cogs || 0);
+    // Реклама в Meta йде в $ — конвертуємо в грн перед відніманням від маржі (2026-09-07).
+    const adSpend = await sumAdSpendUAH(
+      { ad: { tenantId: req.tenant.id, productId: p.id }, ...(fromDate || toDate ? { date: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}) },
+      usdRate,
+    );
+    // Собівартість за ціною постачальника, що діяла на дату КОЖНОГО замовлення (не поточною) —
+    // той самий принцип, що marginPerOrderItem, щоб managerCost-residual нижче був коректним.
+    const exp = expenseByProduct.get(p.id);
+    const cogsTotal = p.orderItems.reduce((s, it) => s + cogsAt(exp, it.order.createdAt) * it.quantity, 0);
     // ЗП менеджера — per-item через спільну формулу (10% від націнки, 0 за відмову),
     // не флет-формула по всій виручці товару (2026-09-05, правило власника).
-    const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused), 0);
-    const managerCost = revenue - cogs * qty - marginBeforeAdSpend;
+    const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, it.order.createdAt), 0);
+    const managerCost = revenue - cogsTotal - marginBeforeAdSpend;
     const margin = marginBeforeAdSpend - adSpend;
-    return { productId: p.id, name: p.name, sku: p.sku, revenue, qty, adSpend, cogs: cogs * qty, managerCost, margin, marginPercent: revenue > 0 ? (margin / revenue) * 100 : null };
+    return { productId: p.id, name: p.name, sku: p.sku, revenue, qty, adSpend, cogs: cogsTotal, managerCost, margin, marginPercent: revenue > 0 ? (margin / revenue) * 100 : null };
   }));
   res.json({ ok: true, data: data.filter((r) => r.qty > 0).sort((a, b) => b.margin - a.margin) });
 }));
@@ -187,7 +199,8 @@ function dayKey(date) {
 // ── Щоденне зведення по всьому tenant (скріншот "День") ─────────────────
 router.get('/analytics/daily', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
-  const tenant = req.tenant;
+  const tenant = await ensureFreshUsdRate(req.tenant);
+  const usdRate = Number(tenant.usdExchangeRate || 0);
   const expenseByProduct = await loadExpenseMap(tenant.id);
 
   const [orders, spendRows, clickRows, returns] = await Promise.all([
@@ -225,7 +238,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 
     let orderMargin = 0;
     for (const item of order.items) {
-      orderMargin += await marginPerOrderItem(item, expenseByProduct, order.isRefused);
+      orderMargin += marginPerOrderItem(item, expenseByProduct, order.isRefused, order.createdAt);
       if (!item.isUpsell) b.qtySold += item.quantity;
       const isRepeat = order.buyerId && firstOrderAtByBuyer.get(order.buyerId) && firstOrderAtByBuyer.get(order.buyerId).getTime() < order.createdAt.getTime();
       if (isRepeat) b.qtyRepeat += item.quantity;
@@ -238,7 +251,11 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   }
   for (const spend of spendRows) {
     const b = bucket(dayKey(spend.date));
-    b.adSpend = (b.adSpend || 0) + Number(spend.amount);
+    // Meta пише суму у $ (spend.currency==='USD') — конвертуємо в грн одразу тут, ОДИН раз,
+    // щоб усі похідні показники нижче (прибуток/ROI/CPA/CPL/CPC/CPM) вже рахувались в одній
+    // валюті з виручкою/маржею (2026-09-07, фідбек власника: "тут теж витрати в доларі").
+    b.adSpend = (b.adSpend || 0) + rowToUAH(spend.amount, spend.currency, usdRate);
+    if (spend.currency === 'USD') b.adSpendUsd = (b.adSpendUsd || 0) + Number(spend.amount);
     b.impressions = (b.impressions || 0) + Number(spend.impressions || 0);
     b.platformClicks = (b.platformClicks || 0) + Number(spend.clicks || 0);
   }
@@ -251,12 +268,11 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     b.returnsCount = (b.returnsCount || 0) + 1;
   }
 
-  const usdRate = Number(tenant.usdExchangeRate || 0);
   const fixedCosts = Number(tenant.dailyFixedCosts || 0);
   const payrollCosts = Number(tenant.dailyPayrollCosts || 0);
 
   const data = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
-    const adSpend = d.adSpend || 0;
+    const adSpend = d.adSpend || 0; // вже в грн (сконвертовано вище з $ по курсу НБУ)
     const messages = d.messages || 0;
     const impressions = d.impressions || 0;
     const platformClicks = d.platformClicks || 0;
@@ -273,6 +289,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
       conversionToSale: messages > 0 ? d.ordersCount / messages : null,
       marginTotal: d.marginNonRefusedTotal,
       adSpend,
+      adSpendUsd: d.adSpendUsd || null, // сирі $ з Meta — для звірки з Ads Manager, у розрахунках не бере участі
       newMessages: messages,
       qtySold: d.qtySold,
       qtyRepeat: d.qtyRepeat,
@@ -303,7 +320,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
   const { from, to, productId } = req.query;
   if (!productId) throw new (require('@crm/errors').ValidationError)('productId обовʼязковий');
-  const tenant = req.tenant;
+  const tenant = await ensureFreshUsdRate(req.tenant);
+  const usdRate = Number(tenant.usdExchangeRate || 0);
   const expenseByProduct = await loadExpenseMap(tenant.id);
 
   const [ads, orders] = await Promise.all([
@@ -330,14 +348,14 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
     b.ordersCount += 1;
     if (order.isRefused) b.refusedCount += 1;
     let m = 0;
-    for (const item of order.items) m += await marginPerOrderItem(item, expenseByProduct, order.isRefused);
+    for (const item of order.items) m += marginPerOrderItem(item, expenseByProduct, order.isRefused, order.createdAt);
     b.marginGrossTotal += m; // "Маржа всього" — до врахування відмов
     if (!order.isRefused) b.marginNetTotal += m; // "...із відмовами" — фактична (виключені відмовлені)
   }
-  for (const spend of spendRows) bucket(dayKey(spend.date)).adSpend += Number(spend.amount);
+  // Meta пише суму у $ — конвертуємо в грн одразу тут (та сама логіка, що /analytics/daily).
+  for (const spend of spendRows) bucket(dayKey(spend.date)).adSpend += rowToUAH(spend.amount, spend.currency, usdRate);
   for (const click of clickRows) bucket(dayKey(click.timestamp)).messages += 1;
 
-  const usdRate = Number(tenant.usdExchangeRate || 0);
   const data = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
     const nonRefusedOrders = d.ordersCount - d.refusedCount;
     return {

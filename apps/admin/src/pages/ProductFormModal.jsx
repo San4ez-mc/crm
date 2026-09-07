@@ -62,7 +62,7 @@ function MultiProductSelect({ allProducts, excludeId, value, onChange }) {
 export default function ProductFormModal({ product, categories, suppliers, allProducts, onClose, onSaved, onSupplierCreated, forceSet = false }) {
   const isEdit = !!product?.id;
   const [form, setForm] = useState({
-    name: product?.name || '', customerName: product?.customerName || '', sku: product?.sku || '', price: product?.price || '', minPrice: product?.minPrice || '',
+    name: product?.name || '', customerName: product?.customerName || '', sku: product?.sku || '', price: product?.price || '',
     categoryId: product?.categoryId || '', presentationText: product?.presentationText || '',
     adMatchTokens: product?.adMatchTokens || [], companionProductIds: product?.companionProductIds || [],
     supplierId: product?.supplierId || '', supplierArticle: product?.supplierArticle || '', sizeChartImage: product?.sizeChartImage || '',
@@ -81,7 +81,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     try {
       if (!form.name.trim() || !form.sku.trim() || !form.price) throw new Error('Назва, артикул і ціна обовʼязкові');
       const { bulkPricing, isSet, ...rest } = form;
-      const payload = { ...rest, bulkPricing, isSet, price: Number(form.price), minPrice: form.minPrice ? Number(form.minPrice) : null, categoryId: form.categoryId || null, supplierId: form.supplierId || null };
+      const payload = { ...rest, bulkPricing, isSet, price: Number(form.price), categoryId: form.categoryId || null, supplierId: form.supplierId || null };
       const saved = isEdit ? (await api.updateProduct(product.id, payload)).data : (await api.createProduct(payload)).data;
       setSavedProductId(saved.id);
       if (isEdit && (isSet || forceSet)) {
@@ -110,6 +110,19 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     try { await api.deleteOffer(id); setOffers(offers.filter((o) => o.id !== id)); } catch (e) { setError(e.message); }
   }
 
+  // ДОПОВНЕННЯ 2026-09-07 (фідбек власника): коли товар щойно завезли — наявність однакова
+  // для всіх розмірів/кольорів, і набридає копіювати те саме число в кожен варіант вручну;
+  // далі, коли постачальник розпродає окремі розміри, кількість вже правиться поштучно
+  // (звичайне поле "Кількість" на варіанті нижче лишається).
+  const [bulkQty, setBulkQty] = useState('');
+  async function applyBulkQty() {
+    if (bulkQty === '' || !offers.length) return;
+    const value = Number(bulkQty);
+    setOffers(offers.map((o) => ({ ...o, quantity: value })));
+    try { await Promise.all(offers.map((o) => api.updateOffer(o.id, { quantity: value }))); }
+    catch (e) { setError(e.message); }
+  }
+
   return (
     <Modal isOpen title={isEdit ? `Редагувати: ${product.name}` : 'Новий товар'} onClose={onClose} wide>
       <ErrorBanner message={error} />
@@ -121,7 +134,6 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
             <Field label="Артикул (sku)"><Input required value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></Field>
             <Field label="Ціна"><Input required type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></Field>
           </div>
-          <Field label="Мін. ціна"><Input type="number" step="0.01" value={form.minPrice} onChange={(e) => setForm({ ...form, minPrice: e.target.value })} /></Field>
           <Field label="Ціна за кількість (та сама для всіх кольорів)">
             <BulkPricingEditor value={form.bulkPricing} onChange={(v) => setForm({ ...form, bulkPricing: v })} />
           </Field>
@@ -187,12 +199,18 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
               <Button type="button" variant="secondary" onClick={addOffer}>+ Варіант</Button>
             </div>
             {!savedProductId && <p className="text-xs text-slate-500">Спершу збережіть товар, щоб додавати варіанти.</p>}
+            {offers.length > 1 && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/40 p-2">
+                <Input type="number" min="0" placeholder="кількість" className="!w-28" value={bulkQty} onChange={(e) => setBulkQty(e.target.value)} />
+                <Button type="button" variant="secondary" onClick={applyBulkQty}>Заповнити кількість усім розмірам/кольорам</Button>
+              </div>
+            )}
             <div className="space-y-3">
               {offers.map((offer) => (
                 <div key={offer.id} className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
                   <div className="grid grid-cols-2 gap-2">
                     <Field label="Артикул варіанту"><Input defaultValue={offer.sku || ''} onBlur={(e) => updateOfferField(offer, 'sku', e.target.value)} /></Field>
-                    <Field label="Кількість (свій запас)"><Input type="number" defaultValue={offer.quantity ?? ''} onBlur={(e) => updateOfferField(offer, 'quantity', e.target.value === '' ? null : Number(e.target.value))} /></Field>
+                    <Field label="Кількість (свій запас)"><Input key={`qty-${offer.id}-${offer.quantity}`} type="number" defaultValue={offer.quantity ?? ''} onBlur={(e) => updateOfferField(offer, 'quantity', e.target.value === '' ? null : Number(e.target.value))} /></Field>
                   </div>
                   <Field label="Властивості (розмір:M, колір:чорний)">
                     <Input

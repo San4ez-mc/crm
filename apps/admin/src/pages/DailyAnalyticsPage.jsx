@@ -21,7 +21,6 @@ function fmt(v, digits = 2) {
   return Number(v).toLocaleString('uk-UA', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 function pct(v) { return v === null || v === undefined ? '—' : `${fmt(v, 1)}%`; }
-function usd(v) { return v === null || v === undefined || Number.isNaN(v) ? '—' : `$${fmt(v)}`; }
 function fmtDay(v) { return new Date(v).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'short' }); }
 
 // rows: [{ label, get:(d)=>string, highlight?, sep? }] — sep=true малює товсту риску НАД цим рядком
@@ -53,30 +52,35 @@ function MetricsTable({ days, rows }) {
   );
 }
 
+// 2026-09-07: усі грошові показники сервер уже повертає в ГРИВНЯХ (рекламний бюджет із Meta
+// конвертується з $ по курсу НБУ на бекенді — lib/currency.js) — лейбли раніше помилково
+// казали "$"/"дол", хоча цифри під ними завжди були грн (окрім рекламного бюджету, який
+// справді був $ до цього фіксу). adSpendUsd — сирий $ з Meta, лише для довідки/звірки.
 const SUMMARY_ROWS = [
-  { label: 'Маржа ср. без відмов, $', get: (d) => fmt(d.marginAvgNonRefused) },
-  { label: 'Маржа ср. з відмовами, $', get: (d) => fmt(d.marginAvgWithRefused) },
-  { label: 'Ціна замовлення, $', get: (d) => fmt(d.orderPrice) },
-  { label: 'Прибуток з клієнта без ЗП, $', get: (d) => fmt(d.profitPerClientNoPayroll) },
-  { label: 'Прибуток з клієнта із ЗП, $', get: (d) => fmt(d.profitPerClientWithPayroll) },
-  { label: 'Ціна повідомлення, $', get: (d) => fmt(d.messagePrice) },
+  { label: 'Маржа ср. без відмов, грн', get: (d) => fmt(d.marginAvgNonRefused) },
+  { label: 'Маржа ср. з відмовами, грн', get: (d) => fmt(d.marginAvgWithRefused) },
+  { label: 'Ціна замовлення, грн', get: (d) => fmt(d.orderPrice) },
+  { label: 'Прибуток з клієнта без ЗП, грн', get: (d) => fmt(d.profitPerClientNoPayroll) },
+  { label: 'Прибуток з клієнта із ЗП, грн', get: (d) => fmt(d.profitPerClientWithPayroll) },
+  { label: 'Ціна повідомлення, грн', get: (d) => fmt(d.messagePrice) },
   { label: 'Конверсія у продаж, %', get: (d) => pct(d.conversionToSale !== null ? d.conversionToSale * 100 : null) },
-  { label: 'Маржа всього, $', get: (d) => usd(d.marginTotal), sep: true },
-  { label: 'Рекламний бюджет, $', get: (d) => usd(d.adSpend) },
+  { label: 'Маржа всього, грн', get: (d) => fmt(d.marginTotal), sep: true },
+  { label: 'Рекламний бюджет, грн', get: (d) => fmt(d.adSpend) },
+  { label: 'Рекламний бюджет, $ (як з Meta)', get: (d) => (d.adSpendUsd === null ? '—' : `$${fmt(d.adSpendUsd)}`) },
   { label: 'Нові контакти в повідомленнях', get: (d) => d.newMessages },
   { label: 'Продано товарів, к-сть', get: (d) => d.qtySold },
   { label: 'Повторно продані товари', get: (d) => d.qtyRepeat },
   { label: 'Кліки', get: (d) => d.clicks },
   { label: 'Покази', get: (d) => d.impressions },
   { label: 'Окупність', get: (d) => fmt(d.roi), highlight: true, sep: true },
-  { label: 'Очікуваний прибуток, $', get: (d) => usd(d.expectedProfit), highlight: true },
-  { label: 'Курс доллара, грн', get: (d) => fmt(d.usdExchangeRate, 2), sep: true },
+  { label: 'Очікуваний прибуток, грн', get: (d) => fmt(d.expectedProfit), highlight: true },
+  { label: 'Курс долара, грн', get: (d) => fmt(d.usdExchangeRate, 2), sep: true },
   { label: 'Відсоток відмов, %', get: (d) => pct(d.refusalRate) },
   { label: 'Відсоток повернень, %', get: (d) => pct(d.returnRate) },
-  { label: 'Постійні витрати, $', get: (d) => fmt(d.dailyFixedCosts) },
-  { label: 'Витрати на оплату праці, $', get: (d) => fmt(d.dailyPayrollCosts) },
-  { label: 'Прибуток без ЗП, $', get: (d) => usd(d.profitNoPayroll) },
-  { label: 'Ціна клієнта нового, $', get: (d) => fmt(d.newCustomerCost) },
+  { label: 'Постійні витрати, грн', get: (d) => fmt(d.dailyFixedCosts) },
+  { label: 'Витрати на оплату праці, грн', get: (d) => fmt(d.dailyPayrollCosts) },
+  { label: 'Прибуток без ЗП, грн', get: (d) => fmt(d.profitNoPayroll) },
+  { label: 'Ціна клієнта нового, грн', get: (d) => fmt(d.newCustomerCost) },
   { label: 'CPC (ціна за клік)', get: (d) => fmt(d.cpc) },
   { label: 'CTR (кліків зі 100 показів)', get: (d) => pct(d.ctr) },
   { label: 'CPM (ціна 1000 показів)', get: (d) => fmt(d.cpm) },
@@ -84,19 +88,19 @@ const SUMMARY_ROWS = [
 ];
 
 const PRODUCT_ROWS = [
-  { label: 'Реклама, дол', get: (d) => usd(d.adSpend) },
+  { label: 'Реклама, грн', get: (d) => fmt(d.adSpend) },
   { label: 'Повідомлень з реклам', get: (d) => d.messages },
   { label: 'Замовлень (шт)', get: (d) => d.ordersCount },
   { label: 'Маржа із замовлення', get: (d) => fmt(d.marginPerOrder) },
-  { label: 'Маржа всього', get: (d) => usd(d.marginTotal) },
-  { label: 'Маржа всього із відмовами', get: (d) => usd(d.marginTotalWithRefused) },
+  { label: 'Маржа всього', get: (d) => fmt(d.marginTotal) },
+  { label: 'Маржа всього із відмовами', get: (d) => fmt(d.marginTotalWithRefused) },
   { label: 'Ціна за лід', get: (d) => fmt(d.messagePrice) },
   { label: 'Ціна за замовлення', get: (d) => fmt(d.orderPrice) },
   { label: 'Конверсія із повідом. в замов', get: (d) => fmt(d.conversionToOrder) },
   { label: 'Відмови', get: (d) => pct(d.refusalRate) },
   { label: 'Курс', get: (d) => fmt(d.usdExchangeRate, 0) },
   { label: 'Окупність', get: (d) => fmt(d.roi), highlight: true, sep: true },
-  { label: 'Прибуток', get: (d) => usd(d.profit), highlight: true },
+  { label: 'Прибуток', get: (d) => fmt(d.profit), highlight: true },
 ];
 
 export default function DailyAnalyticsPage() {
