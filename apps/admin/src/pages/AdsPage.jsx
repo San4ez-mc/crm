@@ -74,7 +74,24 @@ export default function AdsPage() {
                       ? <img src={ad.thumbnailUrl} alt="" className="h-14 w-14 cursor-zoom-in rounded-md object-cover" onClick={() => setLightbox(ad.thumbnailUrl)} />
                       : <div className="flex h-14 w-14 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>}
                   </td>
-                  <td className="px-4 py-3">{ad.name || ad.externalId || ad.id.slice(0, 8)}</td>
+                  <td className="px-4 py-3">
+                    <div>{ad.name || ad.externalId || ad.id.slice(0, 8)}</div>
+                    {(ad.thumbnailUrl || (ad.adAccountId && ad.externalId)) && (
+                      <div className="mt-0.5 flex flex-wrap gap-2 text-xs">
+                        {ad.thumbnailUrl && (
+                          <a href={ad.thumbnailUrl} target="_blank" rel="noreferrer" className="text-brand-light hover:underline">🖼️ Фото</a>
+                        )}
+                        {ad.adAccountId && ad.externalId && (
+                          <a
+                            href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${encodeURIComponent(ad.adAccountId)}&selected_ad_ids=${encodeURIComponent(ad.externalId)}`}
+                            target="_blank" rel="noreferrer" className="text-brand-light hover:underline"
+                          >
+                            🔗 Ads Manager
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-slate-400">{ad.campaignName || '—'}</td>
                   <td className="px-4 py-3">
                     <Select className="!w-auto py-1" value={ad.productId || ''} onChange={(e) => linkProduct(ad, e.target.value)}>

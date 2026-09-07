@@ -31,6 +31,12 @@ export default function ProductsPage() {
     } catch (e) { setError(e.message); }
   }
   useEffect(() => { load(); }, [q, categoryId, supplierId, page]);
+  // 2026-09-07: посилання зі сповіщень Telegram — /products?open=<id> одразу відкриває картку товару.
+  useEffect(() => {
+    const openId = new URLSearchParams(window.location.search).get('open');
+    if (!openId) return;
+    api.getProduct(openId).then((r) => { if (r.data) setEditing(r.data); }).catch((e) => setError('Товар ' + openId + ' не знайдено: ' + e.message));
+  }, []);
   function resetAnd(setter) { return (v) => { setter(v); setPage(1); }; }
 
   async function handleDelete(id) {
