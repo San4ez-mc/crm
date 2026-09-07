@@ -204,6 +204,11 @@ model Product {
   // не категорія. Технічно лишається Product (переваги/фото/ціна/варіанти ті самі),
   // прапорець лише перемикає, в якому пункті меню й списку він з'являється.
   isSet               Boolean  @default(false)
+  // ДОПОВНЕННЯ 2026-09-07 (фідбек власника): за замовчуванням true для ВСІХ товарів (і нових,
+  // і вже наявних) — кількість по offer.quantity ігнорується, товар завжди пропонується
+  // клієнту. Вимкнено вручну → тоді offer.quantity вирішує (null/undefined = не відстежується
+  // = доступно, число ≤0 = немає в наявності). Читає воронка через GET /products (n_lookup-crm).
+  alwaysAvailable     Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

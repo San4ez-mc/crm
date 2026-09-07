@@ -68,6 +68,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     supplierId: product?.supplierId || '', supplierArticle: product?.supplierArticle || '', sizeChartImage: product?.sizeChartImage || '',
     thumbnailUrl: product?.thumbnailUrl || '', images: product?.images || [], aiNotes: product?.aiNotes || '',
     bulkPricing: product?.bulkPricing || [], isSet: forceSet || !!product?.isSet,
+    alwaysAvailable: product?.alwaysAvailable !== undefined ? product.alwaysAvailable : true,
   });
   const [offers, setOffers] = useState(product?.offers || []);
   const [setComponents, setSetComponentsState] = useState((product?.setComponents || []).map((c) => c.productId));
@@ -238,6 +239,13 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
               <Label2>Варіанти (Offers)</Label2>
               <Button type="button" variant="secondary" onClick={addOffer}>+ Варіант</Button>
             </div>
+            <label className="mb-3 flex items-start gap-2 rounded-lg border border-slate-700 bg-slate-800/40 p-2 text-sm text-slate-300">
+              <input type="checkbox" className="mt-0.5" checked={form.alwaysAvailable} onChange={(e) => setForm({ ...form, alwaysAvailable: e.target.checked })} />
+              <span>
+                Доступно завжди
+                <div className="text-xs text-slate-500">Увімкнено (за замовчуванням) — кількість нижче не враховується, товар завжди пропонується клієнту. Вимкнете — тоді бот дивиться на "Кількість" кожного розміру/кольору: 0 = немає в наявності.</div>
+              </span>
+            </label>
             {!savedProductId && <p className="text-xs text-slate-500">Спершу збережіть товар, щоб додавати варіанти.</p>}
             {offers.length > 1 && (
               <div className="mb-3 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/40 p-2">
@@ -250,7 +258,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
                 <div key={offer.id} className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
                   <div className="grid grid-cols-2 gap-2">
                     <Field label="Артикул варіанту"><Input defaultValue={offer.sku || ''} onBlur={(e) => updateOfferField(offer, 'sku', e.target.value)} /></Field>
-                    <Field label="Кількість (свій запас)"><Input key={`qty-${offer.id}-${offer.quantity}`} type="number" defaultValue={offer.quantity ?? ''} onBlur={(e) => updateOfferField(offer, 'quantity', e.target.value === '' ? null : Number(e.target.value))} /></Field>
+                    <Field label="Кількість"><Input key={`qty-${offer.id}-${offer.quantity}`} type="number" defaultValue={offer.quantity ?? ''} onBlur={(e) => updateOfferField(offer, 'quantity', e.target.value === '' ? null : Number(e.target.value))} /></Field>
                   </div>
                   <Field label="Властивості (розмір:M, колір:чорний)">
                     <Input

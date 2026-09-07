@@ -18,11 +18,23 @@ const PRODUCT_INCLUDE = {
   productExpense: { select: { cogs: true, cogsHistory: true } },
 };
 
+// "Доступно завжди" (2026-09-07, фідбек власника): якщо увімкнено (дефолт для ВСІХ товарів,
+// і нових, і вже наявних) — кількість по варіанту ігнорується, він завжди "в наявності".
+// Вимкнено → null/undefined quantity = не відстежується (доступно), число ≤0 = немає в
+// наявності. Рахуємо тут ОДИН раз на бекенді — і адмінка, і воронка (n_lookup-crm, GET
+// /products) читають готовий offer.inStock, а не дублюють цю логіку кожна по-своєму.
+function offerInStock(product, offer) {
+  if (product.alwaysAvailable !== false) return true;
+  const q = offer.quantity;
+  return q === null || q === undefined || Number(q) > 0;
+}
+
 function serializeProduct(p) {
   return {
     ...p,
     displayName: p.customerName || p.name, // те, що фактично має бачити клієнт у боті
     offersCount: p.offers ? p.offers.length : undefined,
+    offers: p.offers ? p.offers.map((o) => ({ ...o, inStock: offerInStock(p, o) })) : p.offers,
     setComponents: p.setOf ? p.setOf.map((sc) => ({ productId: sc.componentProductId, name: sc.componentProduct.name, sku: sc.componentProduct.sku, qty: sc.qty })) : undefined,
     setOf: undefined,
     _count: undefined,
@@ -81,6 +93,7 @@ router.post('/products', asyncHandler(async (req, res) => {
       sizeChartData: b.sizeChartData ?? undefined,
       bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [],
       isSet: !!b.isSet,
+      alwaysAvailable: b.alwaysAvailable !== undefined ? !!b.alwaysAvailable : true,
     },
     include: PRODUCT_INCLUDE,
   });
@@ -122,6 +135,7 @@ router.patch('/products/:id', asyncHandler(async (req, res) => {
       ...(b.sizeChartData !== undefined ? { sizeChartData: b.sizeChartData } : {}),
       ...(b.bulkPricing !== undefined ? { bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [] } : {}),
       ...(b.isSet !== undefined ? { isSet: !!b.isSet } : {}),
+      ...(b.alwaysAvailable !== undefined ? { alwaysAvailable: !!b.alwaysAvailable } : {}),
     },
     include: PRODUCT_INCLUDE,
   });
