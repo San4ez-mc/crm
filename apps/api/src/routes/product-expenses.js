@@ -11,6 +11,7 @@ const { NotFoundError, ValidationError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem, cogsAt } = require('../lib/margin');
 const { ensureFreshUsdRate, sumAdSpendUAH } = require('../lib/currency');
+const { logProductChange } = require('../lib/changeLog');
 
 const router = express.Router();
 
@@ -76,6 +77,7 @@ router.get('/product-expenses', asyncHandler(async (req, res) => {
 router.put('/product-expenses/:productId', asyncHandler(async (req, res) => {
   const product = await db.product.findFirst({ where: { id: req.params.productId, tenantId: req.tenant.id } });
   if (!product) throw new NotFoundError('Product', req.params.productId);
+  const existing = await db.productExpense.findUnique({ where: { productId: product.id } });
   const { cogs, managerCostFixed, managerCostPercent, cogsHistory } = req.body || {};
   const sanitizedHistory = sanitizeCogsHistory(cogsHistory);
   if (cogsHistory !== undefined && sanitizedHistory === undefined) throw new ValidationError('cogsHistory має бути масивом [{cost, validFrom}]');
@@ -98,6 +100,23 @@ router.put('/product-expenses/:productId', asyncHandler(async (req, res) => {
       managerCostPercent: managerCostPercent ?? 0,
     },
   });
+
+  // "Хто і коли вносив зміни" (2026-09-08) — цінa постачальника/ЗП менеджера теж частина
+  // картки товару, хоч і окремий бекенд-запис (ProductExpense).
+  const changes = [];
+  if (sanitizedHistory !== undefined && JSON.stringify(existing?.cogsHistory ?? []) !== JSON.stringify(sanitizedHistory)) {
+    changes.push({ field: 'cogsHistory', label: 'Ціна постачальника', kind: 'action', to: `оновлено (${sanitizedHistory.length} ${sanitizedHistory.length === 1 ? 'запис' : 'записів'})` });
+  } else if (cogs !== undefined && String(existing?.cogs ?? '') !== String(cogs)) {
+    changes.push({ field: 'cogs', label: 'Ціна постачальника', from: existing?.cogs, to: cogs });
+  }
+  if (managerCostFixed !== undefined && String(existing?.managerCostFixed ?? '') !== String(managerCostFixed)) {
+    changes.push({ field: 'managerCostFixed', label: 'ЗП менеджера (фікс)', from: existing?.managerCostFixed, to: managerCostFixed });
+  }
+  if (managerCostPercent !== undefined && String(existing?.managerCostPercent ?? '') !== String(managerCostPercent)) {
+    changes.push({ field: 'managerCostPercent', label: 'ЗП менеджера (%)', from: existing?.managerCostPercent, to: managerCostPercent });
+  }
+  await logProductChange(req, product.id, 'cost', changes);
+
   res.json({ ok: true, data: expense });
 }));
 

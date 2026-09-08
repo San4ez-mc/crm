@@ -10,7 +10,10 @@ const router = express.Router();
 const ORDER_INCLUDE = {
   buyer: true,
   stage: { include: { pipeline: { select: { id: true, name: true } } } },
-  items: { include: { product: { select: { id: true, name: true, sku: true } }, offer: { select: { id: true, sku: true } } } },
+  // thumbnailUrl/images — щоб картка замовлення могла показати фото замовлених товарів
+  // (2026-09-08, фідбек власника); offer.images — фото КОНКРЕТНОГО кольору/розміру, якщо є,
+  // пріоритетніше за загальне фото товару.
+  items: { include: { product: { select: { id: true, name: true, sku: true, thumbnailUrl: true, images: true } }, offer: { select: { id: true, sku: true, images: true } } } },
   returns: true,
   firstTouchAd: { select: { id: true, name: true } },
   lastTouchAd: { select: { id: true, name: true } },

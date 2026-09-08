@@ -4,8 +4,36 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError, ConflictError } = require('@crm/errors');
+const { buildChanges, logProductChange } = require('../lib/changeLog');
 
 const router = express.Router();
+
+// "Хто і коли вносив зміни" (2026-09-08, фідбек власника) — довгий текст/масиви/фото лише
+// фіксуємо фактом "змінено" (kind:'touch'), короткі скалярні поля — повним "було → стало".
+const PRODUCT_DIFF_FIELDS = [
+  { key: 'name', label: 'Назва', kind: 'value' },
+  { key: 'customerName', label: 'Назва для клієнта', kind: 'value' },
+  { key: 'sku', label: 'Артикул', kind: 'value' },
+  { key: 'price', label: 'Ціна', kind: 'value' },
+  { key: 'categoryId', label: 'Категорія', kind: 'value' },
+  { key: 'supplierId', label: 'Постачальник', kind: 'value' },
+  { key: 'supplierArticle', label: 'Артикул постачальника', kind: 'value' },
+  { key: 'isSet', label: 'Комплект', kind: 'value' },
+  { key: 'alwaysAvailable', label: 'Доступно завжди', kind: 'value' },
+  { key: 'presentationText', label: 'Презентація для клієнта', kind: 'touch' },
+  { key: 'aiNotes', label: 'Нотатки для ШІ', kind: 'touch' },
+  { key: 'images', label: 'Фото товару', kind: 'touch' },
+  { key: 'thumbnailUrl', label: 'Мініатюра', kind: 'touch' },
+  { key: 'bulkPricing', label: 'Ціна за кількість', kind: 'touch' },
+  { key: 'adMatchTokens', label: 'Токени реклами', kind: 'touch' },
+  { key: 'companionProductIds', label: 'Допродажі', kind: 'touch' },
+  { key: 'sizeChartData', label: 'Розмірна сітка', kind: 'touch' },
+];
+
+function offerLabel(offer) {
+  const props = Array.isArray(offer?.properties) ? offer.properties : [];
+  return props.length ? props.map((p) => p.value).join(' ') : (offer?.sku || 'варіант');
+}
 
 const PRODUCT_INCLUDE = {
   category: { select: { id: true, name: true } },
@@ -139,7 +167,16 @@ router.patch('/products/:id', asyncHandler(async (req, res) => {
     },
     include: PRODUCT_INCLUDE,
   });
+  await logProductChange(req, existing.id, 'product', buildChanges(existing, b, PRODUCT_DIFF_FIELDS));
   res.json({ ok: true, data: serializeProduct(product) });
+}));
+
+// "Хто і коли вносив зміни" — товар, варіанти, ціна постачальника в одній стрічці.
+router.get('/products/:id/changelog', asyncHandler(async (req, res) => {
+  const product = await db.product.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id }, select: { id: true } });
+  if (!product) throw new NotFoundError('Product', req.params.id);
+  const entries = await db.productChangeLog.findMany({ where: { productId: product.id }, orderBy: { createdAt: 'desc' }, take: 100 });
+  res.json({ ok: true, data: entries });
 }));
 
 router.delete('/products/:id', asyncHandler(async (req, res) => {
@@ -180,6 +217,7 @@ router.post('/products/:id/offers', asyncHandler(async (req, res) => {
       sortOrder: Number(b.sortOrder) || 0,
     },
   });
+  await logProductChange(req, product.id, 'offer', [{ field: 'offer', label: `Додано варіант «${offerLabel(offer)}»`, kind: 'action' }]);
   res.status(201).json({ ok: true, data: offer });
 }));
 
@@ -198,6 +236,14 @@ router.patch('/offers/:id', asyncHandler(async (req, res) => {
       ...(b.sortOrder !== undefined ? { sortOrder: Number(b.sortOrder) || 0 } : {}),
     },
   });
+  const label = offerLabel(offer);
+  const changes = buildChanges(existing, b, [
+    { key: 'sku', label: `Артикул варіанту «${label}»`, kind: 'value' },
+    { key: 'quantity', label: `Кількість «${label}»`, kind: 'value' },
+    { key: 'properties', label: `Властивості «${label}»`, kind: 'touch' },
+    { key: 'images', label: `Фото варіанту «${label}»`, kind: 'touch' },
+  ]);
+  await logProductChange(req, existing.productId, 'offer', changes);
   res.json({ ok: true, data: offer });
 }));
 
@@ -205,6 +251,7 @@ router.delete('/offers/:id', asyncHandler(async (req, res) => {
   const existing = await db.offer.findFirst({ where: { id: req.params.id, product: { tenantId: req.tenant.id } } });
   if (!existing) throw new NotFoundError('Offer', req.params.id);
   await db.offer.delete({ where: { id: existing.id } });
+  await logProductChange(req, existing.productId, 'offer', [{ field: 'offer', label: `Видалено варіант «${offerLabel(existing)}»`, kind: 'action' }]);
   res.json({ ok: true, data: { id: existing.id, deleted: true } });
 }));
 

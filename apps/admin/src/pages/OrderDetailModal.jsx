@@ -42,17 +42,26 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
         <section>
           <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Товари</h4>
           <div className="space-y-1">
-            {order.items.map((it) => (
-              <div key={it.id} className="flex justify-between rounded-lg bg-slate-800/50 px-3 py-2">
-                <span>
-                  {it.name} × {it.quantity} {it.isUpsell && <Badge color="teal">Допродаж</Badge>}
-                  {Array.isArray(it.properties) && it.properties.length > 0 && (
-                    <span className="ml-2 text-xs text-slate-400">({it.properties.map((p) => `${p.name}: ${p.value}`).join(', ')})</span>
-                  )}
-                </span>
-                <span>{money(Number(it.price) * it.quantity)}</span>
-              </div>
-            ))}
+            {order.items.map((it) => {
+              // Фото конкретного варіанту (колір/розмір), якщо є — інакше загальне фото товару.
+              const thumb = it.offer?.images?.[0] || it.product?.images?.[0] || it.product?.thumbnailUrl || '';
+              return (
+                <div key={it.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-800/50 px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    {thumb
+                      ? <img src={thumb} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
+                      : <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>}
+                    <span>
+                      {it.name} × {it.quantity} {it.isUpsell && <Badge color="teal">Допродаж</Badge>}
+                      {Array.isArray(it.properties) && it.properties.length > 0 && (
+                        <span className="ml-2 text-xs text-slate-400">({it.properties.map((p) => `${p.name}: ${p.value}`).join(', ')})</span>
+                      )}
+                    </span>
+                  </div>
+                  <span className="shrink-0">{money(Number(it.price) * it.quantity)}</span>
+                </div>
+              );
+            })}
           </div>
         </section>
 
