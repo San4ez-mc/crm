@@ -284,31 +284,32 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
                 <th className="px-4 py-3">Тип</th><th className="px-4 py-3">Питання</th><th className="px-4 py-3">Відповідь</th>
                 <th className="px-4 py-3">Теги</th>
                 {!lockProductId && <th className="px-4 py-3">Рівень</th>}
-                <th className="px-4 py-3">Активний</th><th className="px-4 py-3"></th>
+                <th className="px-4 py-3">Активний</th><th className="px-4 py-3 w-0"></th>
               </tr>
             </thead>
             <tbody>
               {normal.map((e) => (
-                <tr key={e.id} className="border-b border-slate-800/60 last:border-0">
+                <tr key={e.id} onClick={() => setEditing(e)} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/40">
                   <td className="px-4 py-3"><Badge color={KIND_COLOR[e.kind]}>{KIND_LABEL[e.kind]}</Badge></td>
                   <td className="px-4 py-3 max-w-xs truncate" title={e.question}>{e.question || '—'}</td>
-                  <td className="px-4 py-3 max-w-sm truncate text-slate-400" title={e.answer}>{e.answer}</td>
+                  <td className="px-4 py-3 max-w-xs truncate text-slate-400" title={e.answer}>{e.answer}</td>
                   <td className="px-4 py-3 text-slate-400">{e.tags?.join(', ') || '—'}</td>
                   {!lockProductId && (
                     <td className="px-4 py-3 text-slate-400">
                       {e.scope === 'shop' ? 'Магазин' : e.scope === 'category' ? (e.category?.name || 'Категорія') : e.scope === 'supplier' ? (e.supplier?.name || 'Постачальник') : (e.product?.name || 'Товар')}
                     </td>
                   )}
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
                     <button type="button" onClick={() => toggleActive(e)}><Badge color={e.isActive ? 'green' : 'slate'}>{e.isActive ? 'Так' : 'Ні'}</Badge></button>
                   </td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button type="button" onClick={() => setEditing(e)} className="mr-2 text-xs text-brand-light hover:underline">Редагувати</button>
-                    <button type="button" onClick={() => setCopying(e)} className="mr-2 text-xs text-slate-400 hover:text-brand-light" title="Копіювати на інші товари/категорії/постачальники">📋 Копіювати</button>
-                    {e.scope !== 'shop' && (
-                      <button type="button" onClick={() => promote(e)} className="mr-2 text-xs text-slate-400 hover:text-brand-light" title={e.scope === 'product' ? 'Підняти на категорію' : 'Підняти на весь магазин'}>⬆️ Підняти</button>
-                    )}
-                    <button type="button" onClick={() => remove(e)} className="text-xs text-slate-500 hover:text-red-400">Видалити</button>
+                  <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
+                    <div className="flex justify-end gap-1 whitespace-nowrap">
+                      <IconButton type="button" onClick={() => setCopying(e)} title="Копіювати на інші товари/категорії/постачальники">📋</IconButton>
+                      {e.scope !== 'shop' && (
+                        <IconButton type="button" onClick={() => promote(e)} title={e.scope === 'product' ? 'Підняти на категорію' : 'Підняти на весь магазин'}>⬆️</IconButton>
+                      )}
+                      <IconButton type="button" onClick={() => remove(e)} title="Видалити">🗑️</IconButton>
+                    </div>
                   </td>
                 </tr>
               ))}
