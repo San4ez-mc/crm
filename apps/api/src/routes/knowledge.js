@@ -10,8 +10,11 @@ const { ValidationError, NotFoundError } = require('@crm/errors');
 const router = express.Router();
 
 const KINDS = ['faq', 'policy', 'objection', 'script'];
-const SCOPES = ['shop', 'category', 'product'];
+const SCOPES = ['shop', 'category', 'supplier', 'product'];
 const SOURCES = ['manual', 'imported_gdoc', 'from_dialog'];
+// Ієрархія рівнів для дії "Підняти рівень" (Promote) — product/supplier піднімаються
+// одразу до shop (немає проміжного рівня між ними й магазином), category — теж до shop.
+const PROMOTE_TO = { product: 'category', category: 'shop', supplier: 'shop' };
 
 // ── Профіль (короткі "завжди в промпті" факти) ───────────────────────────
 router.get('/knowledge/profile', asyncHandler(async (req, res) => {
@@ -38,12 +41,15 @@ router.put('/knowledge/profile', asyncHandler(async (req, res) => {
 
 // ── Записи (FAQ/policy/objection/script) ─────────────────────────────────
 router.get('/knowledge', asyncHandler(async (req, res) => {
-  const { kind, tag, scope, active, q, take = '200', skip = '0' } = req.query;
+  const { kind, tag, scope, active, q, categoryId, supplierId, productId, take = '200', skip = '0' } = req.query;
   const where = {
     tenantId: req.tenant.id,
     ...(kind ? { kind: String(kind) } : {}),
     ...(tag ? { tags: { has: String(tag) } } : {}),
-    ...(scope ? { scope: String(scope) } : {}),
+    ...(scope ? { scope: { in: String(scope).split(',').map((s) => s.trim()).filter(Boolean) } } : {}),
+    ...(categoryId ? { categoryId: String(categoryId) } : {}),
+    ...(supplierId ? { supplierId: String(supplierId) } : {}),
+    ...(productId ? { productId: String(productId) } : {}),
     ...(active !== undefined ? { isActive: active === 'true' } : {}),
     ...(q ? { OR: [
       { question: { contains: String(q), mode: 'insensitive' } },
@@ -53,7 +59,11 @@ router.get('/knowledge', asyncHandler(async (req, res) => {
   const [items, total] = await Promise.all([
     db.knowledgeEntry.findMany({
       where,
-      include: { category: { select: { id: true, name: true } }, product: { select: { id: true, name: true } } },
+      include: {
+        category: { select: { id: true, name: true } },
+        supplier: { select: { id: true, name: true } },
+        product: { select: { id: true, name: true } },
+      },
       orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
       take: Number(take),
       skip: Number(skip),
@@ -77,6 +87,7 @@ router.post('/knowledge', asyncHandler(async (req, res) => {
       tags: Array.isArray(b.tags) ? b.tags : [],
       scope,
       categoryId: scope === 'category' ? (b.categoryId || null) : null,
+      supplierId: scope === 'supplier' ? (b.supplierId || null) : null,
       productId: scope === 'product' ? (b.productId || null) : null,
       priority: Number(b.priority) || 0,
       isActive: b.isActive !== undefined ? !!b.isActive : true,
@@ -101,6 +112,7 @@ router.patch('/knowledge/:id', asyncHandler(async (req, res) => {
       ...(b.tags !== undefined ? { tags: Array.isArray(b.tags) ? b.tags : [] } : {}),
       ...(scope !== undefined ? { scope } : {}),
       ...(b.categoryId !== undefined ? { categoryId: b.categoryId || null } : {}),
+      ...(b.supplierId !== undefined ? { supplierId: b.supplierId || null } : {}),
       ...(b.productId !== undefined ? { productId: b.productId || null } : {}),
       ...(b.priority !== undefined ? { priority: Number(b.priority) || 0 } : {}),
       ...(b.isActive !== undefined ? { isActive: !!b.isActive } : {}),
@@ -116,24 +128,83 @@ router.delete('/knowledge/:id', asyncHandler(async (req, res) => {
   res.json({ ok: true, data: { id: existing.id, deleted: true } });
 }));
 
+// ── Копіювати запис на інші товари/категорії/постачальники (незалежні копії) ─
+router.post('/knowledge/:id/copy', asyncHandler(async (req, res) => {
+  const existing = await db.knowledgeEntry.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+  if (!existing) throw new NotFoundError('KnowledgeEntry', req.params.id);
+  const targets = Array.isArray(req.body?.targets) ? req.body.targets : [];
+  if (!targets.length) throw new ValidationError('targets обовʼязковий (список {scope, categoryId?, supplierId?, productId?})');
+  const created = await db.$transaction(targets.map((t) => {
+    const scope = SCOPES.includes(t.scope) ? t.scope : 'shop';
+    return db.knowledgeEntry.create({
+      data: {
+        tenantId: req.tenant.id,
+        kind: existing.kind,
+        question: existing.question,
+        answer: existing.answer,
+        tags: existing.tags,
+        scope,
+        categoryId: scope === 'category' ? (t.categoryId || null) : null,
+        supplierId: scope === 'supplier' ? (t.supplierId || null) : null,
+        productId: scope === 'product' ? (t.productId || null) : null,
+        priority: existing.priority,
+        isActive: true,
+        source: 'manual',
+      },
+    });
+  }));
+  res.status(201).json({ ok: true, data: created });
+}));
+
+// ── Підняти рівень (product→category, category/supplier→shop) — той самий запис ─
+router.post('/knowledge/:id/promote', asyncHandler(async (req, res) => {
+  const existing = await db.knowledgeEntry.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+  if (!existing) throw new NotFoundError('KnowledgeEntry', req.params.id);
+  const nextScope = PROMOTE_TO[existing.scope];
+  if (!nextScope) throw new ValidationError('Цей запис уже на найвищому рівні (весь магазин)');
+
+  let categoryId = null;
+  if (nextScope === 'category') {
+    if (!existing.productId) throw new ValidationError('Немає товару, щоб визначити категорію');
+    const product = await db.product.findFirst({ where: { id: existing.productId, tenantId: req.tenant.id }, select: { categoryId: true } });
+    if (!product?.categoryId) throw new ValidationError('У товару не вказана категорія — підняти нема куди, оберіть «Весь магазин» вручну');
+    categoryId = product.categoryId;
+  }
+
+  const entry = await db.knowledgeEntry.update({
+    where: { id: existing.id },
+    data: {
+      scope: nextScope,
+      categoryId: nextScope === 'category' ? categoryId : null,
+      supplierId: null,
+      productId: null,
+    },
+  });
+  res.json({ ok: true, data: entry });
+}));
+
 // ── Пошук (Postgres to_tsvector('simple'), без вектора — досить на кілька десятків записів) ──
 router.get('/knowledge/search', asyncHandler(async (req, res) => {
   const { q, scope, limit = '3' } = req.query;
   if (!q || !String(q).trim()) return res.json({ ok: true, data: [] });
 
-  // scope: "shop" | "category:<id>" | "product:<id>" — при product: підвантажуємо ще
-  // categoryId товару, щоб знайти й policy/faq-записи, прив'язані до всієї категорії.
+  // scope: "shop" | "category:<id>" | "supplier:<id>" | "product:<id>" — при product:
+  // підвантажуємо ще categoryId і supplierId товару, щоб знайти й policy/faq-записи,
+  // прив'язані до всієї категорії або постачальника цього товару.
   let categoryId = null;
+  let supplierId = null;
   let productId = null;
   if (scope && String(scope).startsWith('category:')) categoryId = String(scope).split(':')[1];
+  if (scope && String(scope).startsWith('supplier:')) supplierId = String(scope).split(':')[1];
   if (scope && String(scope).startsWith('product:')) {
     productId = String(scope).split(':')[1];
-    const product = await db.product.findFirst({ where: { id: productId, tenantId: req.tenant.id }, select: { categoryId: true } });
+    const product = await db.product.findFirst({ where: { id: productId, tenantId: req.tenant.id }, select: { categoryId: true, supplierId: true } });
     categoryId = product?.categoryId || null;
+    supplierId = product?.supplierId || null;
   }
 
   const rows = await db.$queryRaw`
-    SELECT id, kind, question, answer, tags, scope, "categoryId", "productId", priority,
+    SELECT id, kind, question, answer, tags, scope, "categoryId", "supplierId", "productId", priority,
       ts_rank(
         to_tsvector('simple', coalesce(question, '') || ' ' || answer || ' ' || array_to_string(tags, ' ')),
         plainto_tsquery('simple', ${String(q)})
@@ -144,6 +215,7 @@ router.get('/knowledge/search', asyncHandler(async (req, res) => {
       AND (
         scope = 'shop'
         OR (scope = 'category' AND "categoryId" = ${categoryId})
+        OR (scope = 'supplier' AND "supplierId" = ${supplierId})
         OR (scope = 'product' AND "productId" = ${productId})
       )
       AND to_tsvector('simple', coalesce(question, '') || ' ' || answer || ' ' || array_to_string(tags, ' '))

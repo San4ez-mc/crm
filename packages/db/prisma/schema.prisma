@@ -45,6 +45,7 @@ model Tenant {
   funnelEvents     FunnelEvent[]
   knowledgeEntries KnowledgeEntry[]
   knowledgeProfile KnowledgeProfile?
+  productChangeLog ProductChangeLog[]
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -123,7 +124,8 @@ model Supplier {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  products Product[]
+  products         Product[]
+  knowledgeEntries KnowledgeEntry[]
 
   @@index([tenantId])
 }
@@ -219,11 +221,35 @@ model Product {
   ads             Ad[]
   productExpense  ProductExpense?
   knowledgeEntries KnowledgeEntry[]
+  changeLog       ProductChangeLog[]
 
   @@unique([tenantId, sku])
   @@index([tenantId])
   @@index([tenantId, categoryId])
   @@index([tenantId, supplierId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// ДОПОВНЕННЯ 2026-09-08 (фідбек власника): "хто і коли вносив які зміни" в картці товару.
+// actorType='funnel' — запит прийшов з Bearer tenant.apiKey (воронка/MCP/Flows-автоматизація,
+// resolveTenant.js authMethod='tenant-api-key') → actorName завжди "Fineko". actorType='user' —
+// SSO-сесія веб-адмінки → actorName/actorUserId з identity, повернутої SSO /oauth/introspect.
+// ─────────────────────────────────────────────────────────────
+model ProductChangeLog {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  actorType   String // 'user' | 'funnel'
+  actorName   String // "Fineko" (воронка/MCP) або ім'я/email користувача з SSO
+  actorUserId String? // SSO user id, коли actorType='user'
+  entity      String // 'product' | 'offer' | 'cost' — що саме змінили в межах цього товару
+  summary     String // людський текст на 1 рядок, напр. "Ціна: 500 → 550 грн"
+  changes     Json? // [{field,label,from,to}] — структуровано, про запас для майбутнього UI
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, productId, createdAt])
 }
 
 // §4.2 setComponents[] — {productId, qty}[], реляційно замість рядка-токена
@@ -513,9 +539,11 @@ model KnowledgeEntry {
   question   String? // як клієнт питає; кілька варіантів через "|"; порожньо для policy/script
   answer     String
   tags       String[] @default([])
-  scope      String   @default("shop") // shop | category | product
+  scope      String   @default("shop") // shop | category | supplier | product
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id])
+  supplierId String? // ДОПОВНЕННЯ — записи рівня "постачальник" (scope=supplier)
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
   productId  String?
   product    Product? @relation(fields: [productId], references: [id])
   priority   Int      @default(0) // вище = раніше в промпті

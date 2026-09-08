@@ -70,6 +70,7 @@ export const api = {
   getProduct: (id) => get(`/products/${id}`),
   createProduct: (data) => post('/products', data),
   updateProduct: (id, data) => patch(`/products/${id}`, data),
+  getProductChangeLog: (id) => get(`/products/${id}/changelog`),
   deleteProduct: (id) => del(`/products/${id}`),
   setSetComponents: (id, components) => put(`/products/${id}/set-components`, { components }),
   createOffer: (productId, data) => post(`/products/${productId}/offers`, data),
@@ -131,6 +132,8 @@ export const api = {
   createKnowledge: (data) => post('/knowledge', data),
   updateKnowledge: (id, data) => patch(`/knowledge/${id}`, data),
   deleteKnowledge: (id) => del(`/knowledge/${id}`),
+  copyKnowledge: (id, targets) => post(`/knowledge/${id}/copy`, { targets }),
+  promoteKnowledge: (id) => post(`/knowledge/${id}/promote`, {}),
   searchKnowledge: (params = {}) => get(`/knowledge/search?${new URLSearchParams(params)}`),
   importKnowledge: (data) => post('/knowledge/import', data),
 

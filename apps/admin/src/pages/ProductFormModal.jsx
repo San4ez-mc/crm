@@ -2,9 +2,10 @@
 // права — розмірна сітка + варіанти (offers), фото через реальний upload-сервіс (POST /api/uploads).
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { Field, Input, Textarea, Select, Button, IconButton, ErrorBanner } from '../components/common/Common';
+import { Field, Input, Textarea, Select, Button, IconButton, ErrorBanner, formatDateTime } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 import { SupplierForm } from './SuppliersPage';
+import { ProductAnswersSection } from './KnowledgeBasePage';
 import { SingleFileDrop, MultiImageDrop } from '../components/common/FileDropInput';
 
 function TagsInput({ value, onChange, placeholder }) {
@@ -75,6 +76,10 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
   const [error, setError] = useState('');
   const [showNewSupplier, setShowNewSupplier] = useState(false);
   const [savedProductId, setSavedProductId] = useState(product?.id || null);
+  // "Хто і коли вносив зміни" (2026-09-08) — картка робить кілька незалежних збережень
+  // (товар/ціна постачальника/варіанти), тож стрічку історії треба перечитувати після КОЖНОГО.
+  const [changeLogRefresh, setChangeLogRefresh] = useState(0);
+  const touchChangeLog = () => setChangeLogRefresh((n) => n + 1);
 
   // ДОПОВНЕННЯ 2026-09-07 (фідбек власника): ціна постачальника редагується прямо тут, у
   // картці товару, а не лише на окремій сторінці "Витрати по товару" — блоком [{ціна, діє з
@@ -100,6 +105,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
         cogsHistory: cogsHistory.map((h) => ({ cost: Number(h.cost) || 0, validFrom: h.validFrom })),
       });
       setCogsSaved(true);
+      touchChangeLog();
     } catch (e) { setError(e.message); } finally { setCogsSaving(false); }
   }
 
@@ -116,6 +122,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
         await api.setSetComponents(saved.id, setComponents.map((componentProductId) => ({ componentProductId, qty: 1 })));
       }
       onSaved();
+      touchChangeLog();
       if (!isEdit) onClose(); // для нового товару — офери/склад комплекту додаються після повторного відкриття (простіше й надійніше)
     } catch (e) { setError(e.message); }
   }
@@ -125,17 +132,18 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     try {
       const created = (await api.createOffer(savedProductId, { properties: [], images: [] })).data;
       setOffers([...offers, created]);
+      touchChangeLog();
     } catch (e) { setError(e.message); }
   }
 
   async function updateOfferField(offer, field, value) {
     const next = { ...offer, [field]: value };
     setOffers(offers.map((o) => (o.id === offer.id ? next : o)));
-    try { await api.updateOffer(offer.id, { [field]: value }); } catch (e) { setError(e.message); }
+    try { await api.updateOffer(offer.id, { [field]: value }); touchChangeLog(); } catch (e) { setError(e.message); }
   }
 
   async function removeOffer(id) {
-    try { await api.deleteOffer(id); setOffers(offers.filter((o) => o.id !== id)); } catch (e) { setError(e.message); }
+    try { await api.deleteOffer(id); setOffers(offers.filter((o) => o.id !== id)); touchChangeLog(); } catch (e) { setError(e.message); }
   }
 
   // ДОПОВНЕННЯ 2026-09-07 (фідбек власника): коли товар щойно завезли — наявність однакова
@@ -147,7 +155,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     if (bulkQty === '' || !offers.length) return;
     const value = Number(bulkQty);
     setOffers(offers.map((o) => ({ ...o, quantity: value })));
-    try { await Promise.all(offers.map((o) => api.updateOffer(o.id, { quantity: value }))); }
+    try { await Promise.all(offers.map((o) => api.updateOffer(o.id, { quantity: value }))); touchChangeLog(); }
     catch (e) { setError(e.message); }
   }
 
@@ -278,6 +286,26 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
           </div>
         </div>
 
+        <div className="col-span-full mt-4 border-t border-slate-800 pt-4">
+          <Label2>Історія змін</Label2>
+          <p className="mb-3 mt-1 text-xs text-slate-500">Хто і коли міняв цей товар — картку, ціну постачальника, варіанти. Зміни з воронки/MCP підписані «Fineko».</p>
+          {!savedProductId ? (
+            <p className="text-xs text-slate-500">З'явиться після збереження товару.</p>
+          ) : (
+            <ChangeLogSection productId={savedProductId} refreshKey={changeLogRefresh} />
+          )}
+        </div>
+
+        <div className="col-span-full mt-4 border-t border-slate-800 pt-4">
+          <Label2>Відповіді для цього товару</Label2>
+          <p className="mb-3 mt-1 text-xs text-slate-500">Питання клієнтів і готові відповіді бота саме по цьому товару — та сама база знань, що й на сторінці «База знань» → вкладка «Товари».</p>
+          {!savedProductId ? (
+            <p className="text-xs text-slate-500">Спершу збережіть товар, щоб додавати відповіді.</p>
+          ) : (
+            <ProductAnswersSection productId={savedProductId} categories={categories} suppliers={suppliers} products={allProducts} />
+          )}
+        </div>
+
         <div className="col-span-full mt-2 flex justify-end gap-2 border-t border-slate-800 pt-4">
           <Button type="button" variant="secondary" onClick={onClose}>Закрити</Button>
           <Button type="submit">Зберегти</Button>
@@ -323,6 +351,35 @@ function BulkPricingEditor({ value = [], onChange }) {
 }
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+// "Хто і коли вносив зміни" (2026-09-08) — actorName вже готовий з бекенда ("Fineko" для
+// воронки/MCP, ім'я/email для SSO-користувача), тут лише рендер стрічки.
+function ChangeLogSection({ productId, refreshKey }) {
+  const [entries, setEntries] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    api.getProductChangeLog(productId).then((r) => { if (!cancelled) setEntries(r.data); }).catch((e) => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [productId, refreshKey]);
+
+  if (error) return <p className="text-xs text-red-400">{error}</p>;
+  if (entries === null) return null;
+  if (entries.length === 0) return <p className="text-xs text-slate-500">Змін ще не було.</p>;
+
+  return (
+    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+      {entries.map((e) => (
+        <div key={e.id} className="flex items-start justify-between gap-3 rounded-lg bg-slate-800/40 px-3 py-2 text-xs">
+          <span className="text-slate-300">{e.summary}</span>
+          <span className="shrink-0 whitespace-nowrap text-slate-500">
+            {e.actorName} · {formatDateTime(e.createdAt)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // Ціна постачальника — окремий бекенд-запис (ProductExpense), тому має власну кнопку
 // "Зберегти" замість загального сабміту форми товару (як і "Варіанти" нижче).

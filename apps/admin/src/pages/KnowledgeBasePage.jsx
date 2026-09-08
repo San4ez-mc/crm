@@ -1,45 +1,76 @@
-// «База знань» (ТЗ-база-знань-магазину.md, 2026-09-04) — FAQ/політики/заперечення/скрипти
-// в одному місці замість funnelKey SHOP_FAQ (дублювався на кожен бот) і векторної бази без
-// історії. 4 вкладки: Профіль (короткі факти завжди в промпті), Записи (керована таблиця),
-// Без відповіді (чернетки з реальних діалогів — askManager), Імпорт (разовий перенос).
+// «База знань» (ТЗ-база-знань-магазину.md, 2026-09-04; переоформлено 2026-09-08) — FAQ/
+// політики/заперечення/скрипти в одному місці замість дублювання в ключах кожної воронки.
+// 3 робочі вкладки за рівнем відповіді (shop / category+supplier / product) + Імпорт.
+// «Записи» + «Без відповіді» з попередньої версії тепер живуть РАЗОМ у кожній вкладці
+// (позначка «Потребують відповіді»), а «Профіль» (короткі факти, завжди в промпті бота —
+// API/модель KnowledgeProfile НЕ чіпали, бот-нода n_shop_profile-code.js читає її дослівно)
+// показаний зверху вкладки «Загальні питання». EntriesSection також переюзана в картці
+// товару (ProductFormModal → ProductAnswersSection) — та сама сутність "Відповідь".
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Input, Textarea, Select, Button, Field, Label, Badge, EmptyState, ErrorBanner } from '../components/common/Common';
+import { PageHeader, Card, Input, Textarea, Select, Button, IconButton, Field, Label, Badge, EmptyState, ErrorBanner } from '../components/common/Common';
 
 const KIND_LABEL = { faq: 'FAQ', policy: 'Політика', objection: 'Заперечення', script: 'Скрипт' };
 const KIND_COLOR = { faq: 'teal', policy: 'slate', objection: 'amber', script: 'green' };
+const SCOPE_LABEL = { shop: 'Весь магазин', category: 'Категорія', supplier: 'Постачальник', product: 'Товар' };
+const PROFILE_FIELDS = [
+  ['producerLine', 'Виробник', 'Показується, коли клієнт питає «хто виробник / де шиють»'],
+  ['shippingLine', 'Доставка', 'Показується на питання «коли відправка / як довго їде»'],
+  ['fittingLine', 'Примірка', 'Показується на питання «чи можна приміряти / повернути якщо не підійде»'],
+  ['paymentLine', 'Оплата', 'Показується на питання «як оплатити / які способи оплати»'],
+  ['termsLine', 'Умови (загальні)', 'Загальні умови магазину — те, що раніше було в ORDER_TERMS_LINE'],
+];
 
 export default function KnowledgeBasePage() {
-  const [tab, setTab] = useState('profile');
+  const [tab, setTab] = useState('shop');
+  const [categories, setCategories] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    api.listCategories().then((r) => setCategories(r.data)).catch(() => {});
+    api.listSuppliers().then((r) => setSuppliers(r.data)).catch(() => {});
+    api.listProducts({ take: '500' }).then((r) => setProducts(r.data)).catch(() => {});
+  }, []);
+
+  const ctx = { categories, suppliers, products };
+
   return (
     <div>
       <PageHeader
         title="База знань"
         action={
           <div className="flex gap-2">
-            {[['profile', 'Профіль'], ['entries', 'Записи'], ['unanswered', 'Без відповіді'], ['import', 'Імпорт']].map(([v, label]) => (
+            {[['shop', 'Загальні питання'], ['category', 'Категорії й постачальники'], ['product', 'Товари'], ['import', 'Імпорт']].map(([v, label]) => (
               <button key={v} onClick={() => setTab(v)} className={`rounded-lg px-3 py-1.5 text-xs ${tab === v ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300'}`}>{label}</button>
             ))}
           </div>
         }
       />
       <p className="mb-4 max-w-3xl text-sm text-slate-400">
-        Тут менеджер веде знання магазину (FAQ, політики, заперечення, скрипти відповідей) в одному місці —
-        замість того щоб дублювати їх у ключах кожної окремої воронки. Дані звідси автоматично підтягує бот
-        у діалозі з клієнтом: короткий «Профіль» — завжди в промпті (виробник/доставка/примірка/оплата),
-        а «Записи» — за потреби, коли питання клієнта схоже на щось із бази. Питання, на які бот не знайшов
-        відповіді, самі зʼявляються у вкладці «Без відповіді» — досить один раз дописати відповідь.
+        Тут менеджер веде знання магазину в одному місці — замість того щоб дублювати їх у ключах
+        кожної окремої воронки. «Загальні питання» — правила всього магазину; «Категорії й
+        постачальники» — те, що стосується групи товарів або конкретного постачальника; «Товари» —
+        відповіді по одному артикулу (ті самі відповіді видно і прямо в картці товару, у розділі
+        «Відповіді»). Питання клієнтів, на які бот не знайшов відповіді, зʼявляються тут же під
+        позначкою «Потребують відповіді» — досить один раз дописати відповідь.
       </p>
-      {tab === 'profile' && <ProfileTab />}
-      {tab === 'entries' && <EntriesTab />}
-      {tab === 'unanswered' && <UnansweredTab />}
+      {tab === 'shop' && (
+        <>
+          <ProfileCard />
+          <TestBotCard />
+          <EntriesSection scopes={['shop']} {...ctx} />
+        </>
+      )}
+      {tab === 'category' && <EntriesSection scopes={['category', 'supplier']} {...ctx} />}
+      {tab === 'product' && <EntriesSection scopes={['product']} {...ctx} />}
       {tab === 'import' && <ImportTab />}
     </div>
   );
 }
 
-// ── Профіль ──────────────────────────────────────────────────────────────
-function ProfileTab() {
+// ── Профіль (5 фіксованих коротких фактів, завжди в промпті бота) ─────────
+function ProfileCard() {
   const [form, setForm] = useState(null);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -58,25 +89,19 @@ function ProfileTab() {
   }
 
   if (!form) return null;
-  const fields = [
-    ['producerLine', 'Виробник', 'Показується, коли клієнт питає «хто виробник / де шиють»'],
-    ['shippingLine', 'Доставка', 'Показується на питання «коли відправка / як довго їде»'],
-    ['fittingLine', 'Примірка', 'Показується на питання «чи можна приміряти / повернути якщо не підійде»'],
-    ['paymentLine', 'Оплата', 'Показується на питання «як оплатити / які способи оплати»'],
-    ['termsLine', 'Умови (загальні)', 'Загальні умови магазину — те, що раніше було в ORDER_TERMS_LINE'],
-  ];
   return (
-    <div>
+    <div className="mb-6">
+      <h3 className="mb-2 text-sm font-semibold text-slate-200">Короткі факти (завжди в промпті бота)</h3>
       <ErrorBanner message={error} />
       <Card className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
-        {fields.map(([key, label, hint]) => (
+        {PROFILE_FIELDS.map(([key, label, hint]) => (
           <Field key={key} label={label}>
             <Textarea rows={2} value={form[key] || ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
             <div className="mt-1 text-xs text-slate-500">{hint}</div>
           </Field>
         ))}
         <div className="flex items-center gap-3 lg:col-span-2">
-          <Button onClick={save}>Зберегти</Button>
+          <Button type="button" onClick={save}>Зберегти</Button>
           {saved && <span className="text-xs text-emerald-400">Збережено ✓</span>}
         </div>
       </Card>
@@ -84,46 +109,11 @@ function ProfileTab() {
   );
 }
 
-// ── Записи ───────────────────────────────────────────────────────────────
-function EntriesTab() {
-  const [items, setItems] = useState(null);
-  const [kind, setKind] = useState('');
-  const [scope, setScope] = useState('');
-  const [active, setActive] = useState('');
-  const [q, setQ] = useState('');
-  const [error, setError] = useState('');
-  const [editing, setEditing] = useState(null); // entry object being created/edited, or null
+// ── Перевірка, як відповість бот (шукає по scope=shop, як робить бот) ─────
+function TestBotCard() {
   const [testQuestion, setTestQuestion] = useState('');
   const [testResult, setTestResult] = useState(null);
 
-  async function load() {
-    setError('');
-    try {
-      const params = {};
-      if (kind) params.kind = kind;
-      if (scope) params.scope = scope;
-      if (active) params.active = active;
-      if (q) params.q = q;
-      setItems((await api.listKnowledge(params)).data);
-    } catch (e) { setError(e.message); }
-  }
-  useEffect(() => { load(); }, [kind, scope, active, q]);
-
-  async function saveEntry(entry) {
-    try {
-      if (entry.id) await api.updateKnowledge(entry.id, entry);
-      else await api.createKnowledge(entry);
-      setEditing(null);
-      load();
-    } catch (e) { alert(e.message); }
-  }
-  async function toggleActive(entry) {
-    try { await api.updateKnowledge(entry.id, { isActive: !entry.isActive }); load(); } catch (e) { alert(e.message); }
-  }
-  async function remove(entry) {
-    if (!confirm('Видалити запис?')) return;
-    try { await api.deleteKnowledge(entry.id); load(); } catch (e) { alert(e.message); }
-  }
   async function runTest() {
     setTestResult(null);
     if (!testQuestion.trim()) return;
@@ -131,68 +121,194 @@ function EntriesTab() {
   }
 
   return (
+    <Card className="mb-6 p-4">
+      <Label>Перевірити, як відповість бот</Label>
+      <div className="flex gap-2">
+        <Input placeholder="Введіть питання клієнта…" value={testQuestion} onChange={(e) => setTestQuestion(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && runTest()} />
+        <Button type="button" variant="secondary" onClick={runTest}>Перевірити</Button>
+      </div>
+      {testResult && (
+        <div className="mt-3 space-y-2">
+          {testResult.length === 0 ? <div className="text-xs text-slate-500">Нічого не знайдено — бот попросить покликати менеджера.</div> : testResult.map((r) => (
+            <div key={r.id} className="rounded-lg bg-slate-800/50 px-3 py-2 text-xs">
+              <div className="text-slate-400">{r.question}</div>
+              <div className="mt-0.5">{r.answer}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── Відповіді: список + «потребують відповіді», для набору дозволених рівнів ─
+export function EntriesSection({ scopes, categories = [], suppliers = [], products = [], lockProductId = null }) {
+  const [items, setItems] = useState(null);
+  const [kind, setKind] = useState('');
+  const [scopeFilter, setScopeFilter] = useState(scopes.length === 1 ? scopes[0] : '');
+  const [targetFilter, setTargetFilter] = useState('');
+  const [active, setActive] = useState('');
+  const [q, setQ] = useState('');
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [copying, setCopying] = useState(null);
+  const [drafts, setDrafts] = useState({});
+
+  const effectiveScopes = scopeFilter ? [scopeFilter] : scopes;
+
+  async function load() {
+    setError('');
+    try {
+      const params = { scope: effectiveScopes.join(',') };
+      if (kind) params.kind = kind;
+      if (q) params.q = q;
+      if (lockProductId) params.productId = lockProductId;
+      else if (targetFilter && effectiveScopes.length === 1) {
+        if (effectiveScopes[0] === 'category') params.categoryId = targetFilter;
+        else if (effectiveScopes[0] === 'supplier') params.supplierId = targetFilter;
+        else if (effectiveScopes[0] === 'product') params.productId = targetFilter;
+      }
+      setItems((await api.listKnowledge(params)).data);
+    } catch (e) { setError(e.message); }
+  }
+  useEffect(() => { load(); }, [kind, scopeFilter, targetFilter, q, lockProductId]);
+
+  if (items === null) return <ErrorBanner message={error} />;
+
+  const visible = active === '' ? items : items.filter((e) => String(e.isActive) === active);
+  const unanswered = visible.filter((e) => e.source === 'from_dialog' && !e.isActive);
+  const normal = visible.filter((e) => !(e.source === 'from_dialog' && !e.isActive));
+
+  async function saveEntry(entry) {
+    try {
+      if (entry.id) await api.updateKnowledge(entry.id, entry);
+      else await api.createKnowledge(entry);
+      setEditing(null); load();
+    } catch (e) { alert(e.message); }
+  }
+  async function toggleActive(entry) { try { await api.updateKnowledge(entry.id, { isActive: !entry.isActive }); load(); } catch (e) { alert(e.message); } }
+  async function remove(entry) { if (!confirm('Видалити запис?')) return; try { await api.deleteKnowledge(entry.id); load(); } catch (e) { alert(e.message); } }
+  async function promote(entry) {
+    const label = entry.scope === 'product' ? 'на категорію' : 'на весь магазин';
+    if (!confirm(`Підняти цю відповідь ${label}?`)) return;
+    try { await api.promoteKnowledge(entry.id); load(); } catch (e) { alert(e.message); }
+  }
+  async function answerUnanswered(entry) {
+    const answer = drafts[entry.id];
+    if (!answer?.trim()) return;
+    try { await api.updateKnowledge(entry.id, { answer, isActive: true }); load(); } catch (e) { alert(e.message); }
+  }
+  async function skipUnanswered(entry) {
+    if (!confirm('Прибрати це питання зі списку («не потрібно»)?')) return;
+    try { await api.deleteKnowledge(entry.id); load(); } catch (e) { alert(e.message); }
+  }
+
+  function newEntryDefaults() {
+    if (lockProductId) return { kind: 'faq', scope: 'product', productId: lockProductId, tags: [], priority: 0, isActive: true };
+    return { kind: 'faq', scope: scopeFilter || scopes[0], tags: [], priority: 0, isActive: true };
+  }
+
+  return (
     <div>
       <ErrorBanner message={error} />
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Input className="max-w-xs" placeholder="Пошук у питаннях/відповідях…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select className="max-w-[160px]" value={kind} onChange={(e) => setKind(e.target.value)}>
-          <option value="">Усі типи</option>
-          {Object.entries(KIND_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </Select>
-        <Select className="max-w-[160px]" value={scope} onChange={(e) => setScope(e.target.value)}>
-          <option value="">Усі рівні</option>
-          <option value="shop">Весь магазин</option>
-          <option value="category">Категорія</option>
-          <option value="product">Товар</option>
-        </Select>
-        <Select className="max-w-[160px]" value={active} onChange={(e) => setActive(e.target.value)}>
-          <option value="">Активні й ні</option>
-          <option value="true">Тільки активні</option>
-          <option value="false">Тільки вимкнені</option>
-        </Select>
-        <Button onClick={() => setEditing({ kind: 'faq', scope: 'shop', tags: [], priority: 0, isActive: true })}>+ Новий запис</Button>
+
+      {!lockProductId && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Input className="max-w-xs" placeholder="Пошук у питаннях/відповідях…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Select className="max-w-[160px]" value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="">Усі типи</option>
+            {Object.entries(KIND_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </Select>
+          {scopes.length > 1 && (
+            <Select className="max-w-[180px]" value={scopeFilter} onChange={(e) => { setScopeFilter(e.target.value); setTargetFilter(''); }}>
+              <option value="">Усі рівні ({scopes.map((s) => SCOPE_LABEL[s]).join(' / ')})</option>
+              {scopes.map((s) => <option key={s} value={s}>{SCOPE_LABEL[s]}</option>)}
+            </Select>
+          )}
+          {effectiveScopes.length === 1 && effectiveScopes[0] === 'category' && (
+            <Select className="max-w-[200px]" value={targetFilter} onChange={(e) => setTargetFilter(e.target.value)}>
+              <option value="">Усі категорії</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          )}
+          {effectiveScopes.length === 1 && effectiveScopes[0] === 'supplier' && (
+            <Select className="max-w-[200px]" value={targetFilter} onChange={(e) => setTargetFilter(e.target.value)}>
+              <option value="">Усі постачальники</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </Select>
+          )}
+          {effectiveScopes.length === 1 && effectiveScopes[0] === 'product' && (
+            <Select className="max-w-[220px]" value={targetFilter} onChange={(e) => setTargetFilter(e.target.value)}>
+              <option value="">Усі товари</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+            </Select>
+          )}
+          <Select className="max-w-[160px]" value={active} onChange={(e) => setActive(e.target.value)}>
+            <option value="">Активні й ні</option>
+            <option value="true">Тільки активні</option>
+            <option value="false">Тільки вимкнені</option>
+          </Select>
+        </div>
+      )}
+
+      <div className="mb-4">
+        <Button type="button" onClick={() => setEditing(newEntryDefaults())}>+ Нова відповідь</Button>
       </div>
 
-      <Card className="mb-4 p-4">
-        <Label>Перевірити, як відповість бот</Label>
-        <div className="flex gap-2">
-          <Input placeholder="Введіть питання клієнта…" value={testQuestion} onChange={(e) => setTestQuestion(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && runTest()} />
-          <Button variant="secondary" onClick={runTest}>Перевірити</Button>
-        </div>
-        {testResult && (
-          <div className="mt-3 space-y-2">
-            {testResult.length === 0 ? <div className="text-xs text-slate-500">Нічого не знайдено — бот попросить покликати менеджера.</div> : testResult.map((r) => (
-              <div key={r.id} className="rounded-lg bg-slate-800/50 px-3 py-2 text-xs">
-                <div className="text-slate-400">{r.question}</div>
-                <div className="mt-0.5">{r.answer}</div>
+      {unanswered.length > 0 && (
+        <Card className="mb-4 border-amber-800/50 p-4">
+          <div className="mb-3 text-xs font-medium uppercase text-amber-400">Потребують відповіді ({unanswered.length})</div>
+          <div className="space-y-3">
+            {unanswered.map((e) => (
+              <div key={e.id} className="rounded-lg bg-slate-800/50 p-3">
+                <div className="mb-2 text-sm font-medium">{e.question}</div>
+                {e.product && <div className="mb-1 text-xs text-slate-500">Товар: {e.product.name}</div>}
+                <Textarea rows={2} placeholder="Впишіть відповідь…" value={drafts[e.id] ?? ''} onChange={(ev) => setDrafts({ ...drafts, [e.id]: ev.target.value })} />
+                <div className="mt-2 flex gap-2">
+                  <Button type="button" onClick={() => answerUnanswered(e)} disabled={!drafts[e.id]?.trim()}>Відповісти й увімкнути</Button>
+                  <Button type="button" variant="secondary" onClick={() => skipUnanswered(e)}>Не потрібно</Button>
+                </div>
               </div>
             ))}
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
-      {items === null ? null : items.length === 0 ? (
-        <EmptyState title="Записів ще немає" hint="Додайте перший вручну або перенесіть через вкладку «Імпорт»." />
+      {normal.length === 0 ? (
+        <EmptyState title="Записів ще немає" hint="Додайте першу відповідь вручну." />
       ) : (
         <Card>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-              <tr><th className="px-4 py-3">Тип</th><th className="px-4 py-3">Питання</th><th className="px-4 py-3">Відповідь</th><th className="px-4 py-3">Теги</th><th className="px-4 py-3">Рівень</th><th className="px-4 py-3">Активний</th><th className="px-4 py-3"></th></tr>
+              <tr>
+                <th className="px-4 py-3">Тип</th><th className="px-4 py-3">Питання</th><th className="px-4 py-3">Відповідь</th>
+                <th className="px-4 py-3">Теги</th>
+                {!lockProductId && <th className="px-4 py-3">Рівень</th>}
+                <th className="px-4 py-3">Активний</th><th className="px-4 py-3"></th>
+              </tr>
             </thead>
             <tbody>
-              {items.map((e) => (
+              {normal.map((e) => (
                 <tr key={e.id} className="border-b border-slate-800/60 last:border-0">
                   <td className="px-4 py-3"><Badge color={KIND_COLOR[e.kind]}>{KIND_LABEL[e.kind]}</Badge></td>
                   <td className="px-4 py-3 max-w-xs truncate" title={e.question}>{e.question || '—'}</td>
                   <td className="px-4 py-3 max-w-sm truncate text-slate-400" title={e.answer}>{e.answer}</td>
                   <td className="px-4 py-3 text-slate-400">{e.tags?.join(', ') || '—'}</td>
-                  <td className="px-4 py-3 text-slate-400">{e.scope === 'shop' ? 'Магазин' : e.scope === 'category' ? (e.category?.name || 'Категорія') : (e.product?.name || 'Товар')}</td>
+                  {!lockProductId && (
+                    <td className="px-4 py-3 text-slate-400">
+                      {e.scope === 'shop' ? 'Магазин' : e.scope === 'category' ? (e.category?.name || 'Категорія') : e.scope === 'supplier' ? (e.supplier?.name || 'Постачальник') : (e.product?.name || 'Товар')}
+                    </td>
+                  )}
                   <td className="px-4 py-3">
-                    <button onClick={() => toggleActive(e)}><Badge color={e.isActive ? 'green' : 'slate'}>{e.isActive ? 'Так' : 'Ні'}</Badge></button>
+                    <button type="button" onClick={() => toggleActive(e)}><Badge color={e.isActive ? 'green' : 'slate'}>{e.isActive ? 'Так' : 'Ні'}</Badge></button>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => setEditing(e)} className="mr-2 text-xs text-brand-light hover:underline">Редагувати</button>
-                    <button onClick={() => remove(e)} className="text-xs text-slate-500 hover:text-red-400">Видалити</button>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <button type="button" onClick={() => setEditing(e)} className="mr-2 text-xs text-brand-light hover:underline">Редагувати</button>
+                    <button type="button" onClick={() => setCopying(e)} className="mr-2 text-xs text-slate-400 hover:text-brand-light" title="Копіювати на інші товари/категорії/постачальники">📋 Копіювати</button>
+                    {e.scope !== 'shop' && (
+                      <button type="button" onClick={() => promote(e)} className="mr-2 text-xs text-slate-400 hover:text-brand-light" title={e.scope === 'product' ? 'Підняти на категорію' : 'Підняти на весь магазин'}>⬆️ Підняти</button>
+                    )}
+                    <button type="button" onClick={() => remove(e)} className="text-xs text-slate-500 hover:text-red-400">Видалити</button>
                   </td>
                 </tr>
               ))}
@@ -201,17 +317,50 @@ function EntriesTab() {
         </Card>
       )}
 
-      {editing && <EntryFormModal entry={editing} onCancel={() => setEditing(null)} onSave={saveEntry} />}
+      {editing && (
+        <EntryFormModal
+          entry={editing}
+          categories={categories}
+          suppliers={suppliers}
+          products={products}
+          allowedScopes={scopes}
+          lockProductId={lockProductId}
+          onCancel={() => setEditing(null)}
+          onSave={saveEntry}
+        />
+      )}
+      {copying && (
+        <CopyModal
+          entry={copying}
+          categories={categories}
+          suppliers={suppliers}
+          products={products}
+          onCancel={() => setCopying(null)}
+          onDone={() => { setCopying(null); load(); }}
+        />
+      )}
     </div>
   );
 }
 
-function EntryFormModal({ entry, onCancel, onSave }) {
+// Той самий блок «Відповіді», вбудований у картку товару (ProductFormModal) — один рівень
+// (product), без фільтрів, заблокований на конкретний товар.
+export function ProductAnswersSection({ productId, categories, suppliers, products }) {
+  return <EntriesSection scopes={['product']} categories={categories} suppliers={suppliers} products={products} lockProductId={productId} />;
+}
+
+function EntryFormModal({ entry, categories, suppliers, products, allowedScopes, lockProductId, onCancel, onSave }) {
   const [form, setForm] = useState({ ...entry, tagsText: (entry.tags || []).join(', ') });
+  const scopeOptions = allowedScopes && allowedScopes.length ? allowedScopes : ['shop', 'category', 'supplier', 'product'];
+  const canSave = form.answer?.trim()
+    && !(!lockProductId && form.scope === 'category' && !form.categoryId)
+    && !(!lockProductId && form.scope === 'supplier' && !form.supplierId)
+    && !(!lockProductId && form.scope === 'product' && !form.productId);
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-16" onClick={onCancel}>
       <div className="w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 text-sm font-semibold">{entry.id ? 'Редагувати запис' : 'Новий запис'}</h3>
+        <h3 className="mb-4 text-sm font-semibold">{entry.id ? 'Редагувати відповідь' : 'Нова відповідь'}</h3>
         <div className="space-y-3">
           <Field label="Тип">
             <Select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
@@ -221,67 +370,109 @@ function EntryFormModal({ entry, onCancel, onSave }) {
           <Field label="Питання клієнта (варіанти через |)"><Input value={form.question || ''} onChange={(e) => setForm({ ...form, question: e.target.value })} /></Field>
           <Field label="Відповідь бота *"><Textarea rows={3} value={form.answer || ''} onChange={(e) => setForm({ ...form, answer: e.target.value })} /></Field>
           <Field label="Теги (через кому)"><Input value={form.tagsText} onChange={(e) => setForm({ ...form, tagsText: e.target.value })} /></Field>
-          <Field label="Рівень">
-            <Select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })}>
-              <option value="shop">Весь магазин</option>
-              <option value="category">Категорія</option>
-              <option value="product">Товар</option>
-            </Select>
-          </Field>
+          {!lockProductId && scopeOptions.length > 1 && (
+            <Field label="Рівень">
+              <Select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value, categoryId: '', supplierId: '', productId: '' })}>
+                {scopeOptions.map((s) => <option key={s} value={s}>{SCOPE_LABEL[s]}</option>)}
+              </Select>
+            </Field>
+          )}
+          {!lockProductId && form.scope === 'category' && (
+            <Field label="Категорія">
+              <Select value={form.categoryId || ''} onChange={(e) => setForm({ ...form, categoryId: e.target.value })}>
+                <option value="">— оберіть —</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </Field>
+          )}
+          {!lockProductId && form.scope === 'supplier' && (
+            <Field label="Постачальник">
+              <Select value={form.supplierId || ''} onChange={(e) => setForm({ ...form, supplierId: e.target.value })}>
+                <option value="">— оберіть —</option>
+                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </Select>
+            </Field>
+          )}
+          {!lockProductId && form.scope === 'product' && (
+            <Field label="Товар">
+              <Select value={form.productId || ''} onChange={(e) => setForm({ ...form, productId: e.target.value })}>
+                <option value="">— оберіть —</option>
+                {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+              </Select>
+            </Field>
+          )}
           <Field label="Пріоритет (вище = раніше в промпті)"><Input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} /></Field>
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel}>Скасувати</Button>
-          <Button onClick={() => onSave({ ...form, tags: form.tagsText.split(',').map((t) => t.trim()).filter(Boolean) })} disabled={!form.answer?.trim()}>Зберегти</Button>
+          <Button type="button" variant="secondary" onClick={onCancel}>Скасувати</Button>
+          <Button type="button" onClick={() => onSave({ ...form, tags: form.tagsText.split(',').map((t) => t.trim()).filter(Boolean) })} disabled={!canSave}>Зберегти</Button>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Без відповіді ────────────────────────────────────────────────────────
-function UnansweredTab() {
-  const [items, setItems] = useState(null);
-  const [drafts, setDrafts] = useState({});
+// ── Копіювати відповідь на інші товари/категорії/постачальники (незалежні копії) ─
+function CopyModal({ entry, categories, suppliers, products, onCancel, onDone }) {
+  const [rows, setRows] = useState([{ scope: 'product', id: '' }]);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  async function load() {
+  function updateRow(i, field, value) {
+    setRows(rows.map((r, idx) => (idx === i ? { ...r, [field]: value, ...(field === 'scope' ? { id: '' } : {}) } : r)));
+  }
+  function addRow() { setRows([...rows, { scope: 'product', id: '' }]); }
+  function removeRow(i) { setRows(rows.filter((_, idx) => idx !== i)); }
+
+  function optionsFor(scope) {
+    if (scope === 'category') return categories;
+    if (scope === 'supplier') return suppliers;
+    return products.map((p) => ({ id: p.id, name: `${p.name} (${p.sku})` }));
+  }
+
+  async function submit() {
     setError('');
-    try { setItems((await api.listKnowledge({ active: 'false' })).data.filter((e) => e.source === 'from_dialog')); } catch (e) { setError(e.message); }
-  }
-  useEffect(() => { load(); }, []);
-
-  async function answer(entry) {
-    const answer = drafts[entry.id];
-    if (!answer?.trim()) return;
-    try { await api.updateKnowledge(entry.id, { answer, isActive: true }); load(); } catch (e) { alert(e.message); }
-  }
-  async function skip(entry) {
-    if (!confirm('Прибрати це питання зі списку («не потрібно»)?')) return;
-    try { await api.deleteKnowledge(entry.id); load(); } catch (e) { alert(e.message); }
+    const targets = rows.filter((r) => r.id).map((r) => ({
+      scope: r.scope,
+      categoryId: r.scope === 'category' ? r.id : undefined,
+      supplierId: r.scope === 'supplier' ? r.id : undefined,
+      productId: r.scope === 'product' ? r.id : undefined,
+    }));
+    if (!targets.length) { setError('Оберіть хоча б одну ціль'); return; }
+    setSaving(true);
+    try { await api.copyKnowledge(entry.id, targets); onDone(); }
+    catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   }
 
   return (
-    <div>
-      <ErrorBanner message={error} />
-      <p className="mb-4 text-xs text-slate-500">Питання клієнтів, на які бот не знав відповіді — впишіть відповідь і увімкніть, наступного разу бот відповість сам.</p>
-      {items === null ? null : items.length === 0 ? (
-        <EmptyState title="Немає питань без відповіді" hint="Зʼявляться тут автоматично, коли бот не знайде відповіді в базі." />
-      ) : (
-        <div className="space-y-3">
-          {items.map((e) => (
-            <Card key={e.id} className="p-4">
-              <div className="mb-2 text-sm font-medium">{e.question}</div>
-              {e.sessionId && <div className="mb-2 text-xs text-slate-500">Сесія: {e.sessionId}</div>}
-              <Textarea rows={2} placeholder="Впишіть відповідь…" value={drafts[e.id] ?? ''} onChange={(ev) => setDrafts({ ...drafts, [e.id]: ev.target.value })} />
-              <div className="mt-2 flex gap-2">
-                <Button onClick={() => answer(e)} disabled={!drafts[e.id]?.trim()}>Відповісти й увімкнути</Button>
-                <Button variant="secondary" onClick={() => skip(e)}>Не потрібно</Button>
-              </div>
-            </Card>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-16" onClick={onCancel}>
+      <div className="w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-1 text-sm font-semibold">Копіювати відповідь</h3>
+        <p className="mb-4 text-xs text-slate-500">Створює незалежну копію цієї відповіді на обраних цілях — редагування копії ніяк не впливає на оригінал.</p>
+        <ErrorBanner message={error} />
+        <div className="space-y-2">
+          {rows.map((row, i) => (
+            <div key={i} className="flex gap-2">
+              <Select className="max-w-[140px]" value={row.scope} onChange={(e) => updateRow(i, 'scope', e.target.value)}>
+                <option value="category">Категорія</option>
+                <option value="supplier">Постачальник</option>
+                <option value="product">Товар</option>
+              </Select>
+              <Select className="flex-1" value={row.id} onChange={(e) => updateRow(i, 'id', e.target.value)}>
+                <option value="">— оберіть —</option>
+                {optionsFor(row.scope).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </Select>
+              <IconButton type="button" onClick={() => removeRow(i)}>🗑️</IconButton>
+            </div>
           ))}
         </div>
-      )}
+        <Button type="button" variant="secondary" className="mt-2" onClick={addRow}>+ Ще ціль</Button>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onCancel}>Скасувати</Button>
+          <Button type="button" onClick={submit} disabled={saving}>{saving ? 'Копіюю…' : 'Копіювати'}</Button>
+        </div>
+      </div>
     </div>
   );
 }
