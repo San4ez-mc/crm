@@ -3,7 +3,7 @@
 // на дошці); додано вибір воронки (якщо їх декілька) — дошка показує стадії лише вибраної;
 // зміна стадії — тільки через Select на картці/в таблиці (нативний HTML5 drag&drop на
 // мобільних браузерах не працює й ще й глушив клік на відкриття картки).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { PageHeader, Button, Input, Select, Card, EmptyState, ErrorBanner, Badge, money, formatDate } from '../components/common/Common';
 import Modal from '../components/common/Modal';
@@ -13,6 +13,18 @@ import { ReturnForm } from './ReturnsPage';
 
 export default function OrdersPage() {
   const [view, setView] = useState('board');
+  // Верхній дублер горизонтального скролу дошки (2026-09-08): ширина береться з реальної ширини дошки.
+  const boardRef = useRef(null);
+  const topScrollRef = useRef(null);
+  const [boardScrollWidth, setBoardScrollWidth] = useState(0);
+  useEffect(() => {
+    const el = boardRef.current; if (!el) return undefined;
+    const upd = () => setBoardScrollWidth(el.scrollWidth);
+    upd();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(upd) : null;
+    if (ro) ro.observe(el);
+    return () => { if (ro) ro.disconnect(); };
+  });
   const [orders, setOrders] = useState(null);
   const [pipelines, setPipelines] = useState([]);
   const [pipelineId, setPipelineId] = useState('');
@@ -90,7 +102,12 @@ export default function OrdersPage() {
       {orders === null ? null : orders.length === 0 ? (
         <EmptyState title="Замовлень ще немає" hint="Вони приходять автоматично з воронки після оформлення клієнтом." />
       ) : view === 'board' ? (
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        <>
+        {/* 2026-09-08 (запит власника): горизонтальний скрол дошки і ЗВЕРХУ — дублер, синхронізований з основним. */}
+        <div ref={topScrollRef} className="mb-1 overflow-x-auto" onScroll={(e) => { if (boardRef.current && boardRef.current.scrollLeft !== e.currentTarget.scrollLeft) boardRef.current.scrollLeft = e.currentTarget.scrollLeft; }}>
+          <div style={{ width: boardScrollWidth, height: 1 }} />
+        </div>
+        <div ref={boardRef} className="flex gap-3 overflow-x-auto pb-2" onScroll={(e) => { if (topScrollRef.current && topScrollRef.current.scrollLeft !== e.currentTarget.scrollLeft) topScrollRef.current.scrollLeft = e.currentTarget.scrollLeft; }}>
           {stages.map((stage) => {
             const stageOrders = orders.filter((o) => o.stageId === stage.id);
             const stageSum = stageOrders.reduce((s, o) => s + orderTotal(o), 0);
@@ -131,6 +148,7 @@ export default function OrdersPage() {
             );
           })}
         </div>
+        </>
       ) : (
         <Card>
           <table className="w-full text-sm">
