@@ -11,15 +11,42 @@ const { parseFrom, parseTo } = require('../lib/dateRange');
 
 const router = express.Router();
 
+// Стадія pipeline за назвою етапу (стадії названі як етапи воронки) — без урахування регістру.
+async function stageByName(tenantId, name) {
+  const want = String(name || '').trim().toLowerCase();
+  if (!want) return null;
+  const pipelines = await db.pipeline.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' }, include: { stages: true } });
+  for (const p of pipelines) { const hit = p.stages.find((s) => String(s.name || '').trim().toLowerCase() === want); if (hit) return hit; }
+  return null;
+}
+
+// 2026-09-09 (власник: «всіх перенеси в замовлення»): кожна подія воронки = картка на дошці замовлень.
+// Перша подія створює картку (contactName/contactIg, позиція = презентований товар), наступні рухають її по
+// стадіях і оновлюють lastClientAt. Реальне замовлення (POST /orders з funnelSessionId) доповнює цю ж картку.
+async function upsertFunnelCard(tenantId, { sessionId, stageName, funnelSlug, igUsername, senderName, product, lastClientAt }) {
+  const stage = await stageByName(tenantId, stageName);
+  const existing = await db.order.findFirst({ where: { tenantId, funnelSessionId: String(sessionId) }, include: { items: { select: { id: true } } } });
+  const contact = { ...(senderName ? { contactName: String(senderName).slice(0, 120) } : {}), ...(igUsername ? { contactIg: String(igUsername).slice(0, 120) } : {}) };
+  const item = product && (product.name || product.sku) ? { productId: product.id || null, name: String(product.name || product.sku), price: Number(product.price) || 0, quantity: 1, properties: product.sku ? [{ name: 'Артикул', value: String(product.sku) }] : null, isUpsell: false } : null;
+  const at = lastClientAt && !Number.isNaN(new Date(lastClientAt).getTime()) ? new Date(lastClientAt) : new Date(); // бекфіл передає реальний час останньої активності
+  if (!existing) {
+    return db.order.create({ data: { tenantId, funnelSessionId: String(sessionId), stageId: stage ? stage.id : undefined, sourceName: 'Instagram' + (funnelSlug ? ' ' + String(funnelSlug) : ''), lastClientAt: at, ...contact, ...(item ? { items: { create: [item] } } : {}) } });
+  }
+  return db.order.update({ where: { id: existing.id }, data: { ...(stage ? { stageId: stage.id } : {}), lastClientAt: at, ...contact, ...(item && !existing.items.length ? { items: { create: [item] } } : {}) } });
+}
+
 router.post('/funnel-events', asyncHandler(async (req, res) => {
-  const { funnelSlug, sessionId, stageName, stageOrder } = req.body || {};
+  const { funnelSlug, sessionId, stageName, stageOrder, igUsername, senderName, product, lastClientAt } = req.body || {};
   if (!sessionId || !stageName) throw new ValidationError('sessionId і stageName обовʼязкові');
   const row = await db.funnelEvent.upsert({
     where: { tenantId_sessionId_stageName: { tenantId: req.tenant.id, sessionId: String(sessionId), stageName: String(stageName) } },
     update: { occurredAt: new Date(), stageOrder: Number(stageOrder) || 0, ...(funnelSlug ? { funnelSlug: String(funnelSlug) } : {}) },
     create: { tenantId: req.tenant.id, funnelSlug: funnelSlug ? String(funnelSlug) : null, sessionId: String(sessionId), stageName: String(stageName), stageOrder: Number(stageOrder) || 0 },
   });
-  res.status(201).json({ ok: true, data: row });
+  let card = null;
+  try { card = await upsertFunnelCard(req.tenant.id, { sessionId, stageName, funnelSlug, igUsername, senderName, product, lastClientAt }); }
+  catch (e) { /* картка на дошці — best-effort, аналітика подій важливіша */ }
+  res.status(201).json({ ok: true, data: row, orderId: card ? card.id : null });
 }));
 
 // §9 Дашборд «Воронка» — по кожному етапу: унікальних сесій, % конверсії від попереднього

@@ -87,6 +87,30 @@ router.post('/orders', asyncHandler(async (req, res) => {
 
   const stageId = b.stageId || await defaultStageId(req.tenant.id);
 
+  // 2026-09-09: картка цієї розмови вже є на дошці (створена з /funnel-events) → доповнюємо її, а не дублюємо.
+  if (b.funnelSessionId) {
+    const card = await db.order.findFirst({ where: { tenantId: req.tenant.id, funnelSessionId: String(b.funnelSessionId) } });
+    if (card) {
+      await db.orderItem.deleteMany({ where: { orderId: card.id } });
+      const updated = await db.order.update({
+        where: { id: card.id },
+        data: {
+          buyerId, stageId,
+          sourceName: b.sourceName || card.sourceName || null,
+          managerComment: b.managerComment || null,
+          shipping: b.shipping || null,
+          ttn: Array.isArray(b.ttn) ? b.ttn : card.ttn,
+          ...(b.firstTouchAdId ? { firstTouchAdId: b.firstTouchAdId, firstTouchAt: b.firstTouchAt ? new Date(b.firstTouchAt) : new Date() } : {}),
+          ...(b.lastTouchAdId ? { lastTouchAdId: b.lastTouchAdId, lastTouchAt: b.lastTouchAt ? new Date(b.lastTouchAt) : new Date() } : {}),
+          lastClientAt: new Date(),
+          items: { create: b.items.map((it) => ({ productId: it.productId || null, offerId: it.offerId || null, name: it.name, price: it.price, quantity: Number(it.quantity) || 1, properties: it.properties || null, isUpsell: !!it.isUpsell })) },
+        },
+        include: ORDER_INCLUDE,
+      });
+      return void res.status(201).json({ ok: true, data: updated, reusedFunnelCard: true });
+    }
+  }
+
   const order = await db.order.create({
     data: {
       tenantId: req.tenant.id,
@@ -96,6 +120,8 @@ router.post('/orders', asyncHandler(async (req, res) => {
       managerComment: b.managerComment || null,
       shipping: b.shipping || null,
       ttn: Array.isArray(b.ttn) ? b.ttn : [],
+      funnelSessionId: b.funnelSessionId ? String(b.funnelSessionId) : null,
+      lastClientAt: b.funnelSessionId ? new Date() : null,
       firstTouchAdId: b.firstTouchAdId || null,
       firstTouchAt: b.firstTouchAt ? new Date(b.firstTouchAt) : (b.firstTouchAdId ? new Date() : null),
       lastTouchAdId: b.lastTouchAdId || null,

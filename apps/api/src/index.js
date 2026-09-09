@@ -113,4 +113,6 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
   logger.info(`Fineko CRM API listening on :${PORT}`);
+  // 2026-09-09: картки розмов без відповіді клієнта ≥ 24 год → стадія «Не відписали протягом доби».
+  try { require('./services/funnelIdle').startFunnelIdleCron(); } catch (e) { logger.warn('[funnelIdle] not started: ' + e.message); }
 });

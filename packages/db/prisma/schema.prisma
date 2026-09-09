@@ -368,6 +368,13 @@ model Order {
   lastTouchAdId  String?
   lastTouchAd    Ad?       @relation("LastTouch", fields: [lastTouchAdId], references: [id])
   lastTouchAt    DateTime?
+  // 2026-09-09 (власник): картка на дошці для КОЖНОЇ розмови воронки з моменту презентації — створюється з
+  // POST /funnel-events (sessionId Flows), далі рухається по стадіях подіями; POST /orders із тим самим
+  // funnelSessionId оновлює цю ж картку (покупець, позиції, доставка), а не створює другу.
+  funnelSessionId String?
+  contactName     String? // імʼя з Instagram, поки покупця (телефону) ще нема
+  contactIg       String? // @username з Instagram
+  lastClientAt    DateTime? // остання подія воронки — крон переводить у «Не відписали протягом доби»
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -378,6 +385,7 @@ model Order {
   @@index([tenantId])
   @@index([tenantId, stageId])
   @@index([tenantId, createdAt])
+  @@index([tenantId, funnelSessionId])
 }
 
 // §4.8 items[] — реляційно (не JSON), бо аналітика §6 рахує по позиціях

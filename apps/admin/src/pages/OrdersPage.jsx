@@ -130,8 +130,8 @@ export default function OrdersPage() {
                       draggable
                       onDragStart={(e) => e.dataTransfer.setData('orderId', o.id)}
                     >
-                      <div className="text-sm font-medium">{o.buyer?.fullName || o.buyer?.phone || 'Без покупця'}</div>
-                      {o.buyer?.igUsername && <div className="text-xs text-brand-light">@{o.buyer.igUsername}</div>}
+                      <div className="text-sm font-medium">{o.buyer?.fullName || o.buyer?.phone || o.contactName || (o.contactIg ? '@' + o.contactIg : 'Без покупця')}</div>
+                      {(o.buyer?.igUsername || o.contactIg) && <div className="text-xs text-brand-light">@{o.buyer?.igUsername || o.contactIg}</div>}
                       <div className="mt-1 text-xs text-slate-500 line-clamp-1">{o.items.map((it) => it.name).join(', ')}</div>
                       <div className="mt-1.5 flex items-center justify-between">
                         <span className="text-sm">{money(orderTotal(o))}</span>
