@@ -233,11 +233,15 @@ router.post('/knowledge/from-dialog', asyncHandler(async (req, res) => {
   const normalized = String(question).trim().toLowerCase().replace(/\s+/g, ' ');
 
   // Ідемпотентність за 7 днів — той самий (нормалізований) запит не плодить дублі-чернетки.
+  // 2026-09-09: findFirst() без фільтра по question брав ДОВІЛЬНИЙ (перший-зустрінутий) рядок з
+  // джерела from_dialog і звіряв ЛИШЕ його — дублі проходили повз, щойно в 7-денному вікні було
+  // більше одного чернеткового запису (а це майже завжди так). Тепер перевіряємо ВЕСЬ недавній набір.
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-  const existing = await db.knowledgeEntry.findFirst({
+  const recent = await db.knowledgeEntry.findMany({
     where: { tenantId: req.tenant.id, source: 'from_dialog', createdAt: { gte: sevenDaysAgo } },
+    select: { id: true, question: true, answer: true, tags: true, scope: true, categoryId: true, supplierId: true, productId: true, priority: true, isActive: true, source: true, createdBy: true, sessionId: true, createdAt: true, updatedAt: true, kind: true, tenantId: true },
   });
-  const dup = existing && String(existing.question || '').trim().toLowerCase().replace(/\s+/g, ' ') === normalized ? existing : null;
+  const dup = recent.find((r) => String(r.question || '').trim().toLowerCase().replace(/\s+/g, ' ') === normalized) || null;
   if (dup) return res.json({ ok: true, data: dup, deduped: true });
 
   const entry = await db.knowledgeEntry.create({
