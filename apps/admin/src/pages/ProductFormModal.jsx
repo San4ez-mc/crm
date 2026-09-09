@@ -70,6 +70,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     thumbnailUrl: product?.thumbnailUrl || '', images: product?.images || [], aiNotes: product?.aiNotes || '',
     bulkPricing: product?.bulkPricing || [], isSet: forceSet || !!product?.isSet,
     alwaysAvailable: product?.alwaysAvailable !== undefined ? product.alwaysAvailable : true,
+    sizes: product?.sizes?.length ? product.sizes : (product?.sizeChartData?.sizes || []),
   });
   const [offers, setOffers] = useState(product?.offers || []);
   const [setComponents, setSetComponentsState] = useState((product?.setComponents || []).map((c) => c.productId));
@@ -137,7 +138,9 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
   }
 
   async function updateOfferField(offer, field, value) {
-    const next = { ...offer, [field]: value };
+    // availableSizes — бекенд автоматично ставить sizesCustomized:true разом з ним
+    // (products.js PATCH /offers/:id) — синхронізуємо локальний стан так само.
+    const next = field === 'availableSizes' ? { ...offer, availableSizes: value, sizesCustomized: true } : { ...offer, [field]: value };
     setOffers(offers.map((o) => (o.id === offer.id ? next : o)));
     try { await api.updateOffer(offer.id, { [field]: value }); touchChangeLog(); } catch (e) { setError(e.message); }
   }
@@ -146,16 +149,13 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     try { await api.deleteOffer(id); setOffers(offers.filter((o) => o.id !== id)); touchChangeLog(); } catch (e) { setError(e.message); }
   }
 
-  // ДОПОВНЕННЯ 2026-09-07 (фідбек власника): коли товар щойно завезли — наявність однакова
-  // для всіх розмірів/кольорів, і набридає копіювати те саме число в кожен варіант вручну;
-  // далі, коли постачальник розпродає окремі розміри, кількість вже правиться поштучно
-  // (звичайне поле "Кількість" на варіанті нижче лишається).
-  const [bulkQty, setBulkQty] = useState('');
-  async function applyBulkQty() {
-    if (bulkQty === '' || !offers.length) return;
-    const value = Number(bulkQty);
-    setOffers(offers.map((o) => ({ ...o, quantity: value })));
-    try { await Promise.all(offers.map((o) => api.updateOffer(o.id, { quantity: value }))); touchChangeLog(); }
+  // ДОПОВНЕННЯ 2026-09-09 (фідбек власника): "доступно/недоступно" замість лічильників —
+  // коли товар щойно завезли, усі розміри доступні в усіх кольорах; коли постачальник
+  // розпродає окремі розміри — вимикають конкретні іконки в конкретному кольорі нижче.
+  async function resetAllColorsToProductSizes() {
+    if (!offers.length) return;
+    setOffers(offers.map((o) => ({ ...o, availableSizes: [], sizesCustomized: false })));
+    try { await Promise.all(offers.map((o) => api.updateOffer(o.id, { resetToInherit: true }))); touchChangeLog(); }
     catch (e) { setError(e.message); }
   }
 
@@ -172,6 +172,9 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
           </div>
           <Field label="Ціна за кількість (та сама для всіх кольорів)">
             <BulkPricingEditor value={form.bulkPricing} onChange={(v) => setForm({ ...form, bulkPricing: v })} />
+          </Field>
+          <Field label="Розміри товару">
+            <SizesEditor value={form.sizes} onChange={(v) => setForm({ ...form, sizes: v })} />
           </Field>
           <Field label="Ціна постачальника (для розрахунку маржі)">
             {!savedProductId ? (
@@ -251,28 +254,38 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
               <input type="checkbox" className="mt-0.5" checked={form.alwaysAvailable} onChange={(e) => setForm({ ...form, alwaysAvailable: e.target.checked })} />
               <span>
                 Доступно завжди
-                <div className="text-xs text-slate-500">Увімкнено (за замовчуванням) — кількість нижче не враховується, товар завжди пропонується клієнту. Вимкнете — тоді бот дивиться на "Кількість" кожного розміру/кольору: 0 = немає в наявності.</div>
+                <div className="text-xs text-slate-500">Увімкнено (за замовчуванням) — доступні розміри нижче не враховуються, товар завжди пропонується клієнту повністю. Вимкнете — тоді бот дивиться, які розміри позначені доступними в обраному кольорі.</div>
               </span>
             </label>
             {!savedProductId && <p className="text-xs text-slate-500">Спершу збережіть товар, щоб додавати варіанти.</p>}
-            {offers.length > 1 && (
+            {offers.length > 1 && form.sizes.length > 0 && (
               <div className="mb-3 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/40 p-2">
-                <Input type="number" min="0" placeholder="кількість" className="!w-28" value={bulkQty} onChange={(e) => setBulkQty(e.target.value)} />
-                <Button type="button" variant="secondary" onClick={applyBulkQty}>Заповнити кількість усім розмірам/кольорам</Button>
+                <Button type="button" variant="secondary" onClick={resetAllColorsToProductSizes}>Доступні всі розміри в усіх кольорах</Button>
               </div>
             )}
             <div className="space-y-3">
               {offers.map((offer) => (
                 <div key={offer.id} className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
                   <div className="grid grid-cols-2 gap-2">
+                    <Field label="Колір">
+                      <Input
+                        defaultValue={(offer.properties || []).find((p) => /колір|цвет/i.test(p.name))?.value || ''}
+                        onBlur={(e) => updateOfferField(offer, 'properties', e.target.value.trim() ? [{ name: 'колір', value: e.target.value.trim() }] : [])}
+                      />
+                    </Field>
                     <Field label="Артикул варіанту"><Input defaultValue={offer.sku || ''} onBlur={(e) => updateOfferField(offer, 'sku', e.target.value)} /></Field>
-                    <Field label="Кількість"><Input key={`qty-${offer.id}-${offer.quantity}`} type="number" defaultValue={offer.quantity ?? ''} onBlur={(e) => updateOfferField(offer, 'quantity', e.target.value === '' ? null : Number(e.target.value))} /></Field>
                   </div>
-                  <Field label="Властивості (розмір:M, колір:чорний)">
-                    <Input
-                      defaultValue={(offer.properties || []).map((p) => `${p.name}:${p.value}`).join(', ')}
-                      onBlur={(e) => updateOfferField(offer, 'properties', e.target.value.split(',').map((s) => s.trim()).filter(Boolean).map((s) => { const [name, value] = s.split(':'); return { name: (name || '').trim(), value: (value || '').trim() }; }))}
-                    />
+                  <Field label="Доступні розміри в цьому кольорі">
+                    {form.sizes.length === 0 ? (
+                      <p className="text-xs text-slate-500">Спершу додайте розміри товару вище.</p>
+                    ) : (
+                      <AvailableSizesToggle
+                        productSizes={form.sizes}
+                        value={offer.availableSizes || []}
+                        customized={!!offer.sizesCustomized}
+                        onChange={(v) => updateOfferField(offer, 'availableSizes', v)}
+                      />
+                    )}
                   </Field>
                   <Field label="Фото цього варіанту">
                     <MultiImageDrop value={offer.images || []} onChange={(urls) => updateOfferField(offer, 'images', urls)} />
@@ -346,6 +359,74 @@ function BulkPricingEditor({ value = [], onChange }) {
         </div>
       ))}
       <Button type="button" variant="secondary" onClick={add}>+ Ціна за кількість</Button>
+    </div>
+  );
+}
+
+// ДОПОВНЕННЯ 2026-09-09 (фідбек власника): майстер-список розмірів товару — іконки-чипси.
+// "Візьми доступні варіанти в описах" — товари, змігровані з KeyCRM, часто вже мають
+// sizeChartData.sizes (розмірна сітка з опису) — form.sizes ініціалізується звідти, якщо
+// свого списку ще нема (див. useState вище); тут же — просто набір готових чипсів для
+// швидкого старту + можливість додати свій (взуття, наприклад, розміром 38-45).
+const SUGGESTED_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
+
+function SizesEditor({ value = [], onChange }) {
+  const [draft, setDraft] = useState('');
+  function toggle(size) { onChange(value.includes(size) ? value.filter((s) => s !== size) : [...value, size]); }
+  function addCustom() {
+    const v = draft.trim();
+    if (v && !value.includes(v)) onChange([...value, v]);
+    setDraft('');
+  }
+  const extra = SUGGESTED_SIZES.filter((s) => !value.includes(s));
+  return (
+    <div className="space-y-2">
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {value.map((s) => (
+            <button key={s} type="button" onClick={() => toggle(s)} className="rounded-md border border-brand bg-brand/20 px-2.5 py-1 text-xs text-brand-light">{s} ✕</button>
+          ))}
+        </div>
+      )}
+      {extra.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {extra.map((s) => (
+            <button key={s} type="button" onClick={() => toggle(s)} className="rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs text-slate-400 hover:border-brand">+ {s}</button>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Input placeholder="свій розмір (напр. 42)" className="!w-40" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustom(); } }} />
+        <Button type="button" variant="secondary" onClick={addCustom}>+ Додати</Button>
+      </div>
+    </div>
+  );
+}
+
+// Іконки розмірів для ОДНОГО кольору — зелений/активний = доступно, сірий/закреслений =
+// немає в наявності саме в цьому кольорі. customized=false (дефолт для нового кольору) —
+// успадковує ВСІ розміри товару, showить усе зеленим; щойно клацнули хоч одну іконку —
+// колір "звужується" (customized=true), і далі саме availableSizes вирішує, включно з
+// порожнім масивом (валідний стан "розпродано геть усе в цьому кольорі").
+function AvailableSizesToggle({ productSizes, value = [], customized, onChange }) {
+  const isActive = (size) => (customized ? value.includes(size) : true);
+  function toggle(size) {
+    const current = customized ? [...value] : [...productSizes];
+    const next = current.includes(size) ? current.filter((s) => s !== size) : [...current, size];
+    onChange(next);
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {productSizes.map((s) => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => toggle(s)}
+          className={`rounded-md border px-2.5 py-1 text-xs ${isActive(s) ? 'border-emerald-700 bg-emerald-900/30 text-emerald-300' : 'border-slate-700 bg-slate-800 text-slate-500 line-through'}`}
+        >
+          {s}
+        </button>
+      ))}
     </div>
   );
 }

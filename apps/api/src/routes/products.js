@@ -28,6 +28,7 @@ const PRODUCT_DIFF_FIELDS = [
   { key: 'adMatchTokens', label: 'Токени реклами', kind: 'touch' },
   { key: 'companionProductIds', label: 'Допродажі', kind: 'touch' },
   { key: 'sizeChartData', label: 'Розмірна сітка', kind: 'touch' },
+  { key: 'sizes', label: 'Розміри товару', kind: 'touch' },
 ];
 
 function offerLabel(offer) {
@@ -46,15 +47,23 @@ const PRODUCT_INCLUDE = {
   productExpense: { select: { cogs: true, cogsHistory: true } },
 };
 
-// "Доступно завжди" (2026-09-07, фідбек власника): якщо увімкнено (дефолт для ВСІХ товарів,
-// і нових, і вже наявних) — кількість по варіанту ігнорується, він завжди "в наявності".
-// Вимкнено → null/undefined quantity = не відстежується (доступно), число ≤0 = немає в
-// наявності. Рахуємо тут ОДИН раз на бекенді — і адмінка, і воронка (n_lookup-crm, GET
-// /products) читають готовий offer.inStock, а не дублюють цю логіку кожна по-своєму.
+// "Доступно завжди" (2026-09-07) + "розміри по кольору" (2026-09-09, фідбек власника):
+// Product.sizes — майстер-список розмірів товару; Offer.availableSizes — звуження САМЕ для
+// цього кольору (порожньо = успадковує ВСІ Product.sizes). quantity ЗАСТАРІЛО — доступність
+// тепер по розмірах, не по лічильнику. Рахуємо тут ОДИН раз на бекенді — і адмінка, і воронка
+// (n_lookup-crm, GET /products) читають готові offer.effectiveSizes/inStock.
+// sizesCustomized=false (дефолт, ніхто не чіпав) → успадковує ВСІ Product.sizes. true →
+// availableSizes вирішує напряму, і порожній масив тут — валідний стан "розпродано геть усе
+// в цьому кольорі" (не плутати з "успадковує все" — для цього окремий прапорець, не порожність).
+function offerEffectiveSizes(product, offer) {
+  return offer.sizesCustomized ? (Array.isArray(offer.availableSizes) ? offer.availableSizes : []) : (product.sizes || []);
+}
 function offerInStock(product, offer) {
   if (product.alwaysAvailable !== false) return true;
-  const q = offer.quantity;
-  return q === null || q === undefined || Number(q) > 0;
+  // Товар ще не має майстер-списку розмірів — нема на чому звужувати, лишаємо доступним
+  // (той самий безпечний дефолт, що й раніше для quantity=null "не відстежується").
+  if (!Array.isArray(product.sizes) || product.sizes.length === 0) return true;
+  return offerEffectiveSizes(product, offer).length > 0;
 }
 
 function serializeProduct(p) {
@@ -62,7 +71,7 @@ function serializeProduct(p) {
     ...p,
     displayName: p.customerName || p.name, // те, що фактично має бачити клієнт у боті
     offersCount: p.offers ? p.offers.length : undefined,
-    offers: p.offers ? p.offers.map((o) => ({ ...o, inStock: offerInStock(p, o) })) : p.offers,
+    offers: p.offers ? p.offers.map((o) => ({ ...o, effectiveSizes: offerEffectiveSizes(p, o), inStock: offerInStock(p, o) })) : p.offers,
     setComponents: p.setOf ? p.setOf.map((sc) => ({ productId: sc.componentProductId, name: sc.componentProduct.name, sku: sc.componentProduct.sku, qty: sc.qty })) : undefined,
     setOf: undefined,
     _count: undefined,
@@ -122,6 +131,7 @@ router.post('/products', asyncHandler(async (req, res) => {
       bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [],
       isSet: !!b.isSet,
       alwaysAvailable: b.alwaysAvailable !== undefined ? !!b.alwaysAvailable : true,
+      sizes: Array.isArray(b.sizes) ? b.sizes : [],
     },
     include: PRODUCT_INCLUDE,
   });
@@ -164,6 +174,7 @@ router.patch('/products/:id', asyncHandler(async (req, res) => {
       ...(b.bulkPricing !== undefined ? { bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [] } : {}),
       ...(b.isSet !== undefined ? { isSet: !!b.isSet } : {}),
       ...(b.alwaysAvailable !== undefined ? { alwaysAvailable: !!b.alwaysAvailable } : {}),
+      ...(b.sizes !== undefined ? { sizes: Array.isArray(b.sizes) ? b.sizes : [] } : {}),
     },
     include: PRODUCT_INCLUDE,
   });
@@ -215,6 +226,7 @@ router.post('/products/:id/offers', asyncHandler(async (req, res) => {
       properties: Array.isArray(b.properties) ? b.properties : [],
       images: Array.isArray(b.images) ? b.images.slice(0, 10) : [],
       sortOrder: Number(b.sortOrder) || 0,
+      ...(b.availableSizes !== undefined ? { availableSizes: Array.isArray(b.availableSizes) ? b.availableSizes : [], sizesCustomized: true } : {}),
     },
   });
   await logProductChange(req, product.id, 'offer', [{ field: 'offer', label: `Додано варіант «${offerLabel(offer)}»`, kind: 'action' }]);
@@ -234,14 +246,18 @@ router.patch('/offers/:id', asyncHandler(async (req, res) => {
       ...(b.properties !== undefined ? { properties: Array.isArray(b.properties) ? b.properties : [] } : {}),
       ...(b.images !== undefined ? { images: Array.isArray(b.images) ? b.images.slice(0, 10) : [] } : {}),
       ...(b.sortOrder !== undefined ? { sortOrder: Number(b.sortOrder) || 0 } : {}),
+      // resetToInherit:true (кнопка "Доступні всі розміри в усіх кольорах") — явно повертає
+      // колір у стан "успадковує все", інакше будь-яке availableSizes = свідоме звуження.
+      ...(b.resetToInherit ? { availableSizes: [], sizesCustomized: false }
+        : b.availableSizes !== undefined ? { availableSizes: Array.isArray(b.availableSizes) ? b.availableSizes : [], sizesCustomized: true } : {}),
     },
   });
   const label = offerLabel(offer);
   const changes = buildChanges(existing, b, [
     { key: 'sku', label: `Артикул варіанту «${label}»`, kind: 'value' },
-    { key: 'quantity', label: `Кількість «${label}»`, kind: 'value' },
-    { key: 'properties', label: `Властивості «${label}»`, kind: 'touch' },
+    { key: 'properties', label: `Колір «${label}»`, kind: 'touch' },
     { key: 'images', label: `Фото варіанту «${label}»`, kind: 'touch' },
+    { key: 'availableSizes', label: `Доступні розміри «${label}»`, kind: 'touch' },
   ]);
   await logProductChange(req, existing.productId, 'offer', changes);
   res.json({ ok: true, data: offer });

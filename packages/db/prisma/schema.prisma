@@ -211,6 +211,12 @@ model Product {
   // клієнту. Вимкнено вручну → тоді offer.quantity вирішує (null/undefined = не відстежується
   // = доступно, число ≤0 = немає в наявності). Читає воронка через GET /products (n_lookup-crm).
   alwaysAvailable     Boolean  @default(true)
+  // ДОПОВНЕННЯ 2026-09-09 (фідбек власника): майстер-список розмірів товару — іконки-чипси
+  // в картці ("M","L","XL"...), спільні для всіх кольорів за замовчуванням. Кожен колір
+  // (Offer.availableSizes) може звузити цей список під себе; порожньо на офері = успадковує
+  // весь цей список. Замінює offer.quantity як спосіб позначати доступність (просто
+  // доступно/недоступно по розміру, не лічильник).
+  sizes               String[] @default([])
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -273,8 +279,18 @@ model Offer {
   product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   sku        String?
   price      Decimal? @db.Decimal(12, 2) // лишається в схемі (дані з KeyCRM-міграції), але UI більше не дає редагувати per-offer — ціна єдина на товар (Product.price/bulkPricing)
-  quantity   Int? // ДОПОВНЕННЯ 2026-08-31: своя кількість на кожен варіант кольору (фідбек власника)
-  properties Json     @default("[]") // [{name,value}] — розмір/колір тощо
+  quantity   Int? // ЗАСТАРІЛО 2026-09-09 — замінено на availableSizes (доступно/недоступно по
+                   // розміру замість лічильника). Лишається в схемі заради старих даних/сумісності,
+                   // новий UI це поле більше не показує й не пише.
+  // ДОПОВНЕННЯ 2026-09-09 (фідбек власника): які розміри доступні САМЕ в цьому кольорі —
+  // підмножина Product.sizes. sizesCustomized=false (дефолт, ще ніхто не чіпав) → колір
+  // успадковує ВСІ Product.sizes, availableSizes ігнорується. sizesCustomized=true → саме
+  // availableSizes вирішує (і порожній масив тут — це ВАЛІДНИЙ стан "розпродано геть усі
+  // розміри в цьому кольорі", а не "успадковує все" — тому потрібен окремий прапорець,
+  // а не просто "порожньо = усе").
+  availableSizes String[] @default([])
+  sizesCustomized Boolean @default(false)
+  properties Json     @default("[]") // [{name,value}] — тепер переважно колір (розмір переїхав у availableSizes)
   images     String[] @default([]) // до 10 фото, перше = головне
   sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())

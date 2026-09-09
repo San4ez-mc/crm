@@ -11,13 +11,18 @@ function safeJsonStringify(value) {
 }
 
 // Той самий розрахунок, що apps/api/src/routes/products.js serializeProduct() — тримати
-// в синку (2026-09-07: Product.alwaysAvailable вирішує, чи offer.quantity взагалі враховується).
+// в синку (2026-09-09: Product.sizes + Offer.availableSizes вирішують доступність по
+// розміру в межах кольору; alwaysAvailable — загальний вимикач, ігнорує все нижче).
+function offerEffectiveSizes(product, offer) {
+  return offer.sizesCustomized ? (Array.isArray(offer.availableSizes) ? offer.availableSizes : []) : (product.sizes || []);
+}
 function withOfferAvailability(product) {
   const offers = Array.isArray(product.offers)
-    ? product.offers.map((o) => ({
-        ...o,
-        inStock: product.alwaysAvailable !== false || o.quantity === null || o.quantity === undefined || Number(o.quantity) > 0,
-      }))
+    ? product.offers.map((o) => {
+        const effectiveSizes = offerEffectiveSizes(product, o);
+        const inStock = product.alwaysAvailable !== false || !Array.isArray(product.sizes) || product.sizes.length === 0 || effectiveSizes.length > 0;
+        return { ...o, effectiveSizes, inStock };
+      })
     : product.offers;
   return { ...product, offers, displayName: product.customerName || product.name };
 }
@@ -49,12 +54,12 @@ const TOOLS = [
   // ── Product / Offer §4.2/§4.3 ───────────────────────────────────────
   { name: 'list_products', description: 'Каталог товарів з варіантами (offers) і фото.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, q: { type: 'string' }, categoryId: { type: 'string' }, supplierId: { type: 'string' }, isSet: { type: 'boolean', description: 'фільтр: тільки комплекти (true) чи тільки звичайні товари (false)' } }, required: ['tenantId'] } },
   { name: 'get_product', description: 'Товар за id або sku.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, productId: { type: 'string' }, sku: { type: 'string' } }, required: ['tenantId'] } },
-  { name: 'create_product', description: 'Створити товар.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string', description: 'Внутрішня назва (від постачальника/для CRM)' }, customerName: { type: 'string', description: 'Назва, яку бачить клієнт у боті; якщо порожньо — бот показує name' }, sku: { type: 'string' }, price: { type: 'number' }, minPrice: { type: 'number' }, categoryId: { type: 'string' }, presentationText: { type: 'string', description: 'Готовий текст-презентація, бот показує verbatim' }, adMatchTokens: { type: 'array', items: { type: 'string' } }, companionProductIds: { type: 'array', items: { type: 'string' } }, supplierId: { type: 'string' }, supplierArticle: { type: 'string' }, thumbnailUrl: { type: 'string' }, images: { type: 'array', items: { type: 'string' } }, aiNotes: { type: 'string', description: 'Нотатки для бота (не показуються клієнту)' }, sizeChartData: { type: 'object', description: '{title,unit,sizes[],measurements}' }, bulkPricing: { type: 'array', items: { type: 'object', properties: { quantity: { type: 'number' }, price: { type: 'number' } } }, description: 'Ціна за кількість — однакова для всіх варіантів кольору' }, isSet: { type: 'boolean', description: 'true = це комплект (окремий пункт меню, не категорія)' }, alwaysAvailable: { type: 'boolean', description: 'true (дефолт) = кількість offer.quantity ігнорується, товар завжди доступний; false = offer.quantity вирішує (0/від\'ємне = немає в наявності)' } }, required: ['tenantId', 'name', 'sku', 'price'] } },
-  { name: 'update_product', description: 'Оновити товар (часткове).', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, name: { type: 'string' }, customerName: { type: 'string' }, sku: { type: 'string' }, price: { type: 'number' }, minPrice: { type: 'number' }, categoryId: { type: 'string' }, presentationText: { type: 'string' }, adMatchTokens: { type: 'array', items: { type: 'string' } }, companionProductIds: { type: 'array', items: { type: 'string' } }, supplierId: { type: 'string' }, supplierArticle: { type: 'string' }, thumbnailUrl: { type: 'string' }, images: { type: 'array', items: { type: 'string' } }, aiNotes: { type: 'string' }, sizeChartData: { type: 'object' }, bulkPricing: { type: 'array', items: { type: 'object', properties: { quantity: { type: 'number' }, price: { type: 'number' } } } }, isSet: { type: 'boolean' }, alwaysAvailable: { type: 'boolean' } }, required: ['productId'] } },
+  { name: 'create_product', description: 'Створити товар.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string', description: 'Внутрішня назва (від постачальника/для CRM)' }, customerName: { type: 'string', description: 'Назва, яку бачить клієнт у боті; якщо порожньо — бот показує name' }, sku: { type: 'string' }, price: { type: 'number' }, minPrice: { type: 'number' }, categoryId: { type: 'string' }, presentationText: { type: 'string', description: 'Готовий текст-презентація, бот показує verbatim' }, adMatchTokens: { type: 'array', items: { type: 'string' } }, companionProductIds: { type: 'array', items: { type: 'string' } }, supplierId: { type: 'string' }, supplierArticle: { type: 'string' }, thumbnailUrl: { type: 'string' }, images: { type: 'array', items: { type: 'string' } }, aiNotes: { type: 'string', description: 'Нотатки для бота (не показуються клієнту)' }, sizeChartData: { type: 'object', description: '{title,unit,sizes[],measurements}' }, bulkPricing: { type: 'array', items: { type: 'object', properties: { quantity: { type: 'number' }, price: { type: 'number' } } }, description: 'Ціна за кількість — однакова для всіх варіантів кольору' }, isSet: { type: 'boolean', description: 'true = це комплект (окремий пункт меню, не категорія)' }, alwaysAvailable: { type: 'boolean', description: 'true (дефолт) = розміри/наявність по кольорах ігноруються, товар завжди доступний; false = дивимось на sizes/offer.availableSizes' }, sizes: { type: 'array', items: { type: 'string' }, description: 'Майстер-список розмірів товару, напр. ["S","M","L","XL"] — спільний для всіх кольорів, якщо колір (offer) не звужує його своїм availableSizes' } }, required: ['tenantId', 'name', 'sku', 'price'] } },
+  { name: 'update_product', description: 'Оновити товар (часткове).', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, name: { type: 'string' }, customerName: { type: 'string' }, sku: { type: 'string' }, price: { type: 'number' }, minPrice: { type: 'number' }, categoryId: { type: 'string' }, presentationText: { type: 'string' }, adMatchTokens: { type: 'array', items: { type: 'string' } }, companionProductIds: { type: 'array', items: { type: 'string' } }, supplierId: { type: 'string' }, supplierArticle: { type: 'string' }, thumbnailUrl: { type: 'string' }, images: { type: 'array', items: { type: 'string' } }, aiNotes: { type: 'string' }, sizeChartData: { type: 'object' }, bulkPricing: { type: 'array', items: { type: 'object', properties: { quantity: { type: 'number' }, price: { type: 'number' } } } }, isSet: { type: 'boolean' }, alwaysAvailable: { type: 'boolean' }, sizes: { type: 'array', items: { type: 'string' } } }, required: ['productId'] } },
   { name: 'delete_product', description: 'Видалити товар (лише якщо не задіяний у замовленнях).', inputSchema: { type: 'object', properties: { productId: { type: 'string' } }, required: ['productId'] } },
   { name: 'update_set_components', description: 'Задати склад набору {componentProductId,qty}[] — повна заміна.', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, components: { type: 'array', items: { type: 'object', properties: { componentProductId: { type: 'string' }, qty: { type: 'number' } } } } }, required: ['productId', 'components'] } },
-  { name: 'create_offer', description: 'Додати варіант товару (колір/розмір). Ціна лишається спільною на товарі — тут тільки кількість цього конкретного варіанту.', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, sku: { type: 'string' }, quantity: { type: 'number', description: 'Кількість саме цього кольору/розміру' }, properties: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } } } }, images: { type: 'array', items: { type: 'string' }, description: 'до 10 URL, перший = головне фото' } }, required: ['productId'] } },
-  { name: 'update_offer', description: 'Оновити варіант товару.', inputSchema: { type: 'object', properties: { offerId: { type: 'string' }, sku: { type: 'string' }, quantity: { type: 'number' }, properties: { type: 'array' }, images: { type: 'array', items: { type: 'string' } } }, required: ['offerId'] } },
+  { name: 'create_offer', description: 'Додати варіант товару (колір). Ціна лишається спільною на товарі. availableSizes — які з Product.sizes доступні саме в цьому кольорі (порожньо = всі).', inputSchema: { type: 'object', properties: { productId: { type: 'string' }, sku: { type: 'string' }, properties: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } } }, description: 'Зазвичай лише [{name:"колір", value:"чорний"}] — розмір тепер у availableSizes' }, availableSizes: { type: 'array', items: { type: 'string' }, description: 'Підмножина Product.sizes, доступна в цьому кольорі; порожньо = успадковує всі' }, images: { type: 'array', items: { type: 'string' }, description: 'до 10 URL, перший = головне фото' } }, required: ['productId'] } },
+  { name: 'update_offer', description: 'Оновити варіант товару.', inputSchema: { type: 'object', properties: { offerId: { type: 'string' }, sku: { type: 'string' }, properties: { type: 'array' }, availableSizes: { type: 'array', items: { type: 'string' } }, images: { type: 'array', items: { type: 'string' } } }, required: ['offerId'] } },
   { name: 'delete_offer', description: 'Видалити варіант товару.', inputSchema: { type: 'object', properties: { offerId: { type: 'string' } }, required: ['offerId'] } },
 
   // ── Pipeline / Stage §4.7 ────────────────────────────────────────────
@@ -172,12 +177,13 @@ async function callTool(name, args = {}) {
           thumbnailUrl: args.thumbnailUrl || null, images: args.images || [], aiNotes: args.aiNotes || null,
           sizeChartData: args.sizeChartData ?? undefined, bulkPricing: args.bulkPricing || [], isSet: !!args.isSet,
           alwaysAvailable: args.alwaysAvailable !== undefined ? !!args.alwaysAvailable : true,
+          sizes: args.sizes || [],
         },
       });
     }
     case 'update_product': {
       const data = {};
-      for (const key of ['name', 'customerName', 'sku', 'price', 'minPrice', 'categoryId', 'presentationText', 'adMatchTokens', 'companionProductIds', 'supplierId', 'supplierArticle', 'thumbnailUrl', 'images', 'aiNotes', 'sizeChartData', 'bulkPricing', 'isSet', 'alwaysAvailable']) {
+      for (const key of ['name', 'customerName', 'sku', 'price', 'minPrice', 'categoryId', 'presentationText', 'adMatchTokens', 'companionProductIds', 'supplierId', 'supplierArticle', 'thumbnailUrl', 'images', 'aiNotes', 'sizeChartData', 'bulkPricing', 'isSet', 'alwaysAvailable', 'sizes']) {
         if (args[key] !== undefined) data[key] = args[key];
       }
       return db.product.update({ where: { id: args.productId }, data });
@@ -196,10 +202,11 @@ async function callTool(name, args = {}) {
       return { productId: args.productId, components: args.components };
     }
     case 'create_offer':
-      return db.offer.create({ data: { productId: args.productId, sku: args.sku || null, quantity: args.quantity ?? null, properties: args.properties || [], images: (args.images || []).slice(0, 10) } });
+      return db.offer.create({ data: { productId: args.productId, sku: args.sku || null, properties: args.properties || [], images: (args.images || []).slice(0, 10), ...(args.availableSizes !== undefined ? { availableSizes: args.availableSizes, sizesCustomized: true } : {}) } });
     case 'update_offer': {
       const data = {};
-      for (const key of ['sku', 'quantity', 'properties', 'images']) if (args[key] !== undefined) data[key] = key === 'images' ? args.images.slice(0, 10) : args[key];
+      for (const key of ['sku', 'properties', 'images']) if (args[key] !== undefined) data[key] = key === 'images' ? args.images.slice(0, 10) : args[key];
+      if (args.availableSizes !== undefined) { data.availableSizes = args.availableSizes; data.sizesCustomized = true; }
       return db.offer.update({ where: { id: args.offerId }, data });
     }
     case 'delete_offer':
