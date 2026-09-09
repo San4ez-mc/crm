@@ -58,11 +58,17 @@ router.get('/funnel-events/summary', asyncHandler(async (req, res) => {
     ...(funnelSlug ? { funnelSlug: String(funnelSlug) } : {}),
     ...(from || to ? { occurredAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}),
   };
+  // 2026-09-09 (аудит аналітики): групувати ЛИШЕ за stageName, не за (stageName, stageOrder)
+  // разом — stageOrder не входить в унікальність @@unique([tenantId, sessionId, stageName]),
+  // тож якщо автор воронки колись перенумерував ноди, той самий етап розпадався б на два
+  // рядки з різним stageOrder і конверсія виглядала б заниженою. stageOrder беремо як _max
+  // (найновіше фактичне значення) — лише для сортування, на підрахунок сесій не впливає.
   const grouped = await db.funnelEvent.groupBy({
-    by: ['stageName', 'stageOrder'],
+    by: ['stageName'],
     where,
     _count: { _all: true },
-    orderBy: { stageOrder: 'asc' },
+    _max: { stageOrder: true },
+    orderBy: { _max: { stageOrder: 'asc' } },
   });
   const first = grouped[0]?._count._all || 0;
   let prev = null;
@@ -71,7 +77,7 @@ router.get('/funnel-events/summary', asyncHandler(async (req, res) => {
     const convFromPrev = prev !== null && prev > 0 ? Math.round((count / prev) * 1000) / 10 : null;
     const convFromFirst = first > 0 ? Math.round((count / first) * 1000) / 10 : null;
     prev = count;
-    return { stageName: g.stageName, stageOrder: g.stageOrder, sessions: count, convFromPrev, convFromFirst };
+    return { stageName: g.stageName, stageOrder: g._max.stageOrder, sessions: count, convFromPrev, convFromFirst };
   });
   res.json({ ok: true, data: stages });
 }));
