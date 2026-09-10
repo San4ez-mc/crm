@@ -138,11 +138,16 @@ router.get('/ads', asyncHandler(async (req, res) => {
 }));
 
 router.post('/ads', asyncHandler(async (req, res) => {
-  const { externalId, name, productId, campaignId, campaignName, adAccountId } = req.body || {};
+  // 2026-09-10 (фідбек власника, "чому фото не отримались?"): органічні оголошення, які
+  // n_lookup-crm-code.js реєструє на льоту при першому кліку клієнта (ще до щоденної
+  // синхронізації Meta Ads, яка знає лише про платні кампанії), раніше не мали фото
+  // взагалі — thumbnailUrl тут просто не приймався, навіть якщо його прислали.
+  const { externalId, name, productId, campaignId, campaignName, adAccountId, thumbnailUrl } = req.body || {};
   const ad = await db.ad.create({
     data: {
       tenantId: req.tenant.id, externalId: externalId || null, name: name || null, productId: productId || null,
       campaignId: campaignId || null, campaignName: campaignName || null, adAccountId: adAccountId || null,
+      thumbnailUrl: thumbnailUrl || null,
     },
   });
   res.status(201).json({ ok: true, data: ad });

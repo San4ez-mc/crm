@@ -72,8 +72,8 @@ export default function AdsPage() {
                   <td className="px-4 py-3 whitespace-nowrap text-slate-400">{formatDate(ad.createdAt)}</td>
                   <td className="px-4 py-3">
                     {ad.thumbnailUrl
-                      ? <img src={ad.thumbnailUrl} alt="" className="h-14 w-14 cursor-zoom-in rounded-md object-cover" onClick={() => setLightbox(ad.thumbnailUrl)} />
-                      : <div className="flex h-14 w-14 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>}
+                      ? <img src={ad.thumbnailUrl} alt="" className="h-28 w-28 cursor-zoom-in rounded-md object-cover" onClick={() => setLightbox(ad.thumbnailUrl)} />
+                      : <div className="flex h-28 w-28 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>}
                   </td>
                   <td className="px-4 py-3">
                     <div>{ad.name || ad.externalId || ad.id.slice(0, 8)}</div>
