@@ -40,7 +40,7 @@ const PRODUCT_INCLUDE = {
   category: { select: { id: true, name: true } },
   supplier: { select: { id: true, name: true } },
   offers: { orderBy: { sortOrder: 'asc' } },
-  setOf: { include: { componentProduct: { select: { id: true, name: true, sku: true } } } },
+  setOf: { include: { componentProduct: { select: { id: true, name: true, customerName: true, sku: true } } } },
   _count: { select: { orderItems: true } },
   // 2026-09-07 (фідбек власника): ціна постачальника редагується прямо в картці товару,
   // не лише на окремій сторінці "Витрати по товару" — тож картці потрібна поточна історія.
@@ -72,7 +72,10 @@ function serializeProduct(p) {
     displayName: p.customerName || p.name, // те, що фактично має бачити клієнт у боті
     offersCount: p.offers ? p.offers.length : undefined,
     offers: p.offers ? p.offers.map((o) => ({ ...o, effectiveSizes: offerEffectiveSizes(p, o), inStock: offerInStock(p, o) })) : p.offers,
-    setComponents: p.setOf ? p.setOf.map((sc) => ({ productId: sc.componentProductId, name: sc.componentProduct.name, sku: sc.componentProduct.sku, qty: sc.qty })) : undefined,
+    // 2026-09-10 (фідбек власника): компоненти комплекту показували клієнту сиру назву товару
+    // (як у постачальника), а не магазинну — на відміну від displayName вище, тут не було
+    // фолбеку на customerName взагалі.
+    setComponents: p.setOf ? p.setOf.map((sc) => ({ productId: sc.componentProductId, name: sc.componentProduct.customerName || sc.componentProduct.name, sku: sc.componentProduct.sku, qty: sc.qty })) : undefined,
     setOf: undefined,
     _count: undefined,
   };
