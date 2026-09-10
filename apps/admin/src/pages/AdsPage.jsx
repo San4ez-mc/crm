@@ -71,9 +71,12 @@ export default function AdsPage() {
                 <tr key={ad.id} className={`border-b border-slate-800/60 last:border-0 ${!ad.productId ? 'bg-amber-900/10' : ''}`}>
                   <td className="px-4 py-3 whitespace-nowrap text-slate-400">{formatDate(ad.createdAt)}</td>
                   <td className="px-4 py-3">
+                    {/* 2026-09-11: 112px (повне x2) розмазував дрібні джерела (Meta/KeyCRM thumbnails
+                        зазвичай ~60-100px) — це не рендер, а фізична межа роздільності вихідного файлу.
+                        80px — компроміс: помітно більше за оригінальні 56px, але менше апскейлу. */}
                     {ad.thumbnailUrl
-                      ? <img src={ad.thumbnailUrl} alt="" className="h-28 w-28 cursor-zoom-in rounded-md object-cover" onClick={() => setLightbox(ad.thumbnailUrl)} />
-                      : <div className="flex h-28 w-28 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>}
+                      ? <img src={ad.thumbnailUrl} alt="" className="h-20 w-20 cursor-zoom-in rounded-md object-cover" onClick={() => setLightbox(ad.thumbnailUrl)} />
+                      : <div className="flex h-20 w-20 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>}
                   </td>
                   <td className="px-4 py-3">
                     <div>{ad.name || ad.externalId || ad.id.slice(0, 8)}</div>
