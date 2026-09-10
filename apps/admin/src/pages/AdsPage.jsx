@@ -4,7 +4,7 @@
 // і детальна аналітика по кліку. Ad не залежить від дати, тому прив'язка робиться тут один раз.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, Input, Select, Card, EmptyState, ErrorBanner } from '../components/common/Common';
+import { PageHeader, Button, Input, Select, Card, EmptyState, ErrorBanner, formatDate } from '../components/common/Common';
 import ImageLightbox from '../components/common/ImageLightbox';
 
 export default function AdsPage() {
@@ -60,7 +60,7 @@ export default function AdsPage() {
         <Card>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-              <tr><th className="px-4 py-3"></th><th className="px-4 py-3">Оголошення</th><th className="px-4 py-3">Кампанія</th><th className="px-4 py-3">Товар</th></tr>
+              <tr><th className="px-4 py-3">Дата</th><th className="px-4 py-3"></th><th className="px-4 py-3">Оголошення</th><th className="px-4 py-3">Кампанія</th><th className="px-4 py-3">Товар</th></tr>
             </thead>
             <tbody>
               {items.filter((ad) => {
@@ -69,6 +69,7 @@ export default function AdsPage() {
                 return (ad.name || '').toLowerCase().includes(s) || (ad.externalId || '').toLowerCase().includes(s);
               }).map((ad) => (
                 <tr key={ad.id} className={`border-b border-slate-800/60 last:border-0 ${!ad.productId ? 'bg-amber-900/10' : ''}`}>
+                  <td className="px-4 py-3 whitespace-nowrap text-slate-400">{formatDate(ad.createdAt)}</td>
                   <td className="px-4 py-3">
                     {ad.thumbnailUrl
                       ? <img src={ad.thumbnailUrl} alt="" className="h-14 w-14 cursor-zoom-in rounded-md object-cover" onClick={() => setLightbox(ad.thumbnailUrl)} />
