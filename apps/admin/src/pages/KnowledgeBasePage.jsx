@@ -196,10 +196,16 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
   async function answerUnanswered(entry) {
     const answer = drafts[entry.id];
     if (!answer?.trim()) return;
-    try { await api.updateKnowledge(entry.id, { answer, isActive: true }); load(); } catch (e) { alert(e.message); }
+    try {
+      const saved = await api.updateKnowledge(entry.id, { answer, isActive: true });
+      load();
+      // Одразу пропонуємо розповсюдити щойно збережену відповідь на інші товари/категорії —
+      // саме той крок, який власник просив не загублювати після відповіді на питання.
+      setCopying(saved?.data || { ...entry, answer, isActive: true });
+    } catch (e) { alert(e.message); }
   }
   async function skipUnanswered(entry) {
-    if (!confirm('Прибрати це питання зі списку («не потрібно»)?')) return;
+    if (!confirm('Це видалить питання без відповіді — воно зникне зі списку назавжди (нічого не збережеться). Продовжити?')) return;
     try { await api.deleteKnowledge(entry.id); load(); } catch (e) { alert(e.message); }
   }
 
@@ -264,9 +270,13 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
                 <div className="mb-2 text-sm font-medium">{e.question}</div>
                 {e.product && <div className="mb-1 text-xs text-slate-500">Товар: {e.product.name}</div>}
                 <Textarea rows={2} placeholder="Впишіть відповідь…" value={drafts[e.id] ?? ''} onChange={(ev) => setDrafts({ ...drafts, [e.id]: ev.target.value })} />
-                <div className="mt-2 flex gap-2">
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                   <Button type="button" onClick={() => answerUnanswered(e)} disabled={!drafts[e.id]?.trim()}>Відповісти й увімкнути</Button>
-                  <Button type="button" variant="secondary" onClick={() => skipUnanswered(e)}>Не потрібно</Button>
+                  <Button type="button" variant="secondary" onClick={() => skipUnanswered(e)} title="Видалить це питання без відповіді назавжди — нічого не збережеться">Не потрібно (видалити питання)</Button>
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  «Відповісти й увімкнути» збереже відповідь і одразу запропонує розповсюдити її на інші товари/категорії.
+                  «Не потрібно» — це питання більше не задаватимуть, відповідь не зберігається.
                 </div>
               </div>
             ))}
@@ -278,13 +288,17 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
         <EmptyState title="Записів ще немає" hint="Додайте першу відповідь вручну." />
       ) : (
         <Card>
+          <div className="border-b border-slate-800 px-4 py-2 text-xs text-slate-500">
+            📋 «Копіювати на інші» — та сама відповідь ще на кількох товарах/категоріях (окремі незалежні копії).
+            ⬆️ «На категорію / На весь магазин» — перенести відповідь на вищий рівень, щоб не дублювати її на кожен товар.
+          </div>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3">Тип</th><th className="px-4 py-3">Питання</th><th className="px-4 py-3">Відповідь</th>
                 <th className="px-4 py-3">Теги</th>
                 {!lockProductId && <th className="px-4 py-3">Рівень</th>}
-                <th className="px-4 py-3">Активний</th><th className="px-4 py-3 w-0"></th>
+                <th className="px-4 py-3">Активний</th><th className="px-4 py-3 w-0">Дії</th>
               </tr>
             </thead>
             <tbody>
@@ -304,9 +318,23 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
                   </td>
                   <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
                     <div className="flex justify-end gap-1 whitespace-nowrap">
-                      <IconButton type="button" onClick={() => setCopying(e)} title="Копіювати на інші товари/категорії/постачальники">📋</IconButton>
+                      <button
+                        type="button"
+                        onClick={() => setCopying(e)}
+                        title="Використати цю ж відповідь ще на кількох товарах/категоріях/постачальниках (незалежні копії)"
+                        className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                      >
+                        📋 Копіювати на інші
+                      </button>
                       {e.scope !== 'shop' && (
-                        <IconButton type="button" onClick={() => promote(e)} title={e.scope === 'product' ? 'Підняти на категорію' : 'Підняти на весь магазин'}>⬆️</IconButton>
+                        <button
+                          type="button"
+                          onClick={() => promote(e)}
+                          title="Перенести цю відповідь на вищий рівень (одна відповідь замість окремої на кожен товар)"
+                          className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                        >
+                          ⬆️ {e.scope === 'product' ? 'На категорію' : 'На весь магазин'}
+                        </button>
                       )}
                       <IconButton type="button" onClick={() => remove(e)} title="Видалити">🗑️</IconButton>
                     </div>
@@ -449,8 +477,9 @@ function CopyModal({ entry, categories, suppliers, products, onCancel, onDone })
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-16" onClick={onCancel}>
       <div className="w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-1 text-sm font-semibold">Копіювати відповідь</h3>
-        <p className="mb-4 text-xs text-slate-500">Створює незалежну копію цієї відповіді на обраних цілях — редагування копії ніяк не впливає на оригінал.</p>
+        <h3 className="mb-1 text-sm font-semibold">Розповсюдити цю відповідь ще на щось?</h3>
+        <p className="mb-1 text-xs text-slate-400">«{entry.question || entry.answer}»</p>
+        <p className="mb-4 text-xs text-slate-500">Створює незалежну копію цієї відповіді на обраних цілях (наприклад ще на 3 інші кофти) — редагування копії ніяк не впливає на оригінал. Якщо зараз не треба — просто натисніть «Скасувати», відповідь уже збережена.</p>
         <ErrorBanner message={error} />
         <div className="space-y-2">
           {rows.map((row, i) => (
