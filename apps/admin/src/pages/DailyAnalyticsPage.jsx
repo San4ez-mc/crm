@@ -5,15 +5,16 @@
 // вправо по днях.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Input, Select, ErrorBanner, TrendChart, money, formatDate } from '../components/common/Common';
+import { PageHeader, Card, Input, Select, ErrorBanner, TrendChart, money, formatDate, kyivDateStr } from '../components/common/Common';
 
+// 2026-09-12 (аудит аналітики): "сьогодні" — за київським часом, не UTC (toISOString()).
 function periodPreset(preset) {
   const to = new Date();
   const from = new Date();
   if (preset === 'today') { /* from=to=сьогодні */ }
   else if (preset === 'week') from.setDate(to.getDate() - 7);
   else if (preset === 'month') from.setDate(to.getDate() - 30);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  return { from: kyivDateStr(from), to: kyivDateStr(to) };
 }
 
 function fmt(v, digits = 2) {
@@ -98,7 +99,7 @@ const PRODUCT_ROWS = [
   { label: 'Маржа всього із відмовами', get: (d) => fmt(d.marginTotalWithRefused) },
   { label: 'Ціна за лід', get: (d) => fmt(d.messagePrice) },
   { label: 'Ціна за замовлення', get: (d) => fmt(d.orderPrice) },
-  { label: 'Конверсія із повідом. в замов', get: (d) => fmt(d.conversionToOrder) },
+  { label: 'Конверсія із повідом. в замов, %', get: (d) => pct(d.conversionToOrder) },
   { label: 'Відмови', get: (d) => pct(d.refusalRate) },
   { label: 'Курс', get: (d) => fmt(d.usdExchangeRate, 0) },
   { label: 'Окупність', get: (d) => fmt(d.roi), highlight: true, sep: true },

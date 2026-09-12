@@ -5,7 +5,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
-const { parseFrom, parseTo } = require('../lib/dateRange');
+const { parseFrom, parseTo, kyivDayKey } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem } = require('../lib/margin');
 const { ensureFreshUsdRate, rowToUAH, sumAdSpendUAH } = require('../lib/currency');
 
@@ -183,11 +183,16 @@ router.get('/ad-spend', asyncHandler(async (req, res) => {
 // «Рекламні витрати» (2026-09-03, редизайн за референсом власника) — список оголошень
 // з витратою/замовленнями/окупністю/прибутком за обраний період, з пошуком.
 router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
-  const { from, to, search, take = '10', skip = '0' } = req.query;
+  const { from, to, search, linked, take = '10', skip = '0' } = req.query;
   const dateWhere = periodDateWhere(from, to);
   const where = {
     tenantId: req.tenant.id,
     ...(search ? { OR: [{ name: { contains: String(search), mode: 'insensitive' } }, { externalId: { contains: String(search) } }] } : {}),
+    // 2026-09-12 (аудит аналітики): раніше "Без товару"/"З привʼязаним товаром" фільтрували
+    // лише вже завантажену сторінку на фронті (AdSpendPage.jsx) — total/пагінація рахувались
+    // без цього фільтра, тож частина оголошень губилась між сторінками. Фільтруємо тут,
+    // ДО пагінації, щоб total і фактично показані рядки завжди збігались.
+    ...(linked === 'true' ? { productId: { not: null } } : linked === 'false' ? { productId: null } : {}),
   };
   const [ads, total] = await Promise.all([
     db.ad.findMany({ where, include: { product: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' } }),
@@ -240,7 +245,7 @@ router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
       select: { createdAt: true, items: { select: { productId: true, price: true, quantity: true } } },
     }),
   ]);
-  const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+  const dayKey = kyivDayKey; // 2026-09-12: групування по днях за Києвом, не UTC (аудит аналітики)
   const days = new Map();
   const bucket = (k) => { if (!days.has(k)) days.set(k, { date: k, spend: 0, margin: 0 }); return days.get(k); };
   for (const row of spendRows) bucket(dayKey(row.date)).spend += rowToUAH(row.amount, row.currency, usdRate);

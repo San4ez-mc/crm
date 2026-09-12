@@ -172,6 +172,14 @@ export function formatDateTime(v) {
   if (Number.isNaN(d.getTime())) return '—';
   return `${formatDate(v)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
+// "YYYY-MM-DD" за КИЇВСЬКИМ часом (2026-09-12, аудит аналітики) — для генерації value
+// date-інпутів (пресети "Сьогодні"/"Тиждень"/"Місяць" на сторінках аналітики). НЕ
+// v.toISOString().slice(0,10) — той завжди UTC, незалежно від таймзони браузера власника,
+// і між 00:00–02:59 за Києвом віддає "вчора". Бекенд (dateRange.js) так само рахує
+// from/to по Europe/Kyiv — щоб пресет і фільтр на сервері описували один і той самий день.
+export function kyivDateStr(v = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit' }).format(v);
+}
 // Компактно для осі графіка (без року — там і так лише кілька тижнів/місяців у полі зору).
 function fmtChartDate(v) {
   const d = new Date(v);

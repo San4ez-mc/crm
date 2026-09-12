@@ -4,15 +4,17 @@
 // не для щоденного погляду, а для рідкісного глибокого аналізу.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Input, Card, ErrorBanner, KpiCard, DonutChart, HorizontalBarList, ComboTrendChart, money } from '../components/common/Common';
+import { PageHeader, Input, Card, ErrorBanner, KpiCard, DonutChart, HorizontalBarList, ComboTrendChart, money, kyivDateStr } from '../components/common/Common';
 
+// 2026-09-12 (аудит аналітики): "сьогодні" — за київським часом, не UTC браузера
+// (toISOString() завжди UTC — між 00:00–02:59 за Києвом видавав учорашню дату).
 function periodPreset(preset) {
   const to = new Date();
   const from = new Date();
   if (preset === 'day') from.setDate(to.getDate() - 1);
   else if (preset === 'week') from.setDate(to.getDate() - 7);
   else if (preset === 'month') from.setMonth(to.getMonth() - 1);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  return { from: kyivDateStr(from), to: kyivDateStr(to) };
 }
 
 // Попередній період тієї ж довжини, що йде впритул ПЕРЕД поточним — для "▲/▼ % від попереднього".

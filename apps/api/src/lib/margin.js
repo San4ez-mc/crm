@@ -51,4 +51,13 @@ function marginPerOrderItem(item, expenseByProduct, isRefused = false, atDate = 
   return revenue - cogsTotal - managerCost;
 }
 
-module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt };
+// Спільний WHERE-фрагмент "фактичний продаж" (не відмова на НП, без оформленого повернення) —
+// 2026-09-12, аудит аналітики за проханням власника: різні §6-звіти й /product-expenses
+// виключали Return/isRefused по-різному (десь жодне, десь лише одне з двох) — виручка й
+// маржа на різних сторінках (Дашборд, Щоденна аналітика, Витрати по товару) рахувались із
+// РІЗНИХ наборів замовлень і не збігались одне з одним. computeAdStats (routes/ads.js,
+// сторінка «Рекламні витрати») вже робив це правильно — решта звітів приведені до того
+// самого критерію.
+const REAL_SALE_ORDER_WHERE = { isRefused: false, returns: { none: {} } };
+
+module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE };

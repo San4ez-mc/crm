@@ -5,8 +5,8 @@
 const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
-const { parseFrom, parseTo } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem, cogsAt } = require('../lib/margin');
+const { parseFrom, parseTo, kyivDayKey } = require('../lib/dateRange');
+const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE } = require('../lib/margin');
 const { ensureFreshUsdRate, sumAdSpendUAH, rowToUAH } = require('../lib/currency');
 const { ValidationError } = require('@crm/errors');
 
@@ -22,7 +22,7 @@ router.get('/analytics/top-products', asyncHandler(async (req, res) => {
   const { from, to, includeUpsells } = req.query;
   const items = await db.orderItem.findMany({
     where: {
-      order: { tenantId: req.tenant.id, ...periodWhere(from, to), returns: { none: {} } },
+      order: { tenantId: req.tenant.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE },
       ...(includeUpsells === 'true' ? {} : { isUpsell: false }),
     },
     include: { product: { select: { id: true, name: true, sku: true } } },
@@ -57,9 +57,9 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
       // ROAS/CPC/CPM порівнювали б несумісні валюти (2026-09-07, фідбек власника).
       sumAdSpendUAH({ adId: ad.id, ...spendDateWhere }, usdRate),
       db.adSpendDaily.aggregate({ where: { adId: ad.id, ...spendDateWhere }, _sum: { impressions: true, clicks: true } }),
-      db.order.count({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } } }),
-      db.order.count({ where: { tenantId: req.tenant.id, lastTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } } }),
-      db.order.findMany({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), returns: { none: {} } }, select: { items: { select: { price: true, quantity: true } } } }),
+      db.order.count({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE } }),
+      db.order.count({ where: { tenantId: req.tenant.id, lastTouchAdId: ad.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE } }),
+      db.order.findMany({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE }, select: { items: { select: { price: true, quantity: true } } } }),
     ]);
     const spend = spendUAH;
     const impressions = Number(spendAgg._sum.impressions || 0);
@@ -101,7 +101,7 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     where: { tenantId: req.tenant.id },
     include: {
       productExpense: true,
-      orderItems: { where: { order: { returns: { none: {} }, ...periodWhere(from, to) } }, include: { order: { select: { isRefused: true, createdAt: true } } } },
+      orderItems: { where: { order: { ...REAL_SALE_ORDER_WHERE, ...periodWhere(from, to) } }, include: { order: { select: { isRefused: true, createdAt: true } } } },
     },
   });
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
@@ -134,7 +134,7 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
 router.get('/analytics/upsells', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const orders = await db.order.findMany({
-    where: { tenantId: req.tenant.id, ...periodWhere(from, to), returns: { none: {} } },
+    where: { tenantId: req.tenant.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE },
     include: { items: { include: { product: { select: { id: true, name: true } } } } },
   });
 
@@ -174,7 +174,7 @@ router.get('/analytics/upsells', asyncHandler(async (req, res) => {
 router.get('/analytics/time-to-purchase', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const orders = await db.order.findMany({
-    where: { tenantId: req.tenant.id, firstTouchAt: { not: null }, ...periodWhere(from, to), returns: { none: {} } },
+    where: { tenantId: req.tenant.id, firstTouchAt: { not: null }, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE },
     select: { id: true, createdAt: true, firstTouchAt: true, firstTouchAdId: true, items: { select: { productId: true }, take: 1 } },
   });
   const diffsMinutes = orders.map((o) => (o.createdAt.getTime() - o.firstTouchAt.getTime()) / 60000);
@@ -192,9 +192,7 @@ router.get('/analytics/time-to-purchase', asyncHandler(async (req, res) => {
 // окремо на рівні "Прибуток", щоб не рахувати її двічі. Фінансові наслідки відмови
 // (хто платить за зворотну доставку) ще НЕ визначені (чекаємо правил від Олексія) —
 // тут відмова лише виключає замовлення з "успішної" виручки, без додаткових штрафів.
-function dayKey(date) {
-  return new Date(date).toISOString().slice(0, 10);
-}
+const dayKey = kyivDayKey;
 
 // ── Щоденне зведення по всьому tenant (скріншот "День") ─────────────────
 router.get('/analytics/daily', asyncHandler(async (req, res) => {
@@ -206,7 +204,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   const [orders, spendRows, clickRows, returns] = await Promise.all([
     db.order.findMany({
       where: { tenantId: tenant.id, ...periodWhere(from, to) },
-      include: { items: true, buyer: { select: { id: true } } },
+      include: { items: true, buyer: { select: { id: true } }, returns: { select: { id: true } } },
     }),
     db.adSpendDaily.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
     db.adClick.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
@@ -223,7 +221,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   function bucket(key) {
     if (!days.has(key)) {
       days.set(key, {
-        date: key, ordersCount: 0, refusedCount: 0, marginNonRefusedTotal: 0, marginAllTotal: 0,
+        date: key, ordersCount: 0, refusedCount: 0, marginNonRefusedTotal: 0,
         qtySold: 0, qtyRepeat: 0, newBuyerOrders: 0,
       });
     }
@@ -235,19 +233,23 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     const b = bucket(key);
     b.ordersCount += 1;
     if (order.isRefused) b.refusedCount += 1;
+    // 2026-09-12 (аудит аналітики): "фактичний продаж" — не відмова НА ПРИДБАННІ і без
+    // оформленого повернення. ordersCount/refusedCount лишаються по ВСІХ замовленнях
+    // (це і є суть "Відсоток відмов, %" — знаменник має включати відмови), а от
+    // виручка/маржа/продана кількість нижче — лише по isRealSale, як на "Рекламних витратах".
+    const isRealSale = !order.isRefused && order.returns.length === 0;
 
     let orderMargin = 0;
     for (const item of order.items) {
       orderMargin += marginPerOrderItem(item, expenseByProduct, order.isRefused, order.createdAt);
-      if (!item.isUpsell) b.qtySold += item.quantity;
+      if (isRealSale && !item.isUpsell) b.qtySold += item.quantity;
       const isRepeat = order.buyerId && firstOrderAtByBuyer.get(order.buyerId) && firstOrderAtByBuyer.get(order.buyerId).getTime() < order.createdAt.getTime();
-      if (isRepeat) b.qtyRepeat += item.quantity;
+      if (isRealSale && isRepeat) b.qtyRepeat += item.quantity;
     }
-    b.marginAllTotal += orderMargin;
-    if (!order.isRefused) b.marginNonRefusedTotal += orderMargin;
+    if (isRealSale) b.marginNonRefusedTotal += orderMargin;
 
     const isNewBuyer = !order.buyerId || (firstOrderAtByBuyer.get(order.buyerId)?.getTime() === order.createdAt.getTime());
-    if (isNewBuyer) b.newBuyerOrders += 1;
+    if (isRealSale && isNewBuyer) b.newBuyerOrders += 1;
   }
   for (const spend of spendRows) {
     const b = bucket(dayKey(spend.date));
@@ -328,7 +330,7 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
     db.ad.findMany({ where: { tenantId: tenant.id, productId: String(productId) } }),
     db.order.findMany({
       where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...periodWhere(from, to) },
-      include: { items: { where: { productId: String(productId) } } },
+      include: { items: { where: { productId: String(productId) } }, returns: { select: { id: true } } },
     }),
   ]);
   const adIds = ads.map((a) => a.id);
@@ -349,8 +351,10 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
     if (order.isRefused) b.refusedCount += 1;
     let m = 0;
     for (const item of order.items) m += marginPerOrderItem(item, expenseByProduct, order.isRefused, order.createdAt);
-    b.marginGrossTotal += m; // "Маржа всього" — до врахування відмов
-    if (!order.isRefused) b.marginNetTotal += m; // "...із відмовами" — фактична (виключені відмовлені)
+    b.marginGrossTotal += m; // "Маржа всього" — до врахування відмов/повернень (навмисно гросс)
+    // 2026-09-12 (аудит аналітики): "фактична" маржа має виключати і відмову, і повернення —
+    // раніше тут перевірялась лише isRefused, повернутий товар усе одно рахувався проданим.
+    if (!order.isRefused && order.returns.length === 0) b.marginNetTotal += m;
   }
   // Meta пише суму у $ — конвертуємо в грн одразу тут (та сама логіка, що /analytics/daily).
   for (const spend of spendRows) bucket(dayKey(spend.date)).adSpend += rowToUAH(spend.amount, spend.currency, usdRate);
@@ -368,7 +372,9 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
       marginTotalWithRefused: d.marginNetTotal, // "...із відмовами" — фактична
       messagePrice: d.messages > 0 ? d.adSpend / d.messages : null,
       orderPrice: d.ordersCount > 0 ? d.adSpend / d.ordersCount : null,
-      conversionToOrder: d.messages > 0 ? d.ordersCount / d.messages : null,
+      // 2026-09-12: множимо на 100, як усюди інде (напр. /analytics/daily conversionToSale) —
+      // фронт показує це як "%" без додаткового множення, раніше показувало сиру частку 0..1.
+      conversionToOrder: d.messages > 0 ? (d.ordersCount / d.messages) * 100 : null,
       refusalRate: d.ordersCount > 0 ? (d.refusedCount / d.ordersCount) * 100 : null,
       usdExchangeRate: usdRate || null,
       roi: d.adSpend > 0 ? d.marginNetTotal / d.adSpend : null,

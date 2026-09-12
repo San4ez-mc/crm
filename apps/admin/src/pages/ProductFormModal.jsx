@@ -2,7 +2,7 @@
 // права — розмірна сітка + варіанти (offers), фото через реальний upload-сервіс (POST /api/uploads).
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { Field, Input, Textarea, Select, Button, IconButton, ErrorBanner, formatDateTime } from '../components/common/Common';
+import { Field, Input, Textarea, Select, Button, IconButton, ErrorBanner, formatDateTime, kyivDateStr } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 import { SupplierForm } from './SuppliersPage';
 import { ProductAnswersSection } from './KnowledgeBasePage';
@@ -431,7 +431,7 @@ function AvailableSizesToggle({ productSizes, value = [], customized, onChange }
   );
 }
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function todayStr() { return kyivDateStr(); }
 
 // "Хто і коли вносив зміни" (2026-09-08) — actorName вже готовий з бекенда ("Fineko" для
 // воронки/MCP, ім'я/email для SSO-користувача), тут лише рендер стрічки.

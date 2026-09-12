@@ -9,7 +9,7 @@ const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { NotFoundError, ValidationError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem, cogsAt } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE } = require('../lib/margin');
 const { ensureFreshUsdRate, sumAdSpendUAH } = require('../lib/currency');
 const { logProductChange } = require('../lib/changeLog');
 
@@ -41,7 +41,9 @@ router.get('/product-expenses', asyncHandler(async (req, res) => {
     include: {
       productExpense: true,
       orderItems: {
-        where: { order: { ...(fromDate || toDate ? { createdAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}) } },
+        // 2026-09-12 (аудит аналітики): раніше тут не виключались ні відмови, ні повернені
+        // замовлення — виручка/маржа товару рахувались із грошей, яких магазин не отримав.
+        where: { order: { ...REAL_SALE_ORDER_WHERE, ...(fromDate || toDate ? { createdAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}) } },
         include: { order: { select: { createdAt: true, isRefused: true } } },
       },
     },
@@ -127,7 +129,7 @@ router.get('/product-expenses/alerts', asyncHandler(async (req, res) => {
   const usdRate = Number(tenant.usdExchangeRate || 0);
   const products = await db.product.findMany({
     where: { tenantId: req.tenant.id },
-    include: { productExpense: true, orderItems: { where: { order: { createdAt: { gte: since } } }, include: { order: { select: { createdAt: true, isRefused: true } } } } },
+    include: { productExpense: true, orderItems: { where: { order: { ...REAL_SALE_ORDER_WHERE, createdAt: { gte: since } } }, include: { order: { select: { createdAt: true, isRefused: true } } } } },
   });
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
   const alerts = [];

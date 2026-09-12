@@ -6,15 +6,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { PageHeader, Card, Input, Select, EmptyState, ErrorBanner, KpiCard, Badge, Pagination, money } from '../components/common/Common';
+import { PageHeader, Card, Input, Select, EmptyState, ErrorBanner, KpiCard, Badge, Pagination, money, kyivDateStr } from '../components/common/Common';
 
+// 2026-09-12 (аудит аналітики): "сьогодні"/"вчора" — за київським часом, не UTC (toISOString()).
 function periodPreset(preset) {
   const to = new Date();
   const from = new Date();
   if (preset === 'today') { /* from=to=сьогодні */ }
   else if (preset === 'yesterday') { from.setDate(to.getDate() - 1); to.setDate(to.getDate() - 1); }
   else if (preset === 'week') from.setDate(to.getDate() - 7);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  return { from: kyivDateStr(from), to: kyivDateStr(to) };
 }
 
 export default function AdSpendPage() {
@@ -32,18 +33,17 @@ export default function AdSpendPage() {
   async function load() {
     setError('');
     try {
-      const { data, meta, totals: t } = await api.getAdSpendSummary({ ...range, search, take: PAGE_SIZE, skip: (page - 1) * PAGE_SIZE });
+      // 2026-09-12 (аудит аналітики): фільтр "linked" тепер іде на бекенд — раніше фільтрувався
+      // лише вже завантажений шматок сторінки на фронті, і total/пагінація з ним розходились.
+      const linked = filter === 'linked' ? 'true' : filter === 'unlinked' ? 'false' : undefined;
+      const { data, meta, totals: t } = await api.getAdSpendSummary({ ...range, search, ...(linked !== undefined ? { linked } : {}), take: PAGE_SIZE, skip: (page - 1) * PAGE_SIZE });
       setItems(data); setTotal(meta.total); setTotals(t);
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [range.from, range.to, search, page]);
-  useEffect(() => { setPage(1); }, [search, range.from, range.to]);
+  useEffect(() => { load(); }, [range.from, range.to, search, filter, page]);
+  useEffect(() => { setPage(1); }, [search, filter, range.from, range.to]);
 
-  const filtered = (items || []).filter((ad) => {
-    if (filter === 'linked') return !!ad.productId;
-    if (filter === 'unlinked') return !ad.productId;
-    return true;
-  });
+  const filtered = items || [];
   return (
     <div>
       <PageHeader title="Рекламні оголошення" />

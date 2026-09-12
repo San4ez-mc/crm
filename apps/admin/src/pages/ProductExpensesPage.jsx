@@ -4,7 +4,7 @@
 // рахуватись за ціною, що діяла НА ДАТУ того замовлення (lib/margin.js cogsAt), а не поточною.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, EmptyState, ErrorBanner, Button, IconButton, Input, money } from '../components/common/Common';
+import { PageHeader, Card, EmptyState, ErrorBanner, Button, IconButton, Input, money, kyivDateStr } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 
 export default function ProductExpensesPage() {
@@ -80,7 +80,7 @@ function EditableNumber({ value, onCommit, suffix = '' }) {
   );
 }
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function todayStr() { return kyivDateStr(); }
 
 function CostHistoryModal({ row, onClose, onSaved }) {
   const [history, setHistory] = useState(
