@@ -145,7 +145,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
   // n_lookup-crm-code.js реєструє на льоту при першому кліку клієнта (ще до щоденної
   // синхронізації Meta Ads, яка знає лише про платні кампанії), раніше не мали фото
   // взагалі — thumbnailUrl тут просто не приймався, навіть якщо його прислали.
-  const { externalId, name, productId, campaignId, campaignName, adAccountId, thumbnailUrl } = req.body || {};
+  const { externalId, name, productId, campaignId, campaignName, adSetId, adSetName, adAccountId, thumbnailUrl } = req.body || {};
   // 2026-09-13 (власник, живий баг "реклама приходить по кілька разів"): цей роут раніше
   // БЕЗУМОВНО створював новий рядок навіть для ВЖЕ ІСНУЮЧОГО externalId — виклик з
   // n_lookup-crm-code.js перевіряв дублікат лише серед 300 найновіших /ads (client-side),
@@ -161,6 +161,8 @@ router.post('/ads', asyncHandler(async (req, res) => {
         ...(productId !== undefined ? { productId: productId || null } : {}),
         ...(campaignId ? { campaignId } : {}),
         ...(campaignName ? { campaignName } : {}),
+        ...(adSetId ? { adSetId } : {}),
+        ...(adSetName ? { adSetName } : {}),
         ...(adAccountId ? { adAccountId } : {}),
         ...(thumbnailUrl && !ad.thumbnailUrl ? { thumbnailUrl } : {}), // не затираємо вже наявне фото гіршим/порожнім
       },
@@ -170,8 +172,8 @@ router.post('/ads', asyncHandler(async (req, res) => {
   ad = await db.ad.create({
     data: {
       tenantId: req.tenant.id, externalId: externalId || null, name: name || null, productId: productId || null,
-      campaignId: campaignId || null, campaignName: campaignName || null, adAccountId: adAccountId || null,
-      thumbnailUrl: thumbnailUrl || null,
+      campaignId: campaignId || null, campaignName: campaignName || null, adSetId: adSetId || null, adSetName: adSetName || null,
+      adAccountId: adAccountId || null, thumbnailUrl: thumbnailUrl || null,
     },
   });
   res.status(201).json({ ok: true, data: ad });

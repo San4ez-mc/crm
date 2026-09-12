@@ -440,6 +440,10 @@ model Ad {
   campaignName String?
   adAccountId  String? // id рекламного кабінету, з якого прийшли дані
   thumbnailUrl String? // мініатюра креативу (Meta Graph creative.thumbnail_url) — заповнює той самий крон
+  // 2026-09-13 (власник: власник плутається, який ІД показує CRM — Campaign/AdSet/Ad — бо
+  // раніше зберігався лише campaignId): третій рівень ієрархії Meta, окремо від externalId (=Ad ID).
+  adSetId   String?
+  adSetName String?
   createdAt  DateTime @default(now())
 
   spendDaily      AdSpendDaily[]

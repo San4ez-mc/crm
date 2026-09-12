@@ -80,6 +80,17 @@ export default function AdsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div>{ad.name || ad.externalId || ad.id.slice(0, 8)}</div>
+                    {/* 2026-09-13 (власник: ID на сторінці не співпадали з тими, що видно в Meta Ads
+                        Manager — незрозуміло, який саме рівень показуємо). Meta має 3 РІЗНІ ID:
+                        Campaign / Ad Set / Ad — показуємо всі три явно підписаними, моно-шрифтом,
+                        щоб можна було звірити з колонками в Ads Manager напряму. */}
+                    {(ad.campaignId || ad.adSetId || ad.externalId) && (
+                      <div className="mt-0.5 space-y-0.5 font-mono text-[11px] text-slate-500">
+                        {ad.campaignId && <div>Campaign ID: {ad.campaignId}</div>}
+                        {ad.adSetId && <div>Ad Set ID: {ad.adSetId}</div>}
+                        {ad.externalId && <div>Ad ID: {ad.externalId}</div>}
+                      </div>
+                    )}
                     {(ad.thumbnailUrl || (ad.adAccountId && ad.externalId)) && (
                       <div className="mt-0.5 flex flex-wrap gap-2 text-xs">
                         {ad.thumbnailUrl && (
