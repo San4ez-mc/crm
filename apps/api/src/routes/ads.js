@@ -102,14 +102,30 @@ function periodDateWhere(from, to) {
 // §9.13 — картка оголошення (не залежить від дати: назва/фото/привʼязка товару стабільні,
 // на відміну від AdSpendDaily, де та сама прив'язка інакше довелось би повторювати на
 // кожному денному рядку). Разом віддаємо агреговані totalSpend/lastSyncedAt.
+// Список рекламних кабінетів, реально присутніх у /ads — для мультивибору на сторінці
+// (2026-09-13, живий баг: "я не знаю, звідки підтягнуло ці оголошення" — Meta-токен бачить
+// кілька кабінетів одночасно, синк тепер тягне з УСІХ, тож на сторінці потрібен фільтр,
+// щоб розрізнити, з якого саме кабінету яке оголошення).
+router.get('/ads/accounts', asyncHandler(async (req, res) => {
+  const rows = await db.ad.groupBy({ by: ['adAccountId', 'adAccountName'], where: { tenantId: req.tenant.id, NOT: { adAccountId: null } }, _count: { _all: true } });
+  res.json({ ok: true, data: rows.map((r) => ({ adAccountId: r.adAccountId, adAccountName: r.adAccountName, count: r._count._all })).sort((a, b) => b.count - a.count) });
+}));
+
 router.get('/ads', asyncHandler(async (req, res) => {
-  const { productId, externalId, take = '100', skip = '0' } = req.query;
+  const { productId, externalId, adAccountId, take = '100', skip = '0' } = req.query;
   const tenant = await ensureFreshUsdRate(req.tenant);
   const usdRate = Number(tenant.usdExchangeRate || 0);
   // externalId — точковий пошук (2026-09-13, живий баг "дублі реклами"): виклик з воронки
   // раніше перевіряв дублікат серед top-300 /ads client-side — стара реклама поза цим вікном
   // штампувала дублі щоразу. Точковий запит по externalId не залежить від розміру таблиці.
-  const where = { tenantId: req.tenant.id, ...(productId ? { productId: String(productId) } : {}), ...(externalId ? { externalId: String(externalId) } : {}) };
+  // adAccountId — кома-розділений список (мультивибір кабінету на сторінці "Оголошення").
+  const acctIds = adAccountId ? String(adAccountId).split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const where = {
+    tenantId: req.tenant.id,
+    ...(productId ? { productId: String(productId) } : {}),
+    ...(externalId ? { externalId: String(externalId) } : {}),
+    ...(acctIds.length ? { adAccountId: { in: acctIds } } : {}),
+  };
   const ads = await db.ad.findMany({
     where,
     include: { product: { select: { id: true, name: true } }, _count: { select: { spendDaily: true } } },
@@ -145,7 +161,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
   // n_lookup-crm-code.js реєструє на льоту при першому кліку клієнта (ще до щоденної
   // синхронізації Meta Ads, яка знає лише про платні кампанії), раніше не мали фото
   // взагалі — thumbnailUrl тут просто не приймався, навіть якщо його прислали.
-  const { externalId, name, productId, campaignId, campaignName, adSetId, adSetName, adAccountId, thumbnailUrl } = req.body || {};
+  const { externalId, name, productId, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, thumbnailUrl } = req.body || {};
   // 2026-09-13 (власник, живий баг "реклама приходить по кілька разів"): цей роут раніше
   // БЕЗУМОВНО створював новий рядок навіть для ВЖЕ ІСНУЮЧОГО externalId — виклик з
   // n_lookup-crm-code.js перевіряв дублікат лише серед 300 найновіших /ads (client-side),
@@ -164,6 +180,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
         ...(adSetId ? { adSetId } : {}),
         ...(adSetName ? { adSetName } : {}),
         ...(adAccountId ? { adAccountId } : {}),
+        ...(adAccountName ? { adAccountName } : {}),
         ...(thumbnailUrl && !ad.thumbnailUrl ? { thumbnailUrl } : {}), // не затираємо вже наявне фото гіршим/порожнім
       },
     });
@@ -173,7 +190,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
     data: {
       tenantId: req.tenant.id, externalId: externalId || null, name: name || null, productId: productId || null,
       campaignId: campaignId || null, campaignName: campaignName || null, adSetId: adSetId || null, adSetName: adSetName || null,
-      adAccountId: adAccountId || null, thumbnailUrl: thumbnailUrl || null,
+      adAccountId: adAccountId || null, adAccountName: adAccountName || null, thumbnailUrl: thumbnailUrl || null,
     },
   });
   res.status(201).json({ ok: true, data: ad });

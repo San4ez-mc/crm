@@ -15,15 +15,30 @@ export default function AdsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [lightbox, setLightbox] = useState(null);
+  // 2026-09-13 (живий баг, Олексій: "я не знаю, звідки підтягнуло ці рекламні оголошення" —
+  // Meta-токен бачить КІЛЬКА рекламних кабінетів одночасно). Мультивибір: порожній Set = "усі".
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccounts, setSelectedAccounts] = useState(new Set());
+  const [acctMenuOpen, setAcctMenuOpen] = useState(false);
 
-  async function load() {
+  async function load(acctFilter) {
     setError('');
     try {
-      const [a, p] = await Promise.all([api.listAds(), api.listProducts()]);
-      setItems(a.data); setProducts(p.data);
+      const acctIds = (acctFilter !== undefined ? acctFilter : selectedAccounts);
+      const params = { take: '3000' }; // 2026-09-13: дефолт 100 ховав більшість із 1500+ оголошень після повного синку
+      if (acctIds.size > 0) params.adAccountId = [...acctIds].join(',');
+      const [a, p, acc] = await Promise.all([api.listAds(params), api.listProducts(), api.listAdAccounts()]);
+      setItems(a.data); setProducts(p.data); setAccounts(acc.data);
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  function toggleAccount(id) {
+    const next = new Set(selectedAccounts);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedAccounts(next);
+    load(next);
+  }
 
   async function linkProduct(ad, productId) {
     try { await api.updateAd(ad.id, { productId }); load(); } catch (e) { alert(e.message); }
@@ -51,8 +66,34 @@ export default function AdsPage() {
         </div>
       )}
       <p className="mb-4 text-xs text-slate-500">Прив'язка товару робиться один раз тут (оголошення не змінюється щодня). Показники витрат/окупності/прибутку — на сторінці «Рекламні витрати».</p>
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Пошук за назвою або ad_id" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {accounts.length > 1 && (
+          <div className="relative">
+            <Button variant="secondary" className="!py-1.5 text-xs" onClick={() => setAcctMenuOpen((v) => !v)}>
+              📁 Кабінет: {selectedAccounts.size === 0 ? 'усі' : `${selectedAccounts.size} обрано`} ▾
+            </Button>
+            {acctMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setAcctMenuOpen(false)} />
+                <div className="absolute left-0 top-full z-20 mt-1 w-72 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl">
+                  {selectedAccounts.size > 0 && (
+                    <button className="mb-1 w-full rounded px-2 py-1 text-left text-xs text-brand-light hover:bg-slate-800" onClick={() => { setSelectedAccounts(new Set()); load(new Set()); }}>
+                      ✕ Скинути (показати всі)
+                    </button>
+                  )}
+                  {accounts.map((a) => (
+                    <label key={a.adAccountId} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-800">
+                      <input type="checkbox" checked={selectedAccounts.has(a.adAccountId)} onChange={() => toggleAccount(a.adAccountId)} />
+                      <span className="flex-1 truncate">{a.adAccountName || a.adAccountId}</span>
+                      <span className="text-xs text-slate-500">{a.count}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
       {items === null ? null : items.length === 0 ? (
         <EmptyState title="Оголошень ще немає" hint="Дані підтягнуться автоматично, щойно запрацює синхронізація реклами." />

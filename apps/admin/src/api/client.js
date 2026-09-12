@@ -102,6 +102,7 @@ export const api = {
 
   // Реклама/фінанси
   listAds: (params = {}) => get(`/ads?${new URLSearchParams(params)}`),
+  listAdAccounts: () => get('/ads/accounts'),
   createAd: (data) => post('/ads', data),
   updateAd: (id, data) => patch(`/ads/${id}`, data),
   listAdSpend: (params = {}) => get(`/ad-spend?${new URLSearchParams(params)}`),
