@@ -13,10 +13,10 @@ router.get('/fops', asyncHandler(async (req, res) => {
 }));
 
 router.post('/fops', asyncHandler(async (req, res) => {
-  const { name, iban, taxId, monobankToken } = req.body || {};
+  const { name, iban, cardNumber, taxId, monobankToken } = req.body || {};
   if (!name || !String(name).trim()) throw new ValidationError('name обовʼязкове');
   const fop = await db.fop.create({
-    data: { tenantId: req.tenant.id, name: String(name).trim(), iban: iban || null, taxId: taxId || null, monobankToken: monobankToken || null },
+    data: { tenantId: req.tenant.id, name: String(name).trim(), iban: iban || null, cardNumber: cardNumber || null, taxId: taxId || null, monobankToken: monobankToken || null },
   });
   res.status(201).json({ ok: true, data: fop });
 }));
@@ -30,12 +30,13 @@ router.get('/fops/:id', asyncHandler(async (req, res) => {
 router.patch('/fops/:id', asyncHandler(async (req, res) => {
   const existing = await db.fop.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
   if (!existing) throw new NotFoundError('Fop', req.params.id);
-  const { name, iban, taxId, monobankToken } = req.body || {};
+  const { name, iban, cardNumber, taxId, monobankToken } = req.body || {};
   const fop = await db.fop.update({
     where: { id: existing.id },
     data: {
       ...(name !== undefined ? { name: String(name).trim() } : {}),
       ...(iban !== undefined ? { iban } : {}),
+      ...(cardNumber !== undefined ? { cardNumber } : {}),
       ...(taxId !== undefined ? { taxId } : {}),
       ...(monobankToken !== undefined ? { monobankToken } : {}),
     },
