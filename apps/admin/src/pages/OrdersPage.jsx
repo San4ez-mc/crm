@@ -127,16 +127,22 @@ export default function OrdersPage() {
       />
       <ErrorBanner message={error} />
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Input className="max-w-xs" placeholder="Пошук за покупцем/телефоном/ТТН…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select className="max-w-xs" value={adId} onChange={(e) => setAdId(e.target.value)}>
-          <option value="">Усі оголошення</option>
-          {ads.map((a) => <option key={a.id} value={a.id}>{a.name || a.externalId || a.id.slice(0, 8)}</option>)}
-        </Select>
-        <div className="flex items-center gap-1.5 text-xs text-slate-400">
-          <span>Перший контакт:</span>
+      {/* 2026-09-13 (власник: "поскладай красивіше ці поля") — раніше все в одному
+          flex-wrap ряду з'їжджало хаотично на вузьких вікнах. Тепер два чіткі блоки:
+          пошук/фільтр зліва, діапазон дати — окрема "пігулка" справа з власним фоном,
+          щоб на wrap завжди падала ЦІЛА група, а не розривалась посередині. */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input className="w-64" placeholder="Пошук за покупцем/телефоном/ТТН…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Select className="w-56" value={adId} onChange={(e) => setAdId(e.target.value)}>
+            <option value="">Усі оголошення</option>
+            {ads.map((a) => <option key={a.id} value={a.id}>{a.name || a.externalId || a.id.slice(0, 8)}</option>)}
+          </Select>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5">
+          <span className="whitespace-nowrap text-xs font-medium text-slate-400">Перший контакт</span>
           <Input type="date" className="!w-auto" value={ftFrom} onChange={(e) => setFtFrom(e.target.value)} />
-          <span>—</span>
+          <span className="text-slate-600">—</span>
           <Input type="date" className="!w-auto" value={ftTo} onChange={(e) => setFtTo(e.target.value)} />
           <Button variant="secondary" className="!px-2 !py-1 text-xs" onClick={() => { setFtFrom(_daysAgoStr(7)); setFtTo(_todayStr()); }}>Останні 7 днів</Button>
         </div>
