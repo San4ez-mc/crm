@@ -103,10 +103,13 @@ function periodDateWhere(from, to) {
 // на відміну від AdSpendDaily, де та сама прив'язка інакше довелось би повторювати на
 // кожному денному рядку). Разом віддаємо агреговані totalSpend/lastSyncedAt.
 router.get('/ads', asyncHandler(async (req, res) => {
-  const { productId, take = '100', skip = '0' } = req.query;
+  const { productId, externalId, take = '100', skip = '0' } = req.query;
   const tenant = await ensureFreshUsdRate(req.tenant);
   const usdRate = Number(tenant.usdExchangeRate || 0);
-  const where = { tenantId: req.tenant.id, ...(productId ? { productId: String(productId) } : {}) };
+  // externalId — точковий пошук (2026-09-13, живий баг "дублі реклами"): виклик з воронки
+  // раніше перевіряв дублікат серед top-300 /ads client-side — стара реклама поза цим вікном
+  // штампувала дублі щоразу. Точковий запит по externalId не залежить від розміру таблиці.
+  const where = { tenantId: req.tenant.id, ...(productId ? { productId: String(productId) } : {}), ...(externalId ? { externalId: String(externalId) } : {}) };
   const ads = await db.ad.findMany({
     where,
     include: { product: { select: { id: true, name: true } }, _count: { select: { spendDaily: true } } },
@@ -143,7 +146,28 @@ router.post('/ads', asyncHandler(async (req, res) => {
   // синхронізації Meta Ads, яка знає лише про платні кампанії), раніше не мали фото
   // взагалі — thumbnailUrl тут просто не приймався, навіть якщо його прислали.
   const { externalId, name, productId, campaignId, campaignName, adAccountId, thumbnailUrl } = req.body || {};
-  const ad = await db.ad.create({
+  // 2026-09-13 (власник, живий баг "реклама приходить по кілька разів"): цей роут раніше
+  // БЕЗУМОВНО створював новий рядок навіть для ВЖЕ ІСНУЮЧОГО externalId — виклик з
+  // n_lookup-crm-code.js перевіряв дублікат лише серед 300 найновіших /ads (client-side),
+  // і стара реклама, що випала з цього вікна через ріст таблиці, штампувала дублікати щоразу,
+  // коли на неї писав НОВИЙ клієнт. Тепер — findFirst-or-update тут САМЕ (defense in depth,
+  // незалежно від того, чи виправлено виклик на стороні воронки).
+  let ad = externalId ? await db.ad.findFirst({ where: { tenantId: req.tenant.id, externalId: String(externalId) } }) : null;
+  if (ad) {
+    ad = await db.ad.update({
+      where: { id: ad.id },
+      data: {
+        ...(name ? { name } : {}),
+        ...(productId !== undefined ? { productId: productId || null } : {}),
+        ...(campaignId ? { campaignId } : {}),
+        ...(campaignName ? { campaignName } : {}),
+        ...(adAccountId ? { adAccountId } : {}),
+        ...(thumbnailUrl && !ad.thumbnailUrl ? { thumbnailUrl } : {}), // не затираємо вже наявне фото гіршим/порожнім
+      },
+    });
+    return void res.status(200).json({ ok: true, data: ad, reused: true });
+  }
+  ad = await db.ad.create({
     data: {
       tenantId: req.tenant.id, externalId: externalId || null, name: name || null, productId: productId || null,
       campaignId: campaignId || null, campaignName: campaignName || null, adAccountId: adAccountId || null,
