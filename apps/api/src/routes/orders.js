@@ -26,7 +26,7 @@ async function defaultStageId(tenantId) {
 
 // ── Список (kanban/таблиця) ──────────────────────────────────────────────
 router.get('/orders', asyncHandler(async (req, res) => {
-  const { stageId, from, to, productId, adId, q, take = '100', skip = '0' } = req.query;
+  const { stageId, from, to, ftFrom, ftTo, productId, adId, q, take = '100', skip = '0' } = req.query;
   // q і adId — обидва OR-блоки, тому комбінуємо через AND (інакше другий спред перезаписав би
   // перший ключ "OR" в об'єкті where — знайдено під час додавання фільтра по рекламі 2026-09-04).
   const andClauses = [];
@@ -39,6 +39,10 @@ router.get('/orders', asyncHandler(async (req, res) => {
     tenantId: req.tenant.id,
     ...(stageId ? { stageId: String(stageId) } : {}),
     ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}),
+    // 2026-09-12 (власник, Замовлення §OrdersPage): фільтр по ДАТІ ПЕРШОГО КОНТАКТУ (firstTouchAt),
+    // окремо від дати створення замовлення — дошка за замовчуванням показує лише останні 7 днів,
+    // інакше тисячі карток без ліміту.
+    ...(ftFrom || ftTo ? { firstTouchAt: { ...(ftFrom ? { gte: parseFrom(ftFrom) } : {}), ...(ftTo ? { lte: parseTo(ftTo) } : {}) } } : {}),
     ...(productId ? { items: { some: { productId: String(productId) } } } : {}),
     ...(andClauses.length ? { AND: andClauses } : {}),
   };

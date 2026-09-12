@@ -31,6 +31,12 @@ export default function OrdersPage() {
   const [ads, setAds] = useState([]);
   const [q, setQ] = useState('');
   const [adId, setAdId] = useState('');
+  // 2026-09-12 (власник: "інакше тисячі карток") — фільтр по ДАТІ ПЕРШОГО КОНТАКТУ, за замовчуванням
+  // завжди останні 7 днів від сьогодні (свіжий mount = свіже вікно, не застаріла дата).
+  const _todayStr = () => new Date().toISOString().slice(0, 10);
+  const _daysAgoStr = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const [ftFrom, setFtFrom] = useState(_daysAgoStr(7));
+  const [ftTo, setFtTo] = useState(_todayStr());
   const [error, setError] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [returnForOrder, setReturnForOrder] = useState(null);
@@ -51,19 +57,49 @@ export default function OrdersPage() {
       const params = {};
       if (q) params.q = q;
       if (adId) params.adId = adId;
+      if (ftFrom) params.ftFrom = ftFrom;
+      if (ftTo) params.ftTo = ftTo;
       const [o, p] = await Promise.all([api.listOrders(params), api.listPipelines()]);
       setOrders(o.data);
       setPipelines(p.data);
       setPipelineId((prev) => (prev && p.data.some((pl) => pl.id === prev) ? prev : p.data[0]?.id || ''));
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [q, adId]);
+  useEffect(() => { load(); }, [q, adId, ftFrom, ftTo]);
 
   const currentPipeline = pipelines.find((p) => p.id === pipelineId);
   const stages = currentPipeline?.stages || [];
 
+  // 2026-09-12 (живий баг, власник: стадія "Замовлення оформлене в постачальника" показувала 0,
+  // хоча прямий запит підтвердив 43 реальних замовлення): `orders` вище — ЄДИНИЙ спільний top-100
+  // за createdAt DESC на ВСІ стадії разом (для таблиці цього достатньо). Дошка ж фільтрує ЦЕЙ САМИЙ
+  // масив по стадіях клієнтом — стадія, чиї замовлення "старіші" за 100 найновіших з ІНШИХ стадій
+  // (типово для стадій, де замовлення довго не рухають — постачальник/повернення), просто НЕ
+  // потрапляє у вибірку і виглядає порожньою, хоча насправді ні. Кожна колонка дошки тепер вантажить
+  // СВІЙ власний топ-N окремим запитом (paralельно), незалежно від інших стадій.
+  const [boardByStage, setBoardByStage] = useState({});
+  async function loadBoard(stageList) {
+    if (!stageList.length) return;
+    try {
+      const params = {};
+      if (q) params.q = q;
+      if (adId) params.adId = adId;
+      if (ftFrom) params.ftFrom = ftFrom;
+      if (ftTo) params.ftTo = ftTo;
+      const results = await Promise.all(stageList.map((s) => api.listOrders({ ...params, stageId: s.id, take: 200 })));
+      const next = {};
+      stageList.forEach((s, i) => { next[s.id] = results[i].data; });
+      setBoardByStage(next);
+    } catch (e) { setError(e.message); }
+  }
+  useEffect(() => {
+    if (view !== 'board') return;
+    loadBoard(stages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, pipelineId, q, adId, ftFrom, ftTo, stages.map((s) => s.id).join(',')]);
+
   async function moveOrderToStage(orderId, newStageId) {
-    try { await api.updateOrder(orderId, { stageId: newStageId }); load(); } catch (e) { alert(e.message); }
+    try { await api.updateOrder(orderId, { stageId: newStageId }); load(); loadBoard(stages); } catch (e) { alert(e.message); }
   }
 
   function orderTotal(order) {
@@ -97,6 +133,13 @@ export default function OrdersPage() {
           <option value="">Усі оголошення</option>
           {ads.map((a) => <option key={a.id} value={a.id}>{a.name || a.externalId || a.id.slice(0, 8)}</option>)}
         </Select>
+        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+          <span>Перший контакт:</span>
+          <Input type="date" className="!w-auto" value={ftFrom} onChange={(e) => setFtFrom(e.target.value)} />
+          <span>—</span>
+          <Input type="date" className="!w-auto" value={ftTo} onChange={(e) => setFtTo(e.target.value)} />
+          <Button variant="secondary" className="!px-2 !py-1 text-xs" onClick={() => { setFtFrom(_daysAgoStr(7)); setFtTo(_todayStr()); }}>Останні 7 днів</Button>
+        </div>
       </div>
 
       {orders === null ? null : orders.length === 0 ? (
@@ -109,7 +152,7 @@ export default function OrdersPage() {
         </div>
         <div ref={boardRef} className="flex gap-3 overflow-x-auto pb-2" onScroll={(e) => { if (topScrollRef.current && topScrollRef.current.scrollLeft !== e.currentTarget.scrollLeft) topScrollRef.current.scrollLeft = e.currentTarget.scrollLeft; }}>
           {stages.map((stage) => {
-            const stageOrders = orders.filter((o) => o.stageId === stage.id);
+            const stageOrders = boardByStage[stage.id] || [];
             const stageSum = stageOrders.reduce((s, o) => s + orderTotal(o), 0);
             return (
               <div key={stage.id} className="w-72 shrink-0"
