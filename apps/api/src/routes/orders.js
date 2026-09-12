@@ -35,14 +35,23 @@ router.get('/orders', asyncHandler(async (req, res) => {
     { buyer: { is: { OR: [{ phone: { contains: String(q) } }, { fullName: { contains: String(q), mode: 'insensitive' } }] } } },
   ] });
   if (adId) andClauses.push({ OR: [{ firstTouchAdId: String(adId) }, { lastTouchAdId: String(adId) }] });
+  // 2026-09-12 (КРИТИЧНО, живий баг знайдено одразу після деплою): firstTouchAt історично НІКОЛИ не
+  // заповнювався воронкою (усі існуючі замовлення мають firstTouchAt=null) — фільтр по НЬОМУ напряму
+  // ховав би АБСОЛЮТНО ВСІ замовлення, щойно власник відкрив би дошку (дефолт = останні 7 днів).
+  // Fallback: якщо firstTouchAt відомий — фільтруємо по ньому; якщо ні (null) — по createdAt (це й
+  // так було справжньою датою першого контакту для старих замовлень, де окреме поле не велось).
+  // Воронка тепер заповнює firstTouchAt/firstTouchAdId на НОВИХ замовленнях (apps/api n_crm_order).
+  if (ftFrom || ftTo) {
+    const ftRange = { ...(ftFrom ? { gte: parseFrom(ftFrom) } : {}), ...(ftTo ? { lte: parseTo(ftTo) } : {}) };
+    andClauses.push({ OR: [
+      { firstTouchAt: ftRange },
+      { AND: [{ firstTouchAt: null }, { createdAt: ftRange }] },
+    ] });
+  }
   const where = {
     tenantId: req.tenant.id,
     ...(stageId ? { stageId: String(stageId) } : {}),
     ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}),
-    // 2026-09-12 (власник, Замовлення §OrdersPage): фільтр по ДАТІ ПЕРШОГО КОНТАКТУ (firstTouchAt),
-    // окремо від дати створення замовлення — дошка за замовчуванням показує лише останні 7 днів,
-    // інакше тисячі карток без ліміту.
-    ...(ftFrom || ftTo ? { firstTouchAt: { ...(ftFrom ? { gte: parseFrom(ftFrom) } : {}), ...(ftTo ? { lte: parseTo(ftTo) } : {}) } } : {}),
     ...(productId ? { items: { some: { productId: String(productId) } } } : {}),
     ...(andClauses.length ? { AND: andClauses } : {}),
   };
