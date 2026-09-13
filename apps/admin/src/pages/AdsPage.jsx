@@ -47,7 +47,10 @@ export default function AdsPage() {
   async function syncNow() {
     setSyncing(true); setSyncResult(null); setError('');
     try {
-      const { data } = await api.syncAdSpendNow();
+      // 2026-09-13 (власник: "це я хочу вибирати на сторінці" — не хардкодити кабінет): якщо
+      // обрано конкретний(і) кабінет(и) у фільтрі — синкаємо ЛИШЕ їх; порожній вибір = "усі"
+      // (бекенд сам вирішує — funnelKey override або auto-discovery, як налаштовано на боті).
+      const { data } = await api.syncAdSpendNow(selectedAccounts.size > 0 ? [...selectedAccounts] : undefined);
       setSyncResult(data);
       if (data.status === 'ok') load();
     } catch (e) { setError(e.message); }
@@ -56,7 +59,11 @@ export default function AdsPage() {
 
   return (
     <div>
-      <PageHeader title="Оголошення" action={<Button onClick={syncNow} disabled={syncing}>{syncing ? 'Отримую…' : '🔄 Отримати дані зараз'}</Button>} />
+      <PageHeader title="Оголошення" action={
+        <Button onClick={syncNow} disabled={syncing} title={selectedAccounts.size > 0 ? 'Синхронізує лише обрані в фільтрі кабінети' : 'Синхронізує всі кабінети (за налаштуванням боту)'}>
+          {syncing ? 'Отримую…' : `🔄 Отримати дані зараз${selectedAccounts.size > 0 ? ` (${selectedAccounts.size})` : ''}`}
+        </Button>
+      } />
       <ErrorBanner message={error} />
       {syncResult && (
         <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${syncResult.status === 'ok' ? 'border-emerald-800 bg-emerald-900/20 text-emerald-300' : syncResult.status === 'pending' ? 'border-amber-800 bg-amber-900/20 text-amber-300' : 'border-red-800 bg-red-900/20 text-red-300'}`}>

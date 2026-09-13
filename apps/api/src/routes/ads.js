@@ -318,10 +318,16 @@ router.post('/ad-spend/sync-now', asyncHandler(async (req, res) => {
   if (!secret?.value) throw new ValidationError('Не налаштовано FLOWS_META_SYNC_BOT_ID для цього магазину (Ключі API)');
   if (!process.env.FLOWS_API_URL || !process.env.FLOWS_API_SECRET) throw new ValidationError('FLOWS_API_URL/FLOWS_API_SECRET не налаштовані на сервері CRM');
 
+  // 2026-09-13 (власник: "це я хочу вибирати на сторінці" — не хардкодити кабінет у funnelKey):
+  // мультивибір кабінету(-ів) на сторінці «Оголошення» прокидається сюди й далі в contextOverride
+  // тестової сесії — воронка читає context.metaAdAccountIds і синкає ЛИШЕ обрані кабінети.
+  const { adAccountIds } = req.body || {};
+  const contextOverride = (Array.isArray(adAccountIds) && adAccountIds.length) ? { metaAdAccountIds: adAccountIds } : {};
+
   const resp = await fetch(`${process.env.FLOWS_API_URL}/api/sessions/test/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Secret': process.env.FLOWS_API_SECRET },
-    body: JSON.stringify({ botId: secret.value }),
+    body: JSON.stringify({ botId: secret.value, contextOverride }),
   });
   const json = await resp.json().catch(() => null);
   if (!resp.ok || !json?.ok) throw new ValidationError('Flows не відповів успіхом: ' + (json?.error?.message || json?.error || resp.status));

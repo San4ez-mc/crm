@@ -106,7 +106,7 @@ export const api = {
   createAd: (data) => post('/ads', data),
   updateAd: (id, data) => patch(`/ads/${id}`, data),
   listAdSpend: (params = {}) => get(`/ad-spend?${new URLSearchParams(params)}`),
-  syncAdSpendNow: () => post('/ad-spend/sync-now'),
+  syncAdSpendNow: (adAccountIds) => post('/ad-spend/sync-now', adAccountIds?.length ? { adAccountIds } : undefined),
   getAdSpendSummary: (params = {}) => get(`/ads/spend-summary?${new URLSearchParams(params)}`),
   getAdDetail: (id, params = {}) => get(`/ads/${id}/detail?${new URLSearchParams(params)}`),
 
