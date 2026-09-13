@@ -91,7 +91,7 @@ export default function AdsPage() {
           <input type="checkbox" checked={showAll} onChange={toggleShowAll} />
           Показати й неактивні
         </label>
-        {accounts.length > 1 && (
+        {accounts.length > 0 && (
           <div className="relative">
             <Button variant="secondary" className="!py-1.5 text-xs" onClick={() => setAcctMenuOpen((v) => !v)}>
               📁 Кабінет: {selectedAccounts.size === 0 ? 'усі' : `${selectedAccounts.size} обрано`} ▾
@@ -118,7 +118,12 @@ export default function AdsPage() {
           </div>
         )}
       </div>
-      {items === null ? null : items.length === 0 ? (
+      {items === null ? (
+        <div className="flex items-center gap-2 py-12 text-sm text-slate-500">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-brand-light" />
+          Завантаження…
+        </div>
+      ) : items.length === 0 ? (
         <EmptyState title="Оголошень ще немає" hint="Дані підтягнуться автоматично, щойно запрацює синхронізація реклами." />
       ) : (
         <Card>
@@ -133,7 +138,7 @@ export default function AdsPage() {
                 return (ad.name || '').toLowerCase().includes(s) || (ad.externalId || '').toLowerCase().includes(s);
               }).map((ad) => (
                 <tr key={ad.id} className={`border-b border-slate-800/60 last:border-0 ${!ad.productId ? 'bg-amber-900/10' : ''}`}>
-                  <td className="px-4 py-3 whitespace-nowrap text-slate-400">{formatDate(ad.createdAt)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-slate-400">{formatDate(ad.adCreatedAt || ad.createdAt)}</td>
                   <td className="px-4 py-3">
                     {/* 2026-09-11: 112px (повне x2) розмазував дрібні джерела (Meta/KeyCRM thumbnails
                         зазвичай ~60-100px) — це не рендер, а фізична межа роздільності вихідного файлу.
@@ -155,19 +160,19 @@ export default function AdsPage() {
                         {ad.externalId && <div>Ad ID: {ad.externalId}</div>}
                       </div>
                     )}
-                    {(ad.thumbnailUrl || (ad.adAccountId && ad.externalId)) && (
+                    {/* 2026-09-13 (власник: "якщо там та ж сама мініатюра, то краще прибрати" —
+                        перевірено живим викликом Meta Graph API: creative.image_url/
+                        object_story_spec для цих креативів ПОРОЖНІ, доступна лише thumbnail_url
+                        (обрізана до 64×64, stp=...p64x64... у самому URL) — це та сама картинка,
+                        що вже показана прев'ю в таблиці, окреме посилання не додає нічого нового). */}
+                    {ad.adAccountId && ad.externalId && (
                       <div className="mt-0.5 flex flex-wrap gap-2 text-xs">
-                        {ad.thumbnailUrl && (
-                          <a href={ad.thumbnailUrl} target="_blank" rel="noreferrer" className="text-brand-light hover:underline">🖼️ Фото</a>
-                        )}
-                        {ad.adAccountId && ad.externalId && (
-                          <a
-                            href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${encodeURIComponent(ad.adAccountId)}&selected_ad_ids=${encodeURIComponent(ad.externalId)}`}
-                            target="_blank" rel="noreferrer" className="text-brand-light hover:underline"
-                          >
-                            🔗 Ads Manager
-                          </a>
-                        )}
+                        <a
+                          href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${encodeURIComponent(ad.adAccountId)}&selected_ad_ids=${encodeURIComponent(ad.externalId)}`}
+                          target="_blank" rel="noreferrer" className="text-brand-light hover:underline"
+                        >
+                          🔗 Ads Manager
+                        </a>
                       </div>
                     )}
                   </td>

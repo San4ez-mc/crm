@@ -1,0 +1,1 @@
+ALTER TABLE "Ad" ADD COLUMN "adCreatedAt" TIMESTAMP(3);

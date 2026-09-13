@@ -441,6 +441,7 @@ model Ad {
   adAccountId  String? // id рекламного кабінету, з якого прийшли дані
   adAccountName String? // 2026-09-13: людяна назва кабінету (Meta account.name) — для фільтра на сторінці
   effectiveStatus String? // 2026-09-13: Meta effective_status (ACTIVE/PAUSED/...) — сторінка за замовчуванням показує лише ACTIVE
+  adCreatedAt DateTime? // 2026-09-13: Meta created_time (дата ЗАПУСКУ реклами) — на відміну від createdAt (коли рядок з'явився в CRM), сторінка сортує саме за цим
   thumbnailUrl String? // мініатюра креативу (Meta Graph creative.thumbnail_url) — заповнює той самий крон
   // 2026-09-13 (власник: власник плутається, який ІД показує CRM — Campaign/AdSet/Ad — бо
   // раніше зберігався лише campaignId): третій рівень ієрархії Meta, окремо від externalId (=Ad ID).
