@@ -20,13 +20,19 @@ export default function AdsPage() {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccounts, setSelectedAccounts] = useState(new Set());
   const [acctMenuOpen, setAcctMenuOpen] = useState(false);
+  // 2026-09-13 (власник: "на сторінці оголошень дійсно треба щоб попадали тільки активні
+  // реклами, а не всі 1000" — рік+ старих паузнутих кампаній засмічував список). Дефолт = лише
+  // активні (бекенд сам додає це, якщо status не "all"); перемикач — щоб глянути все за потреби.
+  const [showAll, setShowAll] = useState(false);
 
-  async function load(acctFilter) {
+  async function load(acctFilter, showAllFilter) {
     setError('');
     try {
       const acctIds = (acctFilter !== undefined ? acctFilter : selectedAccounts);
+      const all = (showAllFilter !== undefined ? showAllFilter : showAll);
       const params = { take: '3000' }; // 2026-09-13: дефолт 100 ховав більшість із 1500+ оголошень після повного синку
       if (acctIds.size > 0) params.adAccountId = [...acctIds].join(',');
+      if (all) params.status = 'all';
       const [a, p, acc] = await Promise.all([api.listAds(params), api.listProducts(), api.listAdAccounts()]);
       setItems(a.data); setProducts(p.data); setAccounts(acc.data);
     } catch (e) { setError(e.message); }
@@ -38,6 +44,12 @@ export default function AdsPage() {
     if (next.has(id)) next.delete(id); else next.add(id);
     setSelectedAccounts(next);
     load(next);
+  }
+
+  function toggleShowAll() {
+    const next = !showAll;
+    setShowAll(next);
+    load(undefined, next);
   }
 
   async function linkProduct(ad, productId) {
@@ -75,6 +87,10 @@ export default function AdsPage() {
       <p className="mb-4 text-xs text-slate-500">Прив'язка товару робиться один раз тут (оголошення не змінюється щодня). Показники витрат/окупності/прибутку — на сторінці «Рекламні витрати».</p>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input className="max-w-xs" placeholder="Пошук за назвою або ad_id" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400">
+          <input type="checkbox" checked={showAll} onChange={toggleShowAll} />
+          Показати й неактивні
+        </label>
         {accounts.length > 1 && (
           <div className="relative">
             <Button variant="secondary" className="!py-1.5 text-xs" onClick={() => setAcctMenuOpen((v) => !v)}>

@@ -112,19 +112,27 @@ router.get('/ads/accounts', asyncHandler(async (req, res) => {
 }));
 
 router.get('/ads', asyncHandler(async (req, res) => {
-  const { productId, externalId, adAccountId, take = '100', skip = '0' } = req.query;
+  const { productId, externalId, adAccountId, status, take = '100', skip = '0' } = req.query;
   const tenant = await ensureFreshUsdRate(req.tenant);
   const usdRate = Number(tenant.usdExchangeRate || 0);
-  // externalId — точковий пошук (2026-09-13, живий баг "дублі реклами"): виклик з воронки
-  // раніше перевіряв дублікат серед top-300 /ads client-side — стара реклама поза цим вікном
-  // штампувала дублі щоразу. Точковий запит по externalId не залежить від розміру таблиці.
+  // externalId — точковий пошук (2026-09-13, живий баг "дублі реклами" + "olgakovalenko_ok
+  // отримала не той товар" — Пріоритет 0 в n_lookup-crm-code.js): виклик з воронки перевіряв
+  // дублікат/шукав ручну прив'язку серед top-300 /ads client-side — стара реклама поза цим
+  // вікном ставала невидимою. Точковий запит по externalId не залежить від розміру таблиці.
   // adAccountId — кома-розділений список (мультивибір кабінету на сторінці "Оголошення").
   const acctIds = adAccountId ? String(adAccountId).split(',').map((s) => s.trim()).filter(Boolean) : [];
+  // status — за замовчуванням "лише активні" (власник: "на сторінці оголошень дійсно треба щоб
+  // попадали тільки активні реклами, а не всі 1000" — рік+ старих паузнутих кампаній засмічував
+  // сторінку). АЛЕ: точковий пошук по externalId (матчинг воронки, дедуп) НІКОЛИ не має
+  // фільтруватись за статусом — органічна реклама/пост лишається дійсною прив'язкою назавжди,
+  // незалежно від поточного статусу кампанії в Meta. `?status=all` — явний запит показати все.
+  const statusFilter = (!externalId && status !== 'all') ? { OR: [{ effectiveStatus: 'ACTIVE' }, { effectiveStatus: null }] } : {};
   const where = {
     tenantId: req.tenant.id,
     ...(productId ? { productId: String(productId) } : {}),
     ...(externalId ? { externalId: String(externalId) } : {}),
     ...(acctIds.length ? { adAccountId: { in: acctIds } } : {}),
+    ...statusFilter,
   };
   const ads = await db.ad.findMany({
     where,
@@ -161,7 +169,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
   // n_lookup-crm-code.js реєструє на льоту при першому кліку клієнта (ще до щоденної
   // синхронізації Meta Ads, яка знає лише про платні кампанії), раніше не мали фото
   // взагалі — thumbnailUrl тут просто не приймався, навіть якщо його прислали.
-  const { externalId, name, productId, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, thumbnailUrl } = req.body || {};
+  const { externalId, name, productId, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, effectiveStatus, thumbnailUrl } = req.body || {};
   // 2026-09-13 (власник, живий баг "реклама приходить по кілька разів"): цей роут раніше
   // БЕЗУМОВНО створював новий рядок навіть для ВЖЕ ІСНУЮЧОГО externalId — виклик з
   // n_lookup-crm-code.js перевіряв дублікат лише серед 300 найновіших /ads (client-side),
@@ -181,6 +189,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
         ...(adSetName ? { adSetName } : {}),
         ...(adAccountId ? { adAccountId } : {}),
         ...(adAccountName ? { adAccountName } : {}),
+        ...(effectiveStatus ? { effectiveStatus } : {}),
         ...(thumbnailUrl && !ad.thumbnailUrl ? { thumbnailUrl } : {}), // не затираємо вже наявне фото гіршим/порожнім
       },
     });
@@ -190,7 +199,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
     data: {
       tenantId: req.tenant.id, externalId: externalId || null, name: name || null, productId: productId || null,
       campaignId: campaignId || null, campaignName: campaignName || null, adSetId: adSetId || null, adSetName: adSetName || null,
-      adAccountId: adAccountId || null, adAccountName: adAccountName || null, thumbnailUrl: thumbnailUrl || null,
+      adAccountId: adAccountId || null, adAccountName: adAccountName || null, effectiveStatus: effectiveStatus || null, thumbnailUrl: thumbnailUrl || null,
     },
   });
   res.status(201).json({ ok: true, data: ad });
