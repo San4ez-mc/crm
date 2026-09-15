@@ -267,6 +267,12 @@ model ProductSetComponent {
   componentProductId String
   componentProduct  Product @relation("SetComponent", fields: [componentProductId], references: [id])
   qty               Int     @default(1)
+  // ДОПОВНЕННЯ 2026-09-15 (фідбек власника): колір цієї позиції МОЖЕ бути зафіксований САМЕ в
+  // межах цього конкретного комплекту (напр. джинси в наборі "Комплект 4 в 1" завжди сині,
+  // навіть якщо сам товар джинсів має 6 кольорів у каталозі) — тоді воронка ніколи не питає
+  // клієнта і не вгадує колір цієї позиції, бере готове значення. null/порожньо = як і раніше:
+  // одноколірні позиції підтягуються автоматично, багатоколірні — питаються в клієнта.
+  fixedColor        String?
 
   @@unique([parentProductId, componentProductId])
 }

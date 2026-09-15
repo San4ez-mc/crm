@@ -75,7 +75,9 @@ function serializeProduct(p) {
     // 2026-09-10 (фідбек власника): компоненти комплекту показували клієнту сиру назву товару
     // (як у постачальника), а не магазинну — на відміну від displayName вище, тут не було
     // фолбеку на customerName взагалі.
-    setComponents: p.setOf ? p.setOf.map((sc) => ({ productId: sc.componentProductId, name: sc.componentProduct.customerName || sc.componentProduct.name, sku: sc.componentProduct.sku, qty: sc.qty })) : undefined,
+    // 2026-09-15 (фідбек власника): fixedColor — колір цієї позиції, зафіксований САМЕ в межах
+    // цього комплекту (не в самому товарі) — воронка бере його як готовий, ніколи не питає клієнта.
+    setComponents: p.setOf ? p.setOf.map((sc) => ({ productId: sc.componentProductId, name: sc.componentProduct.customerName || sc.componentProduct.name, sku: sc.componentProduct.sku, qty: sc.qty, fixedColor: sc.fixedColor || null })) : undefined,
     setOf: undefined,
     _count: undefined,
   };
@@ -209,7 +211,7 @@ router.put('/products/:id/set-components', asyncHandler(async (req, res) => {
   await db.$transaction([
     db.productSetComponent.deleteMany({ where: { parentProductId: existing.id } }),
     ...(list.length ? [db.productSetComponent.createMany({
-      data: list.map((c) => ({ parentProductId: existing.id, componentProductId: c.componentProductId, qty: Number(c.qty) || 1 })),
+      data: list.map((c) => ({ parentProductId: existing.id, componentProductId: c.componentProductId, qty: Number(c.qty) || 1, fixedColor: c.fixedColor ? String(c.fixedColor).trim() : null })),
     })] : []),
   ]);
   res.json({ ok: true, data: { id: existing.id, components: list } });

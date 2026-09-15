@@ -74,6 +74,10 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
   });
   const [offers, setOffers] = useState(product?.offers || []);
   const [setComponents, setSetComponentsState] = useState((product?.setComponents || []).map((c) => c.productId));
+  // ДОПОВНЕННЯ 2026-09-15 (фідбек власника): "якого кольору джинси ми оформимо?" — колір позиції
+  // МОЖНА зафіксувати САМЕ в межах цього комплекту (не в самому товарі), тоді воронка більше не
+  // питає клієнта. Порожньо = як і раніше (одноколірні підтягуються самі, багатоколірні — питаються).
+  const [setComponentColors, setSetComponentColors] = useState(() => Object.fromEntries((product?.setComponents || []).map((c) => [c.productId, c.fixedColor || ''])));
   const [error, setError] = useState('');
   const [showNewSupplier, setShowNewSupplier] = useState(false);
   const [savedProductId, setSavedProductId] = useState(product?.id || null);
@@ -120,7 +124,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
       const saved = isEdit ? (await api.updateProduct(product.id, payload)).data : (await api.createProduct(payload)).data;
       setSavedProductId(saved.id);
       if (isEdit && (isSet || forceSet)) {
-        await api.setSetComponents(saved.id, setComponents.map((componentProductId) => ({ componentProductId, qty: 1 })));
+        await api.setSetComponents(saved.id, setComponents.map((componentProductId) => ({ componentProductId, qty: 1, fixedColor: setComponentColors[componentProductId] || null })));
       }
       onSaved();
       touchChangeLog();
@@ -206,7 +210,29 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
           {(form.isSet || forceSet) && (
             <Field label="Товари, що входять у комплект">
               {isEdit
-                ? <MultiProductSelect allProducts={allProducts} excludeId={product?.id} value={setComponents} onChange={setSetComponentsState} />
+                ? <>
+                    <MultiProductSelect allProducts={allProducts} excludeId={product?.id} value={setComponents} onChange={setSetComponentsState} />
+                    {setComponents.length > 0 && (
+                      <div className="mt-2 space-y-1.5 rounded-md border border-slate-700 p-2">
+                        <p className="text-xs text-slate-500">Колір позиції в ЦЬОМУ комплекті (не питати клієнта) — залиште «не фіксувати», якщо колір має обирати клієнт:</p>
+                        {setComponents.map((id) => {
+                          const p = allProducts.find((x) => x.id === id);
+                          const colorSet = new Set();
+                          for (const o of (p?.offers || [])) for (const prop of (o.properties || [])) { const n = String(prop.name || '').toLowerCase(); if ((n.includes('колір') || n.includes('цвет')) && prop.value) colorSet.add(String(prop.value).trim()); }
+                          const colors = [...colorSet];
+                          return (
+                            <div key={id} className="flex items-center gap-2">
+                              <span className="w-40 shrink-0 truncate text-xs text-slate-300">{p?.name || id}</span>
+                              <Select className="text-xs" value={setComponentColors[id] || ''} onChange={(e) => setSetComponentColors({ ...setComponentColors, [id]: e.target.value })}>
+                                <option value="">— не фіксувати (питати клієнта) —</option>
+                                {colors.map((c) => <option key={c} value={c}>{c}</option>)}
+                              </Select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
                 : <p className="text-xs text-slate-500">Спершу збережіть комплект, потім відкрийте його знову, щоб вибрати склад.</p>}
             </Field>
           )}
