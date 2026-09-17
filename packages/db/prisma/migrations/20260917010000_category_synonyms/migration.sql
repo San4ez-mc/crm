@@ -1,0 +1,1 @@
+ALTER TABLE "Category" ADD COLUMN "synonyms" JSONB NOT NULL DEFAULT '[]';

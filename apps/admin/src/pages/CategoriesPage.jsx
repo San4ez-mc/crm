@@ -69,12 +69,19 @@ export default function CategoriesPage() {
 function CategoryForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState({
     id: initial.id, name: initial.name || '', description: initial.description || '', aiInstructions: initial.aiInstructions || '',
-    requiredParams: initial.requiredParams || [],
+    requiredParams: initial.requiredParams || [], synonyms: initial.synonyms || [],
   });
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
       <Field label="Назва"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
       <Field label="Опис"><Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+      <Field label="Синоніми (слова клієнта, за якими воронка розпізнає цю категорію в тексті)">
+        <Input
+          placeholder="напр. лофери, кросівки, туфлі, черевики, кеди"
+          value={(form.synonyms || []).join(', ')}
+          onChange={(e) => setForm({ ...form, synonyms: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+        />
+      </Field>
       <Field label="Параметри, які треба запитати перед оформленням">
         <RequiredParamsEditor value={form.requiredParams} onChange={(v) => setForm({ ...form, requiredParams: v })} />
       </Field>
