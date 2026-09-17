@@ -174,7 +174,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
   // n_lookup-crm-code.js реєструє на льоту при першому кліку клієнта (ще до щоденної
   // синхронізації Meta Ads, яка знає лише про платні кампанії), раніше не мали фото
   // взагалі — thumbnailUrl тут просто не приймався, навіть якщо його прислали.
-  const { externalId, name, productId, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, effectiveStatus, adCreatedAt, thumbnailUrl } = req.body || {};
+  const { externalId, name, productId, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, effectiveStatus, adCreatedAt, thumbnailUrl, captionText, videoUrl, mediaType } = req.body || {};
   const _adCreatedAtDate = adCreatedAt ? new Date(adCreatedAt) : null;
   // 2026-09-13 (власник, живий баг "реклама приходить по кілька разів"): цей роут раніше
   // БЕЗУМОВНО створював новий рядок навіть для ВЖЕ ІСНУЮЧОГО externalId — виклик з
@@ -197,7 +197,16 @@ router.post('/ads', asyncHandler(async (req, res) => {
         ...(adAccountName ? { adAccountName } : {}),
         ...(effectiveStatus ? { effectiveStatus } : {}),
         ...(_adCreatedAtDate ? { adCreatedAt: _adCreatedAtDate } : {}),
-        ...(thumbnailUrl && !ad.thumbnailUrl ? { thumbnailUrl } : {}), // не затираємо вже наявне фото гіршим/порожнім
+        // 2026-09-17 (власник: "зламане фото" на вже засинхронених оголошеннях): thumbnail_url —
+        // ТИМЧАСОВЕ підписане посилання Meta, яке з часом протухає. Раніше "не затираємо вже
+        // наявне фото гіршим/порожнім" означало НІКОЛИ не оновлювати після першого запису — тому
+        // протухле посилання лишалось зламаним назавжди. Кожен синк дає СВІЖЕ, зараз-дійсне
+        // посилання — оновлюємо завжди (лише не затираємо на порожнє, якщо цього разу Meta його
+        // не повернула).
+        ...(thumbnailUrl ? { thumbnailUrl } : {}),
+        ...(captionText ? { captionText } : {}),
+        ...(videoUrl ? { videoUrl } : {}),
+        ...(mediaType ? { mediaType } : {}),
       },
     });
     return void res.status(200).json({ ok: true, data: ad, reused: true });
@@ -208,6 +217,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
       campaignId: campaignId || null, campaignName: campaignName || null, adSetId: adSetId || null, adSetName: adSetName || null,
       adAccountId: adAccountId || null, adAccountName: adAccountName || null, effectiveStatus: effectiveStatus || null,
       adCreatedAt: _adCreatedAtDate, thumbnailUrl: thumbnailUrl || null,
+      captionText: captionText || null, videoUrl: videoUrl || null, mediaType: mediaType || null,
     },
   });
   res.status(201).json({ ok: true, data: ad });

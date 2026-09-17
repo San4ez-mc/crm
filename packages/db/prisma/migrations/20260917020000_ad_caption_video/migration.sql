@@ -1,0 +1,3 @@
+ALTER TABLE "Ad" ADD COLUMN "captionText" TEXT;
+ALTER TABLE "Ad" ADD COLUMN "videoUrl" TEXT;
+ALTER TABLE "Ad" ADD COLUMN "mediaType" TEXT;

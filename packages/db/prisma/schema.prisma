@@ -455,6 +455,14 @@ model Ad {
   effectiveStatus String? // 2026-09-13: Meta effective_status (ACTIVE/PAUSED/...) — сторінка за замовчуванням показує лише ACTIVE
   adCreatedAt DateTime? // 2026-09-13: Meta created_time (дата ЗАПУСКУ реклами) — на відміну від createdAt (коли рядок з'явився в CRM), сторінка сортує саме за цим
   thumbnailUrl String? // мініатюра креативу (Meta Graph creative.thumbnail_url) — заповнює той самий крон
+  // 2026-09-17 (власник: "все ще нема всіх фото — а можеш хоча б повністю тексти отримати чи
+  // відео?"): thumbnail_url — це ТИМЧАСОВЕ підписане посилання Meta, яке з часом протухає (звідси
+  // "зламане фото" на вже засинхронених оголошеннях), а деякі оголошення взагалі без фото на
+  // момент синку. captionText/videoUrl — з creative.object_story_spec (реальний текст і, якщо
+  // це відеореклама, посилання на відео) — стабільніші джерела, ніж сам thumbnail.
+  captionText String? @db.Text // повний текст оголошення (object_story_spec.*.message/link_data.caption)
+  videoUrl    String? // посилання на відео креативу, якщо оголошення відео-формату
+  mediaType   String? // "image" | "video" | null — що показувати в адмінці
   // 2026-09-13 (власник: власник плутається, який ІД показує CRM — Campaign/AdSet/Ad — бо
   // раніше зберігався лише campaignId): третій рівень ієрархії Meta, окремо від externalId (=Ad ID).
   adSetId   String?
