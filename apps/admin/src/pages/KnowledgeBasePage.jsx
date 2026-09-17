@@ -14,7 +14,7 @@
 // ламати n_shop_profile-code.js без потреби) — просто більше нема чого туди писати.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Input, Textarea, Select, Button, IconButton, Field, Label, Badge, EmptyState, ErrorBanner } from '../components/common/Common';
+import { PageHeader, Card, Input, Textarea, Select, Button, IconButton, Field, Label, Badge, EmptyState, ErrorBanner, Thumb } from '../components/common/Common';
 
 const KIND_LABEL = { faq: 'FAQ', policy: 'Політика', objection: 'Заперечення', script: 'Скрипт' };
 const KIND_COLOR = { faq: 'teal', policy: 'slate', objection: 'amber', script: 'green' };
@@ -412,8 +412,13 @@ function EntryRow({ entry, categories, suppliers, products, allowedScopes, lockP
     );
   }
 
+  // 2026-09-17 (власник: "виводь також фото товару, такого ж розміру як в списку товарів") —
+  // Thumb — той САМИЙ спільний компонент (h-28 w-28), що й на сторінках "Товари"/"Комплекти",
+  // тож розмір і вигляд мініатюри однакові скрізь. Показуємо лише для записів рівня "товар".
   return (
-    <div onClick={() => setEditing(true)} className="cursor-pointer border-b border-slate-800/60 px-4 py-3 last:border-0 hover:bg-slate-800/40">
+    <div onClick={() => setEditing(true)} className="flex cursor-pointer gap-4 border-b border-slate-800/60 px-4 py-3 last:border-0 hover:bg-slate-800/40">
+      {entry.scope === 'product' && <Thumb url={entry.product?.thumbnailUrl} />}
+      <div className="min-w-0 flex-1">
       <div className="text-sm font-medium text-slate-100">{entry.question || '—'}</div>
       <div className="mt-1 text-sm text-slate-400">{entry.answer}</div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -448,6 +453,7 @@ function EntryRow({ entry, categories, suppliers, products, allowedScopes, lockP
           )}
           <IconButton type="button" onClick={onDelete} title="Видалити">🗑️</IconButton>
         </div>
+      </div>
       </div>
     </div>
   );

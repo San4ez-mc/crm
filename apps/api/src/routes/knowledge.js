@@ -62,7 +62,7 @@ router.get('/knowledge', asyncHandler(async (req, res) => {
       include: {
         category: { select: { id: true, name: true } },
         supplier: { select: { id: true, name: true } },
-        product: { select: { id: true, name: true } },
+        product: { select: { id: true, name: true, thumbnailUrl: true } },
       },
       orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
       take: Number(take),
