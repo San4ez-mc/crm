@@ -292,57 +292,52 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
             📋 «Копіювати на інші» — та сама відповідь ще на кількох товарах/категоріях (окремі незалежні копії).
             ⬆️ «На категорію / На весь магазин» — перенести відповідь на вищий рівень, щоб не дублювати її на кожен товар.
           </div>
-          <table className="w-full text-sm">
-            <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Тип</th><th className="px-4 py-3">Питання</th><th className="px-4 py-3">Відповідь</th>
-                <th className="px-4 py-3">Теги</th>
-                {!lockProductId && <th className="px-4 py-3">Рівень</th>}
-                <th className="px-4 py-3">Активний</th><th className="px-4 py-3 w-0">Дії</th>
-              </tr>
-            </thead>
-            <tbody>
-              {normal.map((e) => (
-                <tr key={e.id} onClick={() => setEditing(e)} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/40">
-                  <td className="px-4 py-3"><Badge color={KIND_COLOR[e.kind]}>{KIND_LABEL[e.kind]}</Badge></td>
-                  <td className="px-4 py-3 max-w-xs truncate" title={e.question}>{e.question || '—'}</td>
-                  <td className="px-4 py-3 max-w-xs truncate text-slate-400" title={e.answer}>{e.answer}</td>
-                  <td className="px-4 py-3 text-slate-400">{e.tags?.join(', ') || '—'}</td>
+          {/* 2026-09-17 (власник): картка замість щільної таблиці — питання й відповідь раніше
+              обрізались (max-w-xs truncate), тому схожі/дубльовані записи важко було відрізнити.
+              Рядок 1 — питання на всю ширину, рядок 2 — відповідь на всю ширину, рядок 3 — решта
+              (тип/рівень/теги/активність/дії). Той самий компонент — у «Загальних», «Категоріях» і
+              «Товарах» однаково, бо це один спільний EntriesSection. */}
+          <div>
+            {normal.map((e) => (
+              <div key={e.id} onClick={() => setEditing(e)} className="cursor-pointer border-b border-slate-800/60 px-4 py-3 last:border-0 hover:bg-slate-800/40">
+                <div className="text-sm font-medium text-slate-100">{e.question || '—'}</div>
+                <div className="mt-1 text-sm text-slate-400">{e.answer}</div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge color={KIND_COLOR[e.kind]}>{KIND_LABEL[e.kind]}</Badge>
                   {!lockProductId && (
-                    <td className="px-4 py-3 text-slate-400">
+                    <span className="text-xs text-slate-500">
                       {e.scope === 'shop' ? 'Магазин' : e.scope === 'category' ? (e.category?.name || 'Категорія') : e.scope === 'supplier' ? (e.supplier?.name || 'Постачальник') : (e.product?.name || 'Товар')}
-                    </td>
+                    </span>
                   )}
-                  <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
-                    <button type="button" onClick={() => toggleActive(e)}><Badge color={e.isActive ? 'green' : 'slate'}>{e.isActive ? 'Так' : 'Ні'}</Badge></button>
-                  </td>
-                  <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
-                    <div className="flex justify-end gap-1 whitespace-nowrap">
+                  {e.tags?.length > 0 && <span className="text-xs text-slate-500">🏷 {e.tags.join(', ')}</span>}
+                  <button type="button" onClick={(ev) => { ev.stopPropagation(); toggleActive(e); }}>
+                    <Badge color={e.isActive ? 'green' : 'slate'}>{e.isActive ? 'Активний' : 'Вимкнений'}</Badge>
+                  </button>
+                  <div className="ml-auto flex flex-wrap justify-end gap-1 whitespace-nowrap" onClick={(ev) => ev.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => setCopying(e)}
+                      title="Використати цю ж відповідь ще на кількох товарах/категоріях/постачальниках (незалежні копії)"
+                      className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                    >
+                      📋 Копіювати на інші
+                    </button>
+                    {e.scope !== 'shop' && (
                       <button
                         type="button"
-                        onClick={() => setCopying(e)}
-                        title="Використати цю ж відповідь ще на кількох товарах/категоріях/постачальниках (незалежні копії)"
+                        onClick={() => promote(e)}
+                        title="Перенести цю відповідь на вищий рівень (одна відповідь замість окремої на кожен товар)"
                         className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
                       >
-                        📋 Копіювати на інші
+                        ⬆️ {e.scope === 'product' ? 'На категорію' : 'На весь магазин'}
                       </button>
-                      {e.scope !== 'shop' && (
-                        <button
-                          type="button"
-                          onClick={() => promote(e)}
-                          title="Перенести цю відповідь на вищий рівень (одна відповідь замість окремої на кожен товар)"
-                          className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
-                        >
-                          ⬆️ {e.scope === 'product' ? 'На категорію' : 'На весь магазин'}
-                        </button>
-                      )}
-                      <IconButton type="button" onClick={() => remove(e)} title="Видалити">🗑️</IconButton>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    )}
+                    <IconButton type="button" onClick={() => remove(e)} title="Видалити">🗑️</IconButton>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
