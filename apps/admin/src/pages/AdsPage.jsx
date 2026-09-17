@@ -149,6 +149,18 @@ export default function AdsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div>{ad.name || ad.externalId || ad.id.slice(0, 8)}</div>
+                    {/* 2026-09-17 (власник: "все ще нема всіх фото — можеш хоча б повністю тексти
+                        отримати чи відео?"): thumbnail_url — тимчасове посилання Meta, яке протухає
+                        або взагалі відсутнє для частини оголошень. captionText/videoUrl — стабільніші
+                        (текст оголошення й пряме посилання на відео), показуємо як запасний варіант. */}
+                    {ad.captionText && (
+                      <div className="mt-1 max-w-md whitespace-pre-wrap text-xs text-slate-400" title={ad.captionText}>{ad.captionText}</div>
+                    )}
+                    {ad.videoUrl && (
+                      <div className="mt-0.5 text-xs">
+                        <a href={ad.videoUrl} target="_blank" rel="noreferrer" className="text-brand-light hover:underline">🎬 Відео</a>
+                      </div>
+                    )}
                     {/* 2026-09-13 (власник: ID на сторінці не співпадали з тими, що видно в Meta Ads
                         Manager — незрозуміло, який саме рівень показуємо). Meta має 3 РІЗНІ ID:
                         Campaign / Ad Set / Ad — показуємо всі три явно підписаними, моно-шрифтом,
