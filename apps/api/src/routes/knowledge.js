@@ -183,25 +183,55 @@ router.post('/knowledge/:id/promote', asyncHandler(async (req, res) => {
   res.json({ ok: true, data: entry });
 }));
 
-// ── Пошук (Postgres to_tsvector('simple'), без вектора — досить на кілька десятків записів) ──
-router.get('/knowledge/search', asyncHandler(async (req, res) => {
-  const { q, scope, limit = '3' } = req.query;
-  if (!q || !String(q).trim()) return res.json({ ok: true, data: [] });
-
-  // scope: "shop" | "category:<id>" | "supplier:<id>" | "product:<id>" — при product:
-  // підвантажуємо ще categoryId і supplierId товару, щоб знайти й policy/faq-записи,
-  // прив'язані до всієї категорії або постачальника цього товару.
-  let categoryId = null;
-  let supplierId = null;
-  let productId = null;
+// scope: "shop" | "category:<id>" | "supplier:<id>" | "product:<id>" — при product:
+// підвантажуємо ще categoryId і supplierId товару, щоб знайти й policy/faq-записи,
+// прив'язані до всієї категорії або постачальника цього товару.
+async function resolveScopeIds(tenantId, scope) {
+  let categoryId = null; let supplierId = null; let productId = null;
   if (scope && String(scope).startsWith('category:')) categoryId = String(scope).split(':')[1];
   if (scope && String(scope).startsWith('supplier:')) supplierId = String(scope).split(':')[1];
   if (scope && String(scope).startsWith('product:')) {
     productId = String(scope).split(':')[1];
-    const product = await db.product.findFirst({ where: { id: productId, tenantId: req.tenant.id }, select: { categoryId: true, supplierId: true } });
+    const product = await db.product.findFirst({ where: { id: productId, tenantId }, select: { categoryId: true, supplierId: true } });
     categoryId = product?.categoryId || null;
     supplierId = product?.supplierId || null;
   }
+  return { categoryId, supplierId, productId };
+}
+
+// ── Контекст (усі активні записи в скоупі, БЕЗ пошуку за словом) ──────────
+// 2026-09-17 (власник, живий кейс "фолбек для питань не по скрипту" — /knowledge/search нижче
+// шукає через to_tsvector('simple'), який НЕ має української морфології: "кишені" в питанні
+// клієнта і "кишеня" в записі KB — це для 'simple' ДВА РІЗНІ токени, збігу нема навіть коли
+// відповідь у базі точно є). При розмірі бази в кілька десятків записів на магазин найнадійніше —
+// не шукати взагалі, а віддати ВСІ активні записи скоупу (магазин+категорія+товар) прямо в
+// compose(), і нехай LLM сама вирішує релевантність — це вже смислове читання, не токен-збіг.
+router.get('/knowledge/context', asyncHandler(async (req, res) => {
+  const { scope } = req.query;
+  const { categoryId, supplierId, productId } = await resolveScopeIds(req.tenant.id, scope);
+  const items = await db.knowledgeEntry.findMany({
+    where: {
+      tenantId: req.tenant.id,
+      isActive: true,
+      OR: [
+        { scope: 'shop' },
+        ...(categoryId ? [{ scope: 'category', categoryId }] : []),
+        ...(supplierId ? [{ scope: 'supplier', supplierId }] : []),
+        ...(productId ? [{ scope: 'product', productId }] : []),
+      ],
+    },
+    select: { id: true, kind: true, question: true, answer: true, tags: true, scope: true, priority: true },
+    orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
+    take: 60,
+  });
+  res.json({ ok: true, data: items });
+}));
+
+// ── Пошук (Postgres to_tsvector('simple'), без вектора — досить на кілька десятків записів) ──
+router.get('/knowledge/search', asyncHandler(async (req, res) => {
+  const { q, scope, limit = '3' } = req.query;
+  if (!q || !String(q).trim()) return res.json({ ok: true, data: [] });
+  const { categoryId, supplierId, productId } = await resolveScopeIds(req.tenant.id, scope);
 
   const rows = await db.$queryRaw`
     SELECT id, kind, question, answer, tags, scope, "categoryId", "supplierId", "productId", priority,
