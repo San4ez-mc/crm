@@ -243,7 +243,7 @@ async function callTool(name, args = {}) {
       return db.ad.create({ data: { tenantId: args.tenantId, externalId: args.externalId || null, name: args.name || null, productId: args.productId || null } });
     case 'update_ad': {
       const data = {};
-      if (args.productId !== undefined) data.productId = args.productId || null;
+      if (args.productId !== undefined) { data.productId = args.productId || null; data.productLinkSource = args.productId ? 'manual' : null; data.productLinkNote = null; }
       if (args.name !== undefined) data.name = args.name;
       return db.ad.update({ where: { id: args.adId }, data });
     }

@@ -80,6 +80,7 @@ export default function AdsPage() {
       {syncResult && (
         <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${syncResult.status === 'ok' ? 'border-emerald-800 bg-emerald-900/20 text-emerald-300' : syncResult.status === 'pending' ? 'border-amber-800 bg-amber-900/20 text-amber-300' : 'border-red-800 bg-red-900/20 text-red-300'}`}>
           {syncResult.status === 'ok' && `Готово: ${syncResult.date}, оголошень ${syncResult.adsCount}, записано ${syncResult.written}`}
+          {syncResult.status === 'ok' && syncResult.autoBind === 'started' && ' · автоприв\'язка товарів запущена — оновіть сторінку за 1–2 хв'}
           {syncResult.status === 'pending' && 'Meta ще формує звіт (async) — спробуйте ще раз за хвилину.'}
           {syncResult.status === 'error' && `Помилка Meta Ads API: ${syncResult.error}`}
         </div>
@@ -194,6 +195,13 @@ export default function AdsPage() {
                       <option value="">— прив'язати до товару —</option>
                       {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </Select>
+                    {ad.productId && /^auto_/.test(ad.productLinkSource || '') && (
+                      <div className="mt-1 max-w-xs text-xs text-amber-300" title={ad.productLinkNote || ''}>
+                        🤖 Прив'язано автоматично ({ad.productLinkSource === 'auto_article' ? 'за артикулом' : 'за фото'}) — перевірте{' '}
+                        <button className="ml-1 rounded bg-emerald-900/40 px-1.5 py-0.5 text-emerald-300 hover:bg-emerald-800/60" onClick={() => linkProduct(ad, ad.productId)}>✓ Вірно</button>
+                        {ad.productLinkNote && <div className="text-slate-500">{ad.productLinkNote}</div>}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

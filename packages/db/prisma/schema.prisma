@@ -467,6 +467,9 @@ model Ad {
   // раніше зберігався лише campaignId): третій рівень ієрархії Meta, окремо від externalId (=Ad ID).
   adSetId   String?
   adSetName String?
+  // 2026-09-29: хто привʼязав товар — 'manual' (адмін) | 'auto_article' | 'auto_vision' (автоприв'язка Flows при отриманні реклами).
+  productLinkSource String?
+  productLinkNote   String?
   createdAt  DateTime @default(now())
 
   spendDaily      AdSpendDaily[]

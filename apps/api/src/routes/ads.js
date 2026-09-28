@@ -174,7 +174,9 @@ router.post('/ads', asyncHandler(async (req, res) => {
   // n_lookup-crm-code.js реєструє на льоту при першому кліку клієнта (ще до щоденної
   // синхронізації Meta Ads, яка знає лише про платні кампанії), раніше не мали фото
   // взагалі — thumbnailUrl тут просто не приймався, навіть якщо його прислали.
-  const { externalId, name, productId, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, effectiveStatus, adCreatedAt, thumbnailUrl, captionText, videoUrl, mediaType } = req.body || {};
+  const { externalId, name, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, effectiveStatus, adCreatedAt, thumbnailUrl, captionText, videoUrl, mediaType, productLinkSource, productLinkNote } = req.body || {};
+  let { productId } = req.body || {};
+  const _isAuto = /^auto_/.test(String(productLinkSource || ''));
   const _adCreatedAtDate = adCreatedAt ? new Date(adCreatedAt) : null;
   // 2026-09-13 (власник, живий баг "реклама приходить по кілька разів"): цей роут раніше
   // БЕЗУМОВНО створював новий рядок навіть для ВЖЕ ІСНУЮЧОГО externalId — виклик з
@@ -183,12 +185,16 @@ router.post('/ads', asyncHandler(async (req, res) => {
   // коли на неї писав НОВИЙ клієнт. Тепер — findFirst-or-update тут САМЕ (defense in depth,
   // незалежно від того, чи виправлено виклик на стороні воронки).
   let ad = externalId ? await db.ad.findFirst({ where: { tenantId: req.tenant.id, externalId: String(externalId) } }) : null;
+  // Автоприв'язка ніколи не перезаписує вже прив'язаний товар (ручний вибір адміна головніший).
+  if (_isAuto && ad && ad.productId) productId = undefined;
+  const _linkMeta = (productId && _isAuto) ? { productLinkSource, productLinkNote: productLinkNote ? String(productLinkNote).slice(0, 300) : null } : {};
   if (ad) {
     ad = await db.ad.update({
       where: { id: ad.id },
       data: {
         ...(name ? { name } : {}),
         ...(productId !== undefined ? { productId: productId || null } : {}),
+        ..._linkMeta,
         ...(campaignId ? { campaignId } : {}),
         ...(campaignName ? { campaignName } : {}),
         ...(adSetId ? { adSetId } : {}),
@@ -213,7 +219,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
   }
   ad = await db.ad.create({
     data: {
-      tenantId: req.tenant.id, externalId: externalId || null, name: name || null, productId: productId || null,
+      tenantId: req.tenant.id, externalId: externalId || null, name: name || null, productId: productId || null, ..._linkMeta,
       campaignId: campaignId || null, campaignName: campaignName || null, adSetId: adSetId || null, adSetName: adSetName || null,
       adAccountId: adAccountId || null, adAccountName: adAccountName || null, effectiveStatus: effectiveStatus || null,
       adCreatedAt: _adCreatedAtDate, thumbnailUrl: thumbnailUrl || null,
@@ -230,7 +236,7 @@ router.patch('/ads/:id', asyncHandler(async (req, res) => {
   const { productId, name } = req.body || {};
   const ad = await db.ad.update({
     where: { id: existing.id },
-    data: { ...(productId !== undefined ? { productId: productId || null } : {}), ...(name !== undefined ? { name } : {}) },
+    data: { ...(productId !== undefined ? { productId: productId || null, productLinkSource: productId ? 'manual' : null, productLinkNote: null } : {}), ...(name !== undefined ? { name } : {}) },
     include: { product: { select: { id: true, name: true } } },
   });
   res.json({ ok: true, data: ad });
@@ -360,7 +366,17 @@ router.post('/ad-spend/sync-now', asyncHandler(async (req, res) => {
   if (!resp.ok || !json?.ok) throw new ValidationError('Flows не відповів успіхом: ' + (json?.error?.message || json?.error || resp.status));
 
   const snap = json.data?.contextSnapshot || {};
-  res.json({ ok: true, data: { status: snap.metaSyncStatus || 'unknown', date: snap.metaSyncDate || null, adsCount: snap.metaSyncAdsCount ?? null, written: snap.metaSyncWritten ?? null, error: snap.metaSyncError || null } });
+  // 2026-09-29: одразу після синхронізації — автоприв'язка неприв'язаних оголошень до товарів у Flows (фоново).
+  let autoBind = null;
+  try {
+    const ab = await fetch(`${process.env.FLOWS_API_URL}/api/funnels/ads-autobind`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Api-Secret': process.env.FLOWS_API_SECRET },
+      body: JSON.stringify({ crmApiKey: req.tenant.apiKey }),
+    });
+    const abj = await ab.json().catch(() => null);
+    autoBind = abj?.ok ? 'started' : 'error';
+  } catch (e) { autoBind = 'error'; }
+  res.json({ ok: true, data: { status: snap.metaSyncStatus || 'unknown', date: snap.metaSyncDate || null, adsCount: snap.metaSyncAdsCount ?? null, written: snap.metaSyncWritten ?? null, error: snap.metaSyncError || null, autoBind } });
 }));
 
 async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {}) {
