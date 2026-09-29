@@ -302,13 +302,27 @@ router.post('/knowledge/:id/hit', asyncHandler(async (req, res) => {
   res.json({ ok: true, data: r });
 }));
 
-// Схожість питань за основами слів (≥5 літер → перші 5): «Чи линяє замша?» ≈ «Замша сильно линяє?».
-function stemsOf(t) { return new Set(String(t || '').toLowerCase().split(/[^a-zа-яіїєґ0-9]+/i).filter((w) => w.length >= 5).map((w) => w.slice(0, 5))); }
+// Схожість питань — ТОЙ САМИЙ критерій, що в боті (Flows: shopAgent/kbRules.js kbSimilarity), 2026-09-29.
+// Основи значущих слів (перші 5 літер слова ≥4 літер, без службових, із синонімами магазинних тем);
+// схожі, якщо Жаккар ≥0.5, або ≥2 спільні основи покривають ≥75% коротшого питання при Жаккарі ≥0.34.
+// Різні артикули в питаннях — завжди різні питання.
+const KB_STOP = new Set(['яка', 'який', 'яке', 'які', 'якої', 'якого', 'чи', 'можна', 'буде', 'будуть', 'мені', 'вас', 'ваш', 'ваша', 'ваше', 'ваші', 'цей', 'ця', 'це', 'цього', 'цієї', 'такий', 'така', 'таке', 'дуже', 'також', 'ще', 'ось', 'будь', 'ласка', 'підкажіть', 'скажіть', 'хочу', 'треба', 'потрібно', 'клієнт', 'клієнта', 'питає', 'цікавить', 'товар', 'товару', 'модель', 'моделі', 'магазин', 'магазину', 'чоловічий', 'чоловіча', 'чоловічі', 'артикул', 'скільки', 'нова', 'новою', 'нової', 'є', 'а', 'і', 'та', 'в', 'у', 'на', 'з', 'до', 'для', 'по', 'не', 'як', 'що']);
+const KB_SYN = { 'кошту': 'ціна', 'варті': 'ціна', 'ціни': 'ціна', 'ціну': 'ціна', 'прайс': 'ціна', 'оглян': 'примі', 'помір': 'примі', 'перес': 'доста', 'сидит': 'сидіт', 'сідає': 'сидіт', 'линят': 'линяє' };
+function stemsOf(t) {
+  return new Set(String(t || '').toLowerCase().replace(/[’'`ʼ]/g, '').split(/[^a-zа-яіїєґ0-9]+/i)
+    .filter((w) => w.length >= 4 && !KB_STOP.has(w) && !/^\d+$/.test(w)).map((w) => KB_SYN[w.slice(0, 5)] || w.slice(0, 5)));
+}
+function articlesOf(t) { return new Set((String(t || '').match(/\b[a-z]{0,4}\d{3,8}\b/gi) || []).map((x) => x.toUpperCase())); }
 function similarQuestion(a, b) {
+  const aa = articlesOf(a), ab = articlesOf(b);
+  if (aa.size && ab.size && ![...aa].some((x) => ab.has(x))) return false;
   const A = stemsOf(a); const B = stemsOf(b);
-  if (A.size < 2 || B.size < 2) return false;
+  if (!A.size || !B.size) return false;
   let inter = 0; for (const w of A) if (B.has(w)) inter += 1;
-  return inter / (A.size + B.size - inter) >= 0.6;
+  if (!inter) return false;
+  const jac = inter / (A.size + B.size - inter);
+  const cover = inter / Math.min(A.size, B.size);
+  return jac >= 0.5 || (inter >= 2 && cover >= 0.75 && jac >= 0.34);
 }
 
 // ── Разовий імпорт з CSV/markdown "питання;відповідь;теги" ───────────────
