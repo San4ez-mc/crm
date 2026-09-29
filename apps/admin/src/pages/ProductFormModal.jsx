@@ -121,6 +121,8 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
       if (!form.name.trim() || !form.sku.trim() || !form.price) throw new Error('Назва, артикул і ціна обовʼязкові');
       const { bulkPricing, isSet, ...rest } = form;
       const payload = { ...rest, bulkPricing, isSet, price: Number(form.price), categoryId: form.categoryId || null, supplierId: form.supplierId || null };
+      // 2026-09-29 (власник): у комплекту немає власних розмірів/сітки/ціни за кількість/постачальника/допродажів — усе це береться з товарів-складових.
+      if (isSet || forceSet) Object.assign(payload, { sizes: [], sizeChartImage: null, bulkPricing: [], supplierId: null, supplierArticle: '', companionProductIds: [] });
       const saved = isEdit ? (await api.updateProduct(product.id, payload)).data : (await api.createProduct(payload)).data;
       setSavedProductId(saved.id);
       if (isEdit && (isSet || forceSet)) {
@@ -174,6 +176,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
             <Field label="Артикул (sku)"><Input required value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></Field>
             <Field label="Ціна"><Input required type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></Field>
           </div>
+          {!(form.isSet || forceSet) && (<>
           <Field label="Ціна за кількість (та сама для всіх кольорів)">
             <BulkPricingEditor value={form.bulkPricing} onChange={(v) => setForm({ ...form, bulkPricing: v })} />
           </Field>
@@ -193,6 +196,10 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
               />
             )}
           </Field>
+          </>)}
+          {(form.isSet || forceSet) && (
+            <p className="mb-3 rounded-lg border border-slate-700 bg-slate-800/40 p-2 text-xs text-slate-400">Розміри, розмірна сітка, кольори, ціна постачальника, постачальник і допродажі комплекту беруться з товарів, що в нього входять, — тут їх не заповнюють.</p>
+          )}
           {!forceSet && (
             <Field label="Категорія">
               <Select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })}>
@@ -248,6 +255,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
           <Field label="Токени для матчингу за рекламою/артикулом">
             <TagsInput value={form.adMatchTokens} onChange={(v) => setForm({ ...form, adMatchTokens: v })} placeholder="Ввести й Enter" />
           </Field>
+          {!(form.isSet || forceSet) && (<>
           <Field label="Допродажі (companion products)">
             <MultiProductSelect allProducts={allProducts} excludeId={product?.id} value={form.companionProductIds} onChange={(v) => setForm({ ...form, companionProductIds: v })} />
           </Field>
@@ -261,12 +269,14 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
             </div>
           </Field>
           <Field label="Артикул у постачальника"><Input value={form.supplierArticle} onChange={(e) => setForm({ ...form, supplierArticle: e.target.value })} /></Field>
+          </>)}
         </div>
 
         <div>
           <Field label="Загальні фото товару (не привʼязані до кольору)">
             <MultiImageDrop value={form.images} onChange={(urls) => setForm({ ...form, images: urls })} />
           </Field>
+          {!(form.isSet || forceSet) && (<>
           <Field label="Розмірна сітка">
             <SingleFileDrop value={form.sizeChartImage} onChange={(url) => setForm({ ...form, sizeChartImage: url })} />
           </Field>
@@ -323,6 +333,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
               ))}
             </div>
           </div>
+          </>)}
         </div>
 
         <div className="col-span-full mt-4 border-t border-slate-800 pt-4">
