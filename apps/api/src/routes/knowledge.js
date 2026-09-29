@@ -258,9 +258,21 @@ router.get('/knowledge/search', asyncHandler(async (req, res) => {
 
 // ── askManager → чернетка запису (звідси росте база) ─────────────────────
 router.post('/knowledge/from-dialog', asyncHandler(async (req, res) => {
-  const { question, sessionId, productId } = req.body || {};
+  const { question, sessionId, productId, matchId } = req.body || {};
+  // scope визначає бот (ШІ: «стосується всього магазину / категорії / конкретного товару»). Без нього — як раніше: є товар → product.
+  // 2026-09-29 (власник: «система погано визначає, де питання стосується всіх товарів»): «Чи є знижка ЗСУ?», поставлене під кофтою,
+  // записувалось як питання ПРО КОФТУ, і те саме питання під іншим товаром ставало новим записом без відповіді.
+  const reqScope = ['shop', 'category', 'product'].includes(String(req.body && req.body.scope)) ? String(req.body.scope) : null;
   if (!question || !String(question).trim()) throw new ValidationError('question обовʼязковий');
   const normalized = String(question).trim().toLowerCase().replace(/\s+/g, ' ');
+  // Бот уже знайшов (ШІ) те саме питання в базі — лише лічильник, без нового запису.
+  if (matchId) {
+    const m = await db.knowledgeEntry.findFirst({ where: { id: String(matchId), tenantId: req.tenant.id }, select: { id: true } });
+    if (m) {
+      const bumped = await db.knowledgeEntry.update({ where: { id: m.id }, data: { askCount: { increment: 1 }, lastAskedAt: new Date() } });
+      return res.json({ ok: true, data: bumped, deduped: true, via: 'matchId' });
+    }
+  }
 
   // 2026-09-29 (власник: «лічильник, скільки разів кожне питання задавалось людьми»): те саме питання — зокрема
   // іншими словами — не плодить дубль, а збільшує askCount існуючого запису (будь-якої давності, будь-якого джерела).
@@ -269,21 +281,28 @@ router.post('/knowledge/from-dialog', asyncHandler(async (req, res) => {
     select: { id: true, question: true, productId: true },
   });
   const dup = all.find((r) => String(r.question || '').split('|').some((v) => v.trim().toLowerCase().replace(/\s+/g, ' ') === normalized))
-    || all.find((r) => (r.productId || null) === (productId || null) && similarQuestion(r.question, question))
+    // Загальне питання (scope shop) шукаємо серед УСІХ записів, товарне — серед записів того ж товару й загальних.
+    || all.find((r) => (reqScope === 'shop' || !r.productId || (r.productId || null) === (productId || null)) && similarQuestion(r.question, question))
     || null;
   if (dup) {
     const bumped = await db.knowledgeEntry.update({ where: { id: dup.id }, data: { askCount: { increment: 1 }, lastAskedAt: new Date() } });
     return res.json({ ok: true, data: bumped, deduped: true });
   }
 
+  let productCat = null;
+  if (reqScope === 'category' && productId) {
+    const pr = await db.product.findFirst({ where: { id: String(productId), tenantId: req.tenant.id }, select: { categoryId: true } });
+    productCat = (pr && pr.categoryId) || null;
+  }
   const entry = await db.knowledgeEntry.create({
     data: {
       tenantId: req.tenant.id,
       kind: 'faq',
       question: String(question).trim(),
       answer: '',
-      scope: productId ? 'product' : 'shop',
-      productId: productId || null,
+      scope: (reqScope === 'shop' || !productId) ? 'shop' : (reqScope === 'category' && productCat ? 'category' : 'product'),
+      productId: (reqScope === 'shop' || reqScope === 'category') ? null : (productId || null),
+      categoryId: reqScope === 'category' && productCat ? productCat : null,
       isActive: false,
       source: 'from_dialog',
       sessionId: sessionId || null,
@@ -306,8 +325,8 @@ router.post('/knowledge/:id/hit', asyncHandler(async (req, res) => {
 // Основи значущих слів (перші 5 літер слова ≥4 літер, без службових, із синонімами магазинних тем);
 // схожі, якщо Жаккар ≥0.5, або ≥2 спільні основи покривають ≥75% коротшого питання при Жаккарі ≥0.34.
 // Різні артикули в питаннях — завжди різні питання.
-const KB_STOP = new Set(['яка', 'який', 'яке', 'які', 'якої', 'якого', 'чи', 'можна', 'буде', 'будуть', 'мені', 'вас', 'ваш', 'ваша', 'ваше', 'ваші', 'цей', 'ця', 'це', 'цього', 'цієї', 'такий', 'така', 'таке', 'дуже', 'також', 'ще', 'ось', 'будь', 'ласка', 'підкажіть', 'скажіть', 'хочу', 'треба', 'потрібно', 'клієнт', 'клієнта', 'питає', 'цікавить', 'товар', 'товару', 'модель', 'моделі', 'магазин', 'магазину', 'чоловічий', 'чоловіча', 'чоловічі', 'артикул', 'скільки', 'нова', 'новою', 'нової', 'є', 'а', 'і', 'та', 'в', 'у', 'на', 'з', 'до', 'для', 'по', 'не', 'як', 'що']);
-const KB_SYN = { 'кошту': 'ціна', 'варті': 'ціна', 'ціни': 'ціна', 'ціну': 'ціна', 'прайс': 'ціна', 'оглян': 'примі', 'помір': 'примі', 'перес': 'доста', 'сидит': 'сидіт', 'сідає': 'сидіт', 'линят': 'линяє' };
+const KB_STOP = new Set(['яка', 'який', 'яке', 'які', 'якої', 'якого', 'чи', 'можна', 'буде', 'будуть', 'мені', 'вас', 'ваш', 'ваша', 'ваше', 'ваші', 'цей', 'ця', 'це', 'цього', 'цієї', 'такий', 'така', 'таке', 'дуже', 'також', 'ще', 'ось', 'будь', 'ласка', 'підкажіть', 'скажіть', 'хочу', 'треба', 'потрібно', 'клієнт', 'клієнта', 'питає', 'цікавить', 'товар', 'товару', 'модель', 'моделі', 'магазин', 'магазину', 'чоловічий', 'чоловіча', 'чоловічі', 'артикул', 'скільки', 'нова', 'новою', 'нової', 'показаних', 'показаної', 'показаний', 'всю', 'всій', 'усю', 'є', 'а', 'і', 'та', 'в', 'у', 'на', 'з', 'до', 'для', 'по', 'не', 'як', 'що']);
+const KB_SYN = { 'кошту': 'ціна', 'варті': 'ціна', 'ціни': 'ціна', 'ціну': 'ціна', 'прайс': 'ціна', 'оглян': 'примі', 'помір': 'примі', 'перес': 'доста', 'сидит': 'сидіт', 'сідає': 'сидіт', 'замок': 'блиск', 'змійк': 'блиск', 'застi': 'блиск', 'засті': 'блиск', 'бегун': 'блиск', 'капюш': 'капюш', 'каптур': 'капюш', 'линят': 'линяє' };
 function stemsOf(t) {
   return new Set(String(t || '').toLowerCase().replace(/[’'`ʼ]/g, '').split(/[^a-zа-яіїєґ0-9]+/i)
     .filter((w) => w.length >= 4 && !KB_STOP.has(w) && !/^\d+$/.test(w)).map((w) => KB_SYN[w.slice(0, 5)] || w.slice(0, 5)));

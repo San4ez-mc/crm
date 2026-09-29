@@ -496,6 +496,14 @@ function CopyModal({ entry, categories, suppliers, products, onCancel, onDone })
 
   async function submit() {
     setError('');
+    // «Всі товари» — не N копій, а ОДНА відповідь на весь магазин (саму відповідь переносимо на рівень магазину).
+    if (rows.some((r) => r.scope === 'all')) {
+      setSaving(true);
+      try { await api.updateKnowledge(entry.id, { scope: 'shop', productId: null, categoryId: null, supplierId: null, isActive: true }); onDone(); }
+      catch (e) { setError(e.message); }
+      finally { setSaving(false); }
+      return;
+    }
     const targets = rows.filter((r) => r.id).map((r) => ({
       scope: r.scope,
       categoryId: r.scope === 'category' ? r.id : undefined,
@@ -520,14 +528,19 @@ function CopyModal({ entry, categories, suppliers, products, onCancel, onDone })
           {rows.map((row, i) => (
             <div key={i} className="flex gap-2">
               <Select className="max-w-[140px]" value={row.scope} onChange={(e) => updateRow(i, 'scope', e.target.value)}>
+                <option value="all">Всі товари</option>
                 <option value="category">Категорія</option>
                 <option value="supplier">Постачальник</option>
                 <option value="product">Товар</option>
               </Select>
-              <Select className="flex-1" value={row.id} onChange={(e) => updateRow(i, 'id', e.target.value)}>
-                <option value="">— оберіть —</option>
-                {optionsFor(row.scope).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </Select>
+              {row.scope === 'all'
+                ? <div className="flex-1 self-center text-xs text-slate-400">Одна відповідь для всього магазину — копії не потрібні</div>
+                : (
+                  <Select className="flex-1" value={row.id} onChange={(e) => updateRow(i, 'id', e.target.value)}>
+                    <option value="">— оберіть —</option>
+                    {optionsFor(row.scope).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </Select>
+                )}
               <IconButton type="button" onClick={() => removeRow(i)}>🗑️</IconButton>
             </div>
           ))}
