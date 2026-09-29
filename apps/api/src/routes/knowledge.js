@@ -41,7 +41,7 @@ router.put('/knowledge/profile', asyncHandler(async (req, res) => {
 
 // ── Записи (FAQ/policy/objection/script) ─────────────────────────────────
 router.get('/knowledge', asyncHandler(async (req, res) => {
-  const { kind, tag, scope, active, q, categoryId, supplierId, productId, take = '200', skip = '0' } = req.query;
+  const { kind, tag, scope, active, q, categoryId, supplierId, productId, sort, take = '200', skip = '0' } = req.query;
   const where = {
     tenantId: req.tenant.id,
     ...(kind ? { kind: String(kind) } : {}),
@@ -64,7 +64,7 @@ router.get('/knowledge', asyncHandler(async (req, res) => {
         supplier: { select: { id: true, name: true } },
         product: { select: { id: true, name: true, thumbnailUrl: true } },
       },
-      orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
+      orderBy: sort === 'asked' ? [{ askCount: 'desc' }, { updatedAt: 'desc' }] : [{ priority: 'desc' }, { updatedAt: 'desc' }],
       take: Number(take),
       skip: Number(skip),
     }),
@@ -262,17 +262,19 @@ router.post('/knowledge/from-dialog', asyncHandler(async (req, res) => {
   if (!question || !String(question).trim()) throw new ValidationError('question обовʼязковий');
   const normalized = String(question).trim().toLowerCase().replace(/\s+/g, ' ');
 
-  // Ідемпотентність за 7 днів — той самий (нормалізований) запит не плодить дублі-чернетки.
-  // 2026-09-09: findFirst() без фільтра по question брав ДОВІЛЬНИЙ (перший-зустрінутий) рядок з
-  // джерела from_dialog і звіряв ЛИШЕ його — дублі проходили повз, щойно в 7-денному вікні було
-  // більше одного чернеткового запису (а це майже завжди так). Тепер перевіряємо ВЕСЬ недавній набір.
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-  const recent = await db.knowledgeEntry.findMany({
-    where: { tenantId: req.tenant.id, source: 'from_dialog', createdAt: { gte: sevenDaysAgo } },
-    select: { id: true, question: true, answer: true, tags: true, scope: true, categoryId: true, supplierId: true, productId: true, priority: true, isActive: true, source: true, createdBy: true, sessionId: true, createdAt: true, updatedAt: true, kind: true, tenantId: true },
+  // 2026-09-29 (власник: «лічильник, скільки разів кожне питання задавалось людьми»): те саме питання — зокрема
+  // іншими словами — не плодить дубль, а збільшує askCount існуючого запису (будь-якої давності, будь-якого джерела).
+  const all = await db.knowledgeEntry.findMany({
+    where: { tenantId: req.tenant.id, question: { not: null } },
+    select: { id: true, question: true, productId: true },
   });
-  const dup = recent.find((r) => String(r.question || '').trim().toLowerCase().replace(/\s+/g, ' ') === normalized) || null;
-  if (dup) return res.json({ ok: true, data: dup, deduped: true });
+  const dup = all.find((r) => String(r.question || '').split('|').some((v) => v.trim().toLowerCase().replace(/\s+/g, ' ') === normalized))
+    || all.find((r) => (r.productId || null) === (productId || null) && similarQuestion(r.question, question))
+    || null;
+  if (dup) {
+    const bumped = await db.knowledgeEntry.update({ where: { id: dup.id }, data: { askCount: { increment: 1 }, lastAskedAt: new Date() } });
+    return res.json({ ok: true, data: bumped, deduped: true });
+  }
 
   const entry = await db.knowledgeEntry.create({
     data: {
@@ -285,10 +287,29 @@ router.post('/knowledge/from-dialog', asyncHandler(async (req, res) => {
       isActive: false,
       source: 'from_dialog',
       sessionId: sessionId || null,
+      askCount: 1,
+      lastAskedAt: new Date(),
     },
   });
   res.status(201).json({ ok: true, data: entry });
 }));
+
+// Бот відповів клієнту цим записом — +1 до «скільки разів питали».
+router.post('/knowledge/:id/hit', asyncHandler(async (req, res) => {
+  const e = await db.knowledgeEntry.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id }, select: { id: true } });
+  if (!e) throw new NotFoundError('KnowledgeEntry', req.params.id);
+  const r = await db.knowledgeEntry.update({ where: { id: e.id }, data: { askCount: { increment: 1 }, lastAskedAt: new Date() }, select: { id: true, askCount: true } });
+  res.json({ ok: true, data: r });
+}));
+
+// Схожість питань за основами слів (≥5 літер → перші 5): «Чи линяє замша?» ≈ «Замша сильно линяє?».
+function stemsOf(t) { return new Set(String(t || '').toLowerCase().split(/[^a-zа-яіїєґ0-9]+/i).filter((w) => w.length >= 5).map((w) => w.slice(0, 5))); }
+function similarQuestion(a, b) {
+  const A = stemsOf(a); const B = stemsOf(b);
+  if (A.size < 2 || B.size < 2) return false;
+  let inter = 0; for (const w of A) if (B.has(w)) inter += 1;
+  return inter / (A.size + B.size - inter) >= 0.6;
+}
 
 // ── Разовий імпорт з CSV/markdown "питання;відповідь;теги" ───────────────
 router.post('/knowledge/import', asyncHandler(async (req, res) => {

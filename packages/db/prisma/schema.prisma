@@ -606,6 +606,9 @@ model KnowledgeEntry {
   source     String   @default("manual") // manual | imported_gdoc | from_dialog
   createdBy  String?
   sessionId  String? // для from_dialog — посилання на сесію-джерело у Flows
+  // 2026-09-29: скільки разів це питання ставили клієнти (повтор у діалозі або відповідь ботом з цього запису).
+  askCount    Int       @default(1)
+  lastAskedAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

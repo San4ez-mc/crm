@@ -107,6 +107,7 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
   const [targetFilter, setTargetFilter] = useState('');
   const [active, setActive] = useState('');
   const [q, setQ] = useState('');
+  const [sort, setSort] = useState('');
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   const [copying, setCopying] = useState(null);
@@ -120,6 +121,7 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
       const params = { scope: effectiveScopes.join(',') };
       if (kind) params.kind = kind;
       if (q) params.q = q;
+      if (sort) params.sort = sort;
       if (lockProductId) params.productId = lockProductId;
       else if (targetFilter && effectiveScopes.length === 1) {
         if (effectiveScopes[0] === 'category') params.categoryId = targetFilter;
@@ -129,7 +131,7 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
       setItems((await api.listKnowledge(params)).data);
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [kind, scopeFilter, targetFilter, q, lockProductId]);
+  useEffect(() => { load(); }, [kind, scopeFilter, targetFilter, q, sort, lockProductId]);
 
   if (items === null) return <ErrorBanner message={error} />;
 
@@ -210,6 +212,10 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
             <option value="true">Тільки активні</option>
             <option value="false">Тільки вимкнені</option>
           </Select>
+          <Select className="max-w-[200px]" value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="">За пріоритетом</option>
+            <option value="asked">Найчастіше питають</option>
+          </Select>
         </div>
       )}
 
@@ -240,7 +246,7 @@ export function EntriesSection({ scopes, categories = [], suppliers = [], produc
           <div className="space-y-3">
             {unanswered.map((e) => (
               <div key={e.id} className="rounded-lg bg-slate-800/50 p-3">
-                <div className="mb-2 text-sm font-medium">{e.question}</div>
+                <div className="mb-2 flex items-start justify-between gap-2 text-sm font-medium"><span>{e.question}</span><AskCount entry={e} /></div>
                 {e.product && <div className="mb-1 text-xs text-slate-500">Товар: {e.product.name}</div>}
                 <Textarea rows={2} placeholder="Впишіть відповідь…" value={drafts[e.id] ?? ''} onChange={(ev) => setDrafts({ ...drafts, [e.id]: ev.target.value })} />
                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -387,6 +393,17 @@ function EntryFields({ initial, categories, suppliers, products, allowedScopes, 
 
 // Один запис: у режимі перегляду — питання/відповідь/метадані як і раніше; клік розгортає ті самі
 // поля інлайн (EntryFields) замість попапу.
+// Скільки разів клієнти ставили це питання (повтор у діалогах + відповіді бота цим записом).
+function AskCount({ entry }) {
+  const n = entry.askCount || 0;
+  if (!n) return null;
+  return (
+    <span className="shrink-0 rounded-md bg-slate-800 px-2 py-0.5 text-xs text-slate-300" title={entry.lastAskedAt ? 'Востаннє: ' + new Date(entry.lastAskedAt).toLocaleString('uk-UA') : ''}>
+      питали {n} {n % 10 === 1 && n % 100 !== 11 ? 'раз' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'рази' : 'разів')}
+    </span>
+  );
+}
+
 function EntryRow({ entry, categories, suppliers, products, allowedScopes, lockProductId, onSave, onDelete, onToggleActive, onCopy, onPromote }) {
   const [editing, setEditing] = useState(false);
 
@@ -419,7 +436,7 @@ function EntryRow({ entry, categories, suppliers, products, allowedScopes, lockP
     <div onClick={() => setEditing(true)} className="flex cursor-pointer gap-4 border-b border-slate-800/60 px-4 py-3 last:border-0 hover:bg-slate-800/40">
       {entry.scope === 'product' && <Thumb url={entry.product?.thumbnailUrl} />}
       <div className="min-w-0 flex-1">
-      <div className="text-sm font-medium text-slate-100">{entry.question || '—'}</div>
+      <div className="flex items-start justify-between gap-2 text-sm font-medium text-slate-100"><span>{entry.question || '—'}</span><AskCount entry={entry} /></div>
       <div className="mt-1 text-sm text-slate-400">{entry.answer}</div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Badge color={KIND_COLOR[entry.kind]}>{KIND_LABEL[entry.kind]}</Badge>
