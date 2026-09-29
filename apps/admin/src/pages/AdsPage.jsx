@@ -195,7 +195,10 @@ export default function AdsPage() {
                       <option value="">— прив'язати до товару —</option>
                       {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </Select>
-                    {ad.productId && /^auto_/.test(ad.productLinkSource || '') && (
+                    {!ad.productId && ad.productLinkSource === 'auto_none' && (
+                      <div className="mt-1 max-w-xs text-xs text-slate-500" title={ad.productLinkNote || ''}>🤖 Бот не визначив товар: {String(ad.productLinkNote || '').replace(/^\S+\s/, '')}</div>
+                    )}
+                    {ad.productId && /^auto_(article|vision)/.test(ad.productLinkSource || '') && (
                       <div className="mt-1 max-w-xs text-xs text-amber-300" title={ad.productLinkNote || ''}>
                         🤖 Прив'язано автоматично ({ad.productLinkSource === 'auto_article' ? 'за артикулом' : 'за фото'}) — перевірте{' '}
                         <button className="ml-1 rounded bg-emerald-900/40 px-1.5 py-0.5 text-emerald-300 hover:bg-emerald-800/60" onClick={() => linkProduct(ad, ad.productId)}>✓ Вірно</button>

@@ -187,7 +187,9 @@ router.post('/ads', asyncHandler(async (req, res) => {
   let ad = externalId ? await db.ad.findFirst({ where: { tenantId: req.tenant.id, externalId: String(externalId) } }) : null;
   // Автоприв'язка ніколи не перезаписує вже прив'язаний товар (ручний вибір адміна головніший).
   if (_isAuto && ad && ad.productId) productId = undefined;
-  const _linkMeta = (productId && _isAuto) ? { productLinkSource, productLinkNote: productLinkNote ? String(productLinkNote).slice(0, 300) : null } : {};
+  let _linkMeta = (productId && _isAuto) ? { productLinkSource, productLinkNote: productLinkNote ? String(productLinkNote).slice(0, 300) : null } : {};
+  // Невдала спроба автоприв'язки (auto_none) — лише позначка з причиною, товар не чіпаємо; на вже прив'язаних не пишемо.
+  if (productLinkSource === 'auto_none' && !(ad && ad.productId)) { productId = undefined; _linkMeta = { productLinkSource, productLinkNote: productLinkNote ? String(productLinkNote).slice(0, 300) : null }; }
   if (ad) {
     ad = await db.ad.update({
       where: { id: ad.id },
