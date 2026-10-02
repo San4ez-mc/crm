@@ -11,10 +11,20 @@ const router = express.Router();
 const SECURE_COOKIES = String(process.env.SSO_REDIRECT_URI || '').startsWith('https://');
 const SESSION_COOKIE_OPTS = { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES, maxAge: 30 * 24 * 3600 * 1000 };
 
+// Відносний шлях цієї ж адмінки: починається з одного «/», без «//», зворотного слеша, пробілів і схеми — не відкритий редірект.
+function safeNext(next) {
+  return typeof next === 'string' && next.length <= 500 && next.startsWith('/') && !next.startsWith('//') && !next.includes(String.fromCharCode(92)) && !/\s/.test(next) && !next.includes('://');
+}
+
 // Крок 1: адмінка редіректить сюди → далі на SSO /authorize.
 router.get('/auth/sso/login', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
   res.cookie('crm_oauth_state', state, { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES, maxAge: 600_000 });
+  // Куди повернути після входу (2026-10-02): посилання з Telegram «✏️ Редагувати замовлення» не має губитись,
+  // якщо менеджер ще не залогінений. Лише відносний шлях цієї ж адмінки (не //host, не повний URL).
+  const next = String(req.query.next || '');
+  if (safeNext(next) && !next.startsWith('/login')) res.cookie('crm_login_next', next, { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES, maxAge: 600_000 });
+  else res.cookie('crm_login_next', '', { maxAge: 0 });
   res.redirect(ssoClient.authorizeUrl(state));
 });
 
@@ -38,7 +48,9 @@ router.get('/auth/callback', asyncHandler(async (req, res) => {
   }
   if (!tokenRes?.access_token) return void res.redirect(`${adminBase}/login?sso=exchange`);
   res.cookie('crm_session', tokenRes.access_token, SESSION_COOKIE_OPTS);
-  res.redirect(adminBase);
+  const next = String(req.cookies?.crm_login_next || '');
+  res.cookie('crm_login_next', '', { maxAge: 0 });
+  res.redirect(safeNext(next) ? adminBase.replace(/[/]$/, '') + next : adminBase);
 }));
 
 router.post('/auth/logout', (req, res) => {

@@ -11,6 +11,9 @@ const SSO_MESSAGES = {
 
 export default function Login() {
     const ssoError = new URLSearchParams(window.location.search).get('sso');
+    // Після входу — назад на сторінку, з якої прийшли (напр. /orders?open=…&edit=1 з кнопки в Telegram).
+    const here = window.location.pathname + window.location.search;
+    const loginHref = window.location.pathname.startsWith('/login') ? '/auth/sso/login' : '/auth/sso/login?next=' + encodeURIComponent(here);
 
     const bgStyle = {
         background:
@@ -36,7 +39,7 @@ export default function Login() {
                     )}
 
                     <a
-                        href="/auth/sso/login"
+                        href={loginHref}
                         className="w-full flex items-center justify-center gap-2 bg-brand hover:bg-brand-dark text-white rounded-lg py-3 font-medium transition-colors"
                     >
                         Увійти через FINEKO
