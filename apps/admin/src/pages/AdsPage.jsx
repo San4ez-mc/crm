@@ -178,7 +178,13 @@ export default function AdsPage() {
                         object_story_spec для цих креативів ПОРОЖНІ, доступна лише thumbnail_url
                         (обрізана до 64×64, stp=...p64x64... у самому URL) — це та сама картинка,
                         що вже показана прев'ю в таблиці, окреме посилання не додає нічого нового). */}
-                    {ad.adAccountId && ad.externalId && (
+                    {/* 2026-10-02 (Олексій: «в Ads Manager у мене нема таких ІД»): реклама, яку бот бачить лише з повідомлень
+                        клієнтів (просування поза кабінетом Ads Manager, напр. кнопкою «Просувати» в Instagram), — окремий «кабінет»
+                        instagram_messages; посилання в Ads Manager для неї не відкриється, тож пояснюємо, звідки вона. */}
+                    {ad.adAccountId === 'instagram_messages' && (
+                      <div className="mt-0.5 max-w-xs text-xs text-amber-400/80">📩 Поза Ads Manager — бот бачить її з повідомлень клієнтів (просування в Instagram)</div>
+                    )}
+                    {ad.adAccountId && ad.adAccountId !== 'instagram_messages' && ad.externalId && (
                       <div className="mt-0.5 flex flex-wrap gap-2 text-xs">
                         <a
                           href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${encodeURIComponent(ad.adAccountId)}&selected_ad_ids=${encodeURIComponent(ad.externalId)}`}
