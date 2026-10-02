@@ -182,7 +182,7 @@ export default function AdsPage() {
                         клієнтів (просування поза кабінетом Ads Manager, напр. кнопкою «Просувати» в Instagram), — окремий «кабінет»
                         instagram_messages; посилання в Ads Manager для неї не відкриється, тож пояснюємо, звідки вона. */}
                     {ad.adAccountId === 'instagram_messages' && (
-                      <div className="mt-0.5 max-w-xs text-xs text-amber-400/80">📩 Поза Ads Manager — бот бачить її з повідомлень клієнтів (просування в Instagram)</div>
+                      <div className="mt-0.5 max-w-xs text-xs text-amber-400/80">📩 Пост Instagram без активної реклами (органіка або давня реклама) — бот бачить його з повідомлень клієнтів</div>
                     )}
                     {ad.adAccountId && ad.adAccountId !== 'instagram_messages' && ad.externalId && (
                       <div className="mt-0.5 flex flex-wrap gap-2 text-xs">
