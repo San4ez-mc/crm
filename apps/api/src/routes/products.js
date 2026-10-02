@@ -20,6 +20,7 @@ const PRODUCT_DIFF_FIELDS = [
   { key: 'supplierArticle', label: 'Артикул постачальника', kind: 'value' },
   { key: 'isSet', label: 'Комплект', kind: 'value' },
   { key: 'alwaysAvailable', label: 'Доступно завжди', kind: 'value' },
+  { key: 'outOfStock', label: 'Немає в наявності', kind: 'value' },
   { key: 'presentationText', label: 'Презентація для клієнта', kind: 'touch' },
   { key: 'aiNotes', label: 'Нотатки для ШІ', kind: 'touch' },
   { key: 'images', label: 'Фото товару', kind: 'touch' },
@@ -40,7 +41,7 @@ const PRODUCT_INCLUDE = {
   category: { select: { id: true, name: true } },
   supplier: { select: { id: true, name: true } },
   offers: { orderBy: { sortOrder: 'asc' } },
-  setOf: { include: { componentProduct: { select: { id: true, name: true, customerName: true, sku: true } } } },
+  setOf: { include: { componentProduct: { select: { id: true, name: true, customerName: true, sku: true, outOfStock: true } } } },
   _count: { select: { orderItems: true } },
   // 2026-09-07 (фідбек власника): ціна постачальника редагується прямо в картці товару,
   // не лише на окремій сторінці "Витрати по товару" — тож картці потрібна поточна історія.
@@ -59,6 +60,7 @@ function offerEffectiveSizes(product, offer) {
   return offer.sizesCustomized ? (Array.isArray(offer.availableSizes) ? offer.availableSizes : []) : (product.sizes || []);
 }
 function offerInStock(product, offer) {
+  if (product.outOfStock) return false;
   if (product.alwaysAvailable !== false) return true;
   // Товар ще не має майстер-списку розмірів — нема на чому звужувати, лишаємо доступним
   // (той самий безпечний дефолт, що й раніше для quantity=null "не відстежується").
@@ -77,7 +79,7 @@ function serializeProduct(p) {
     // фолбеку на customerName взагалі.
     // 2026-09-15 (фідбек власника): fixedColor — колір цієї позиції, зафіксований САМЕ в межах
     // цього комплекту (не в самому товарі) — воронка бере його як готовий, ніколи не питає клієнта.
-    setComponents: p.setOf ? p.setOf.map((sc) => ({ productId: sc.componentProductId, name: sc.componentProduct.customerName || sc.componentProduct.name, sku: sc.componentProduct.sku, qty: sc.qty, fixedColor: sc.fixedColor || null })) : undefined,
+    setComponents: p.setOf ? p.setOf.map((sc) => ({ productId: sc.componentProductId, name: sc.componentProduct.customerName || sc.componentProduct.name, sku: sc.componentProduct.sku, qty: sc.qty, fixedColor: sc.fixedColor || null, outOfStock: !!sc.componentProduct.outOfStock })) : undefined,
     setOf: undefined,
     _count: undefined,
   };
@@ -136,6 +138,7 @@ router.post('/products', asyncHandler(async (req, res) => {
       bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [],
       isSet: !!b.isSet,
       alwaysAvailable: b.alwaysAvailable !== undefined ? !!b.alwaysAvailable : true,
+      outOfStock: !!b.outOfStock,
       sizes: Array.isArray(b.sizes) ? b.sizes : [],
     },
     include: PRODUCT_INCLUDE,
@@ -179,6 +182,7 @@ router.patch('/products/:id', asyncHandler(async (req, res) => {
       ...(b.bulkPricing !== undefined ? { bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [] } : {}),
       ...(b.isSet !== undefined ? { isSet: !!b.isSet } : {}),
       ...(b.alwaysAvailable !== undefined ? { alwaysAvailable: !!b.alwaysAvailable } : {}),
+      ...(b.outOfStock !== undefined ? { outOfStock: !!b.outOfStock } : {}),
       ...(b.sizes !== undefined ? { sizes: Array.isArray(b.sizes) ? b.sizes : [] } : {}),
     },
     include: PRODUCT_INCLUDE,

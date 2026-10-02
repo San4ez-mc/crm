@@ -70,6 +70,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     thumbnailUrl: product?.thumbnailUrl || '', images: product?.images || [], aiNotes: product?.aiNotes || '',
     bulkPricing: product?.bulkPricing || [], isSet: forceSet || !!product?.isSet,
     alwaysAvailable: product?.alwaysAvailable !== undefined ? product.alwaysAvailable : true,
+    outOfStock: !!product?.outOfStock,
     sizes: product?.sizes?.length ? product.sizes : (product?.sizeChartData?.sizes || []),
   });
   const [offers, setOffers] = useState(product?.offers || []);
@@ -174,6 +175,14 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     <Modal isOpen title={isEdit ? `Редагувати: ${product.name}` : 'Новий товар'} onClose={onClose} wide>
       <ErrorBanner message={error} />
       <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {/* 2026-10-03: повна відсутність товару — окремо від розмірів/кольорів (товар без розмірів, як лофери, інакше не мав способу стати «немає»). */}
+        <label className={`col-span-full flex items-start gap-2 rounded-lg border p-3 text-sm ${form.outOfStock ? 'border-red-700 bg-red-900/20 text-red-200' : 'border-slate-700 bg-slate-800/40 text-slate-300'}`}>
+          <input type="checkbox" className="mt-0.5" checked={form.outOfStock} onChange={(e) => setForm({ ...form, outOfStock: e.target.checked })} />
+          <span>
+            Немає в наявності
+            <div className="text-xs text-slate-500">Бот не пропонує цей товар клієнтам (ні окремо, ні в допродажах), а з комплектів прибирає його й рахує ціну сумою решти речей. Не забудьте натиснути «Зберегти».</div>
+          </span>
+        </label>
         <div>
           <Field label="Назва (внутрішня, від постачальника)"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
           <Field label="Назва для клієнта (показує бот; порожньо = внутрішня)"><Input value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} /></Field>

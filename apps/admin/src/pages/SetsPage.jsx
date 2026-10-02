@@ -62,7 +62,7 @@ export default function SetsPage() {
                   <td className="truncate px-4 py-3">{p.name}</td>
                   <td className="truncate px-4 py-3 text-slate-400">{p.sku}</td>
                   <td className="whitespace-nowrap px-4 py-3">{money(p.price)}</td>
-                  <td className="truncate px-4 py-3 text-slate-400">{(p.setComponents || []).map((c) => c.name).join(', ') || '—'}</td>
+                  <td className="truncate px-4 py-3 text-slate-400">{(p.setComponents || []).map((c) => c.name + (c.outOfStock ? ' (немає в наявності)' : '')).join(', ') || '—'}</td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1.5">
                       <IconButton onClick={() => setEditing(p)}>✏️</IconButton>

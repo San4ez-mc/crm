@@ -93,7 +93,7 @@ export default function ProductsPage() {
               {items.map((p) => (
                 <tr key={p.id} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30" onClick={() => setEditing(p)}>
                   <td className="px-4 py-3"><Thumb url={p.thumbnailUrl} /></td>
-                  <td className="truncate px-4 py-3" title={p.name}>{p.name}</td>
+                  <td className="truncate px-4 py-3" title={p.name}>{p.outOfStock && <span className="mr-1.5 rounded border border-red-800 bg-red-900/30 px-1.5 py-0.5 text-xs text-red-300">немає</span>}{p.name}</td>
                   <td className="truncate px-4 py-3 text-slate-400">{p.sku}</td>
                   <td className="truncate px-4 py-3 text-slate-400">{p.category?.name || '—'}</td>
                   <td className="whitespace-nowrap px-4 py-3">{money(p.price)}</td>
