@@ -33,16 +33,20 @@ export default function ReturnsPage() {
         <Card>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-              <tr><th className="px-4 py-3">Дата</th><th className="px-4 py-3">Замовлення</th><th className="px-4 py-3">Покупець</th><th className="px-4 py-3">Тип</th><th className="px-4 py-3">Причина</th><th className="px-4 py-3">Статус</th></tr>
+              <tr><th className="px-4 py-3">Дата</th><th className="px-4 py-3">Замовлення</th><th className="px-4 py-3">Покупець</th><th className="px-4 py-3">Тип</th><th className="px-4 py-3">Причина</th><th className="px-4 py-3">ТТН повернення</th><th className="px-4 py-3">Статус</th></tr>
             </thead>
             <tbody>
               {items.map((r) => (
                 <tr key={r.id} className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30">
                   <td className="px-4 py-3 text-slate-400">{formatDate(r.createdAt)}</td>
-                  <td className="px-4 py-3">#{r.orderId.slice(0, 8)}</td>
+                  <td className="px-4 py-3"><a className="text-brand-light hover:underline" href={`/orders?open=${r.orderId}`}>#{r.orderId.slice(0, 8)}</a></td>
                   <td className="px-4 py-3 text-slate-400">{r.order?.buyer?.fullName || r.order?.buyer?.phone || '—'}</td>
-                  <td className="px-4 py-3">{TYPE_LABEL[r.type]}</td>
-                  <td className="px-4 py-3 text-slate-400">{r.reason || '—'}</td>
+                  <td className="px-4 py-3">{TYPE_LABEL[r.type]}{r.source === 'bot' && <span className="ml-1.5"><Badge color="teal">бот</Badge></span>}</td>
+                  <td className="px-4 py-3 text-slate-400">
+                    {r.reason || '—'}
+                    {r.exchangeFor && <div className="text-xs text-slate-300">Обмін на: {r.exchangeFor}</div>}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-slate-400">{r.ttn || '—'}</td>
                   <td className="px-4 py-3">
                     <Select value={r.status} onChange={(e) => updateStatus(r.id, e.target.value)} className="!w-auto py-1">
                       {Object.keys(STATUS_LABEL).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}

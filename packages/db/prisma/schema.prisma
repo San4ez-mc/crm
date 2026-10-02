@@ -577,6 +577,10 @@ model Return {
   order     Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   type      ReturnType
   reason    String?
+  // 2026-10-03: бот збирає в клієнта тип/причину/на що обміняти і створює запис сам; ttn — номер зворотної посилки.
+  ttn         String?
+  exchangeFor String? // обмін: на який розмір/колір/товар
+  source      String? // 'bot' — створено ботом із розмови; порожньо — вручну
   status    ReturnStatus @default(new)
   createdAt DateTime     @default(now())
 
