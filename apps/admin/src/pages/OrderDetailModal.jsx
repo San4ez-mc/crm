@@ -3,8 +3,12 @@ import { useState } from 'react';
 import { api } from '../api/client';
 import { Field, Input, Textarea, Select, Button, Badge, ErrorBanner, money, formatDateTime } from '../components/common/Common';
 import Modal from '../components/common/Modal';
+import OrderEditor from './OrderEditor';
 
-export default function OrderDetailModal({ order, pipelines, onClose, onChanged, onOpenReturn }) {
+export default function OrderDetailModal({ order: initialOrder, pipelines, onClose, onChanged, onOpenReturn, autoEdit = false }) {
+  // Після збереження правок картка показує свіже замовлення (список оновлюється окремо через onChanged).
+  const [order, setOrder] = useState(initialOrder);
+  const [editing, setEditing] = useState(autoEdit);
   const [managerComment, setManagerComment] = useState(order.managerComment || '');
   const [error, setError] = useState('');
   const stages = pipelines?.flatMap((p) => p.stages) || [];
@@ -25,6 +29,9 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
   return (
     <Modal isOpen title={`Замовлення від ${formatDateTime(order.createdAt)}`} onClose={onClose} wide>
       <ErrorBanner message={error} />
+      {editing ? (
+        <OrderEditor order={order} onCancel={() => setEditing(false)} onSaved={(o) => { setOrder(o); setEditing(false); onChanged(); }} />
+      ) : (
       <div className="space-y-5 text-sm">
         <section>
           <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Покупець</h4>
@@ -40,7 +47,13 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
         </section>
 
         <section>
-          <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Товари</h4>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold uppercase text-slate-500">Товари</h4>
+            <div className="flex items-center gap-2">
+              {order.managerEditedAt && <Badge color="teal">Змінено менеджером {formatDateTime(order.managerEditedAt)}</Badge>}
+              <button onClick={() => setEditing(true)} className="text-xs text-brand-light hover:underline">✏️ Редагувати склад і доставку</button>
+            </div>
+          </div>
           <div className="space-y-1">
             {order.items.map((it) => {
               // Фото конкретного варіанту (колір/розмір), якщо є — інакше загальне фото товару.
@@ -56,6 +69,11 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
                       {Array.isArray(it.properties) && it.properties.length > 0 && (
                         <span className="ml-2 text-xs text-slate-400">({it.properties.map((p) => `${p.name}: ${p.value}`).join(', ')})</span>
                       )}
+                      {Array.isArray(it.components) && it.components.length > 0 && (
+                        <span className="mt-0.5 block text-xs text-slate-400">
+                          {it.components.map((c) => [c.name, c.color, c.size, c.qty > 1 ? `×${c.qty}` : ''].filter(Boolean).join(' · ')).join('; ')}
+                        </span>
+                      )}
                     </span>
                   </div>
                   <span className="shrink-0">{money(Number(it.price) * it.quantity)}</span>
@@ -67,7 +85,10 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
 
         <section>
           <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Доставка</h4>
-          <div className="text-slate-300">{order.shipping?.city || '—'}{order.shipping?.warehouse ? `, ${order.shipping.warehouse}` : ''}</div>
+          <div className="text-slate-300">{order.shipping?.city || '—'}{(order.shipping?.branch || order.shipping?.warehouse) ? `, ${order.shipping.branch || order.shipping.warehouse}` : ''}</div>
+          {(order.shipping?.recipientFullName || order.shipping?.recipientPhone) && (
+            <div className="text-slate-400">Отримувач: {[order.shipping.recipientFullName, order.shipping.recipientPhone].filter(Boolean).join(' · ')}</div>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-2">
             {order.ttn?.length ? order.ttn.map((t) => <Badge key={t}>{t}</Badge>) : <span className="text-slate-500">ТТН немає</span>}
             {order.ttnStatus && <Badge color="green">{order.ttnStatus}</Badge>}
@@ -106,6 +127,7 @@ export default function OrderDetailModal({ order, pipelines, onClose, onChanged,
           <Button variant="secondary" onClick={onClose}>Закрити</Button>
         </div>
       </div>
+      )}
     </Modal>
   );
 }

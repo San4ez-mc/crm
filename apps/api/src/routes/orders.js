@@ -172,12 +172,62 @@ router.patch('/orders/:id', asyncHandler(async (req, res) => {
       ...(b.stageId !== undefined ? { stageId: b.stageId } : {}),
       ...(b.managerComment !== undefined ? { managerComment: b.managerComment } : {}),
       ...(b.shipping !== undefined ? { shipping: b.shipping } : {}),
+      // Доставку змінив менеджер (не воронка) — Flows покаже це в перевірці перед «Оформити постачальнику».
+      ...(b.shipping !== undefined && b.source !== 'funnel' ? { managerEditedAt: new Date() } : {}),
       ...(b.ttn !== undefined ? { ttn: Array.isArray(b.ttn) ? b.ttn : [] } : {}),
       ...(b.sourceName !== undefined ? { sourceName: b.sourceName } : {}),
       ...(b.isRefused !== undefined ? { isRefused: !!b.isRefused } : {}),
     },
     include: ORDER_INCLUDE,
   });
+  res.json({ ok: true, data: order });
+}));
+
+// Заміна позицій замовлення (2026-10-02): менеджер правит склад у картці замовлення («Редагувати» з Telegram), а Flows
+// при «Оформити постачальнику» бере позиції саме звідси. Усі позиції замінюються атомарно. source:'funnel' — запис
+// від воронки (склад комплекту при створенні), не позначається як правка менеджера.
+function cleanComponent(c) {
+  return {
+    productId: c && c.productId ? String(c.productId) : null,
+    sku: String((c && c.sku) || '').trim(),
+    name: String((c && c.name) || '').trim().slice(0, 300),
+    color: String((c && c.color) || '').trim().slice(0, 80),
+    size: String((c && c.size) || '').trim().slice(0, 40),
+    qty: Math.max(1, parseInt(c && c.qty, 10) || 1),
+  };
+}
+router.put('/orders/:id/items', asyncHandler(async (req, res) => {
+  const existing = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+  if (!existing) throw new NotFoundError('Order', req.params.id);
+  const b = req.body || {};
+  if (!Array.isArray(b.items) || !b.items.length) throw new ValidationError('Потрібна хоча б одна позиція');
+  const items = b.items.map((it, i) => {
+    const name = String((it && it.name) || '').trim();
+    const price = Number(it && it.price);
+    const quantity = parseInt(it && it.quantity, 10);
+    if (!name) throw new ValidationError(`Позиція ${i + 1}: немає назви`);
+    if (!Number.isFinite(price) || price < 0) throw new ValidationError(`Позиція ${i + 1}: неправильна ціна`);
+    if (!(quantity >= 1)) throw new ValidationError(`Позиція ${i + 1}: кількість має бути від 1`);
+    const props = Array.isArray(it.properties) ? it.properties.filter((p) => p && p.name && String(p.value || '').trim()).map((p) => ({ name: String(p.name), value: String(p.value).trim() })) : [];
+    const comps = Array.isArray(it.components) ? it.components.map(cleanComponent).filter((c) => c.sku || c.productId) : [];
+    return {
+      orderId: existing.id,
+      productId: it.productId || null,
+      offerId: it.offerId || null,
+      name: name.slice(0, 500),
+      price,
+      quantity,
+      properties: props.length ? props : undefined,
+      components: comps.length ? comps : undefined,
+      isUpsell: !!it.isUpsell,
+    };
+  });
+  await db.$transaction([
+    db.orderItem.deleteMany({ where: { orderId: existing.id } }),
+    db.orderItem.createMany({ data: items }),
+    ...(b.source === 'funnel' ? [] : [db.order.update({ where: { id: existing.id }, data: { managerEditedAt: new Date() } })]),
+  ]);
+  const order = await db.order.findFirst({ where: { id: existing.id }, include: ORDER_INCLUDE });
   res.json({ ok: true, data: order });
 }));
 

@@ -403,6 +403,7 @@ model Order {
   funnelSessionId String?
   contactName     String? // імʼя з Instagram, поки покупця (телефону) ще нема
   contactIg       String? // @username з Instagram
+  managerEditedAt   DateTime? // коли менеджер востаннє змінив позиції або доставку в CRM (Flows показує це в перевірці перед «Оформити постачальнику»)
   lastClientAt    DateTime? // остання подія воронки — крон переводить у «Не відписали протягом доби»
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -431,6 +432,9 @@ model OrderItem {
   quantity  Int      @default(1)
   properties Json?   // {name,value}[] на момент продажу (сніпшот)
   isUpsell  Boolean  @default(false)
+  // Склад комплекту (2026-10-02): позиція-комплект лишається одним рядком (виручка/собівартість по комплекту),
+  // а тут — що САМЕ піде постачальнику: [{productId, sku, name, color, size, qty}]. Редагує менеджер у картці замовлення.
+  components Json?
 
   @@index([orderId])
   @@index([productId])

@@ -39,6 +39,8 @@ export default function OrdersPage() {
   const [ftTo, setFtTo] = useState(_todayStr());
   const [error, setError] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
+  // ?edit=1 у посиланні з Telegram («✏️ Редагувати замовлення») — картка відкривається одразу в режимі редагування.
+  const [openInEdit, setOpenInEdit] = useState(() => new URLSearchParams(window.location.search).get('edit') === '1');
   const [returnForOrder, setReturnForOrder] = useState(null);
   const [showNewOrder, setShowNewOrder] = useState(false);
 
@@ -227,9 +229,11 @@ export default function OrdersPage() {
 
       {selectedOrder && (
         <OrderDetailModal
+          key={selectedOrder.id}
           order={selectedOrder}
           pipelines={pipelines}
-          onClose={() => setSelectedOrder(null)}
+          autoEdit={openInEdit}
+          onClose={() => { setSelectedOrder(null); setOpenInEdit(false); }}
           onChanged={() => { load(); }}
           onOpenReturn={(o) => { setReturnForOrder(o); setSelectedOrder(null); }}
         />
