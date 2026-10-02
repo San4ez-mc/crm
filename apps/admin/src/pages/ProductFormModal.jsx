@@ -79,6 +79,9 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
   // питає клієнта. Порожньо = як і раніше (одноколірні підтягуються самі, багатоколірні — питаються).
   const [setComponentColors, setSetComponentColors] = useState(() => Object.fromEntries((product?.setComponents || []).map((c) => [c.productId, c.fixedColor || ''])));
   const [error, setError] = useState('');
+  // Видимий результат «Зберегти» біля кнопок (власник 02.10: «не реагує ніяк, хоча запити відправляються» — модалка лишається
+  // відкритою, а помилка показувалась лише вгорі, поза екраном, коли прокручено вниз).
+  const [saveState, setSaveState] = useState({ status: 'idle', at: null }); // idle | saving | saved | error
   const [showNewSupplier, setShowNewSupplier] = useState(false);
   const [savedProductId, setSavedProductId] = useState(product?.id || null);
   // "Хто і коли вносив зміни" (2026-09-08) — картка робить кілька незалежних збережень
@@ -117,6 +120,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    setSaveState({ status: 'saving', at: null });
     try {
       if (!form.name.trim() || !form.sku.trim() || !form.price) throw new Error('Назва, артикул і ціна обовʼязкові');
       const { bulkPricing, isSet, ...rest } = form;
@@ -130,8 +134,9 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
       }
       onSaved();
       touchChangeLog();
+      setSaveState({ status: 'saved', at: new Date() });
       if (!isEdit) onClose(); // для нового товару — офери/склад комплекту додаються після повторного відкриття (простіше й надійніше)
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); setSaveState({ status: 'error', at: null }); }
   }
 
   async function addOffer() {
@@ -356,9 +361,14 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
           )}
         </div>
 
-        <div className="col-span-full mt-2 flex justify-end gap-2 border-t border-slate-800 pt-4">
+        <div className="col-span-full mt-2 flex flex-wrap items-center justify-end gap-2 border-t border-slate-800 pt-4">
+          <span role="status" aria-live="polite" className="mr-auto text-sm">
+            {saveState.status === 'saving' && <span className="text-slate-400">Зберігаю…</span>}
+            {saveState.status === 'saved' && <span className="text-emerald-400">✓ Збережено о {saveState.at.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}</span>}
+            {saveState.status === 'error' && <span className="text-red-400">✕ Не збережено: {error}</span>}
+          </span>
           <Button type="button" variant="secondary" onClick={onClose}>Закрити</Button>
-          <Button type="submit">Зберегти</Button>
+          <Button type="submit" disabled={saveState.status === 'saving'}>{saveState.status === 'saving' ? 'Зберігаю…' : 'Зберегти'}</Button>
         </div>
       </form>
 
