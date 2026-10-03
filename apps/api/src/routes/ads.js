@@ -260,6 +260,29 @@ router.get('/ad-spend', asyncHandler(async (req, res) => {
 
 // «Рекламні витрати» (2026-09-03, редизайн за референсом власника) — список оголошень
 // з витратою/замовленнями/окупністю/прибутком за обраний період, з пошуком.
+// 2026-10-03: «що зараз рекламується» — для бота, коли Zernio не передав, з якої реклами клієнт (≈22% розмов). Активні реклами
+// з товаром, згруповані за товаром: розмови й витрати за останні N днів (щоденна синхронізація з Meta), категорія, мініатюра.
+router.get('/ads/active-summary', asyncHandler(async (req, res) => {
+  const days = Math.min(30, Math.max(1, Number(req.query.days) || 3));
+  const since = new Date(Date.now() - days * 86400000); since.setUTCHours(0, 0, 0, 0);
+  const ads = await db.ad.findMany({
+    where: { tenantId: req.tenant.id, effectiveStatus: 'ACTIVE', productId: { not: null } },
+    select: { id: true, name: true, thumbnailUrl: true, product: { select: { id: true, sku: true, name: true, customerName: true, isSet: true, outOfStock: true, category: { select: { id: true, name: true } } } }, spendDaily: { where: { date: { gte: since } }, select: { amount: true, conversations: true } } },
+  });
+  const byProduct = new Map();
+  for (const ad of ads) {
+    const p = ad.product; if (!p) continue;
+    const conv = ad.spendDaily.reduce((s, r) => s + (Number(r.conversations) || 0), 0);
+    const spend = ad.spendDaily.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const row = byProduct.get(p.id) || { productId: p.id, sku: p.sku, name: p.customerName || p.name, isSet: p.isSet, outOfStock: !!p.outOfStock, categoryId: p.category ? p.category.id : null, categoryName: p.category ? p.category.name : null, conversations: 0, spend: 0, ads: 0, thumbnailUrl: null, topConv: -1 };
+    row.conversations += conv; row.spend += spend; row.ads += 1;
+    if (conv > row.topConv && ad.thumbnailUrl) { row.thumbnailUrl = ad.thumbnailUrl; row.topConv = conv; }
+    byProduct.set(p.id, row);
+  }
+  const data = [...byProduct.values()].map(({ topConv, ...r }) => ({ ...r, spend: Math.round(r.spend * 100) / 100 })).sort((a, b) => (b.conversations - a.conversations) || (b.spend - a.spend));
+  res.json({ ok: true, data, meta: { days, since: since.toISOString() } });
+}));
+
 router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
   const { from, to, search, linked, take = '10', skip = '0' } = req.query;
   const dateWhere = periodDateWhere(from, to);
@@ -400,7 +423,7 @@ async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {})
 // §5: `POST /ad-spend-daily` — щоденні витрати від Flows-автоматизації (Zernio/Meta Ads).
 // impressions/clicks — платформні метрики самого Facebook (для CPC/CTR/CPM), не наш AdClick.
 router.post('/ad-spend-daily', asyncHandler(async (req, res) => {
-  const { externalId, adId, name, date, amount, currency, impressions, clicks, campaignId, campaignName, adAccountId, thumbnailUrl } = req.body || {};
+  const { externalId, adId, name, date, amount, currency, impressions, clicks, conversations, campaignId, campaignName, adAccountId, thumbnailUrl } = req.body || {};
   if (!date || amount === undefined) throw new ValidationError('date і amount обовʼязкові');
   const ad = adId
     ? await db.ad.findFirst({ where: { id: adId, tenantId: req.tenant.id } })
@@ -408,8 +431,8 @@ router.post('/ad-spend-daily', asyncHandler(async (req, res) => {
   if (!ad) throw new NotFoundError('Ad', adId);
   const row = await db.adSpendDaily.upsert({
     where: { adId_date: { adId: ad.id, date: new Date(date) } },
-    update: { amount, currency: currency || 'UAH', ...(impressions !== undefined ? { impressions: Number(impressions) } : {}), ...(clicks !== undefined ? { clicks: Number(clicks) } : {}) },
-    create: { adId: ad.id, date: new Date(date), amount, currency: currency || 'UAH', impressions: impressions !== undefined ? Number(impressions) : null, clicks: clicks !== undefined ? Number(clicks) : null },
+    update: { amount, currency: currency || 'UAH', ...(impressions !== undefined ? { impressions: Number(impressions) } : {}), ...(clicks !== undefined ? { clicks: Number(clicks) } : {}), ...(conversations !== undefined ? { conversations: Number(conversations) } : {}) },
+    create: { adId: ad.id, date: new Date(date), amount, currency: currency || 'UAH', impressions: impressions !== undefined ? Number(impressions) : null, clicks: clicks !== undefined ? Number(clicks) : null, conversations: conversations !== undefined ? Number(conversations) : null },
   });
   res.status(201).json({ ok: true, data: row });
 }));

@@ -500,6 +500,9 @@ model AdSpendDaily {
   // по оголошенню) — потрібні для CPC/CTR/CPM у щоденному зведенні.
   impressions Int?
   clicks      Int?
+  // 2026-10-03: розмови, які почала реклама за день (Meta messaging_conversation_started) — вага для бота:
+  // коли Zernio не передав рекламу, бот бере найімовірніший товар серед активних реклам (GET /ads/active-summary).
+  conversations Int?
 
   @@unique([adId, date])
   @@index([adId, date])
