@@ -59,4 +59,18 @@ async function sumAdSpendUAH(where, usdRate) {
   return groups.reduce((sum, g) => sum + rowToUAH(g._sum.amount, g.currency, usdRate), 0);
 }
 
-module.exports = { fetchUsdToUahFromNbu, ensureFreshUsdRate, rowToUAH, sumAdSpendUAH };
+// Витрати на рекламу в гривнях по ВСІХ товарах магазину — Map(productId → грн) двома запитами.
+// Не викликати sumAdSpendUAH у циклі по товарах/оголошеннях: сотні паралельних запитів вичерпують
+// пул зʼєднань Prisma і кладуть увесь CRM (2026-10-05, сторінка «Аналітика»).
+async function adSpendUAHByProduct(tenantId, dateWhere, usdRate) {
+  const [rows, ads] = await Promise.all([
+    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ad: { tenantId, productId: { not: null } }, ...(dateWhere ? { date: dateWhere } : {}) }, _sum: { amount: true } }),
+    db.ad.findMany({ where: { tenantId, productId: { not: null } }, select: { id: true, productId: true } }),
+  ]);
+  const productOfAd = new Map(ads.map((a) => [a.id, a.productId]));
+  const out = new Map();
+  for (const r of rows) { const pid = productOfAd.get(r.adId); if (pid) out.set(pid, (out.get(pid) || 0) + rowToUAH(r._sum.amount, r.currency, usdRate)); }
+  return out;
+}
+
+module.exports = { fetchUsdToUahFromNbu, ensureFreshUsdRate, rowToUAH, sumAdSpendUAH, adSpendUAHByProduct };

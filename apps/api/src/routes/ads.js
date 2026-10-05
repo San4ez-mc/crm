@@ -7,7 +7,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo, kyivDayKey } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem } = require('../lib/margin');
-const { ensureFreshUsdRate, rowToUAH, sumAdSpendUAH } = require('../lib/currency');
+const { ensureFreshUsdRate, rowToUAH } = require('../lib/currency');
 
 const router = express.Router();
 
@@ -18,22 +18,41 @@ const router = express.Router();
 // виручкою/маржею, а не тільки лічильниками. "Забрано" = !isRefused; виручку/маржу
 // рахуємо лише по неповернутих (без Return) і не-відмовлених замовленнях — так само,
 // як решта аналітики виключає Return (§4.11), інакше цифри будуть завищені.
-async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct, usdRate) {
-  const [spend, contacts, orders] = await Promise.all([
+// 2026-10-05: дані завантажуються ПАКЕТОМ на всі оголошення (3 агреговані запити), а не 3 запити на кожне
+// одночасно — на ~1700 оголошеннях це вичерпувало пул зʼєднань Prisma і валило весь CRM (сторінки «Аналітика»,
+// «Рекламні витрати»). Розрахунок по оголошенню — чиста функція statsFromData.
+async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, usdRate) {
+  if (!ads.length) return [];
+  const ids = ads.map((a) => a.id);
+  const one = ids.length === 1;
+  const [spendRows, clickRows, orders] = await Promise.all([
     // Meta пише суму у $ — конвертуємо в грн, щоб margin/spend (ROI) не змішували валюти
     // (2026-09-07, фідбек власника).
-    sumAdSpendUAH({ adId: ad.id, ...(dateWhere ? { date: dateWhere } : {}) }, usdRate),
-    db.adClick.count({ where: { adId: ad.id, ...(dateWhere ? { timestamp: dateWhere } : {}) } }),
+    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ...(one ? { adId: ids[0] } : { ad: { tenantId } }), ...(dateWhere ? { date: dateWhere } : {}) }, _sum: { amount: true } }),
+    db.adClick.groupBy({ by: ['adId'], where: { ...(one ? { adId: ids[0] } : { ad: { tenantId } }), ...(dateWhere ? { timestamp: dateWhere } : {}) }, _count: { _all: true } }),
     db.order.findMany({
-      where: { tenantId, firstTouchAdId: ad.id, ...(dateWhere ? { createdAt: dateWhere } : {}) },
+      where: { tenantId, firstTouchAdId: one ? ids[0] : { not: null }, ...(dateWhere ? { createdAt: dateWhere } : {}) },
       select: {
-        id: true, createdAt: true, isRefused: true,
+        id: true, createdAt: true, isRefused: true, firstTouchAdId: true,
         returns: { select: { id: true } },
         items: { select: { productId: true, name: true, price: true, quantity: true, product: { select: { name: true } } } },
       },
       orderBy: { createdAt: 'desc' },
     }),
   ]);
+  const spendBy = new Map();
+  for (const r of spendRows) spendBy.set(r.adId, (spendBy.get(r.adId) || 0) + rowToUAH(r._sum.amount, r.currency, usdRate));
+  const clicksBy = new Map(clickRows.map((r) => [r.adId, r._count._all]));
+  const ordersBy = new Map();
+  for (const o of orders) { const l = ordersBy.get(o.firstTouchAdId) || []; l.push(o); ordersBy.set(o.firstTouchAdId, l); }
+  return ads.map((ad) => statsFromData(ad, spendBy.get(ad.id) || 0, clicksBy.get(ad.id) || 0, ordersBy.get(ad.id) || [], expenseByProduct));
+}
+
+async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct, usdRate) {
+  return (await computeAdStatsBatch(tenantId, [ad], dateWhere, expenseByProduct, usdRate))[0];
+}
+
+function statsFromData(ad, spend, contacts, orders, expenseByProduct) {
   const ordersCreated = orders.length;
   const pickedUp = orders.filter((o) => !o.isRefused);
   const ordersPickedUp = pickedUp.length;
@@ -302,7 +321,7 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
   const tenant = await ensureFreshUsdRate(req.tenant);
   const usdRate = Number(tenant.usdExchangeRate || 0);
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
-  const all = await Promise.all(ads.map((ad) => computeAdStats(req.tenant.id, ad, dateWhere, expenseByProduct, usdRate)));
+  const all = await computeAdStatsBatch(req.tenant.id, ads, dateWhere, expenseByProduct, usdRate);
   const statsByAd = new Map(all.map((s) => [s.adId, s]));
 
   const totals = all.reduce((acc, s) => {

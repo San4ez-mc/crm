@@ -10,14 +10,11 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { NotFoundError, ValidationError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE } = require('../lib/margin');
-const { ensureFreshUsdRate, sumAdSpendUAH } = require('../lib/currency');
+const { ensureFreshUsdRate, adSpendUAHByProduct } = require('../lib/currency');
 const { logProductChange } = require('../lib/changeLog');
 
 const router = express.Router();
 
-async function adSpendForProduct(tenantId, productId, from, to, usdRate) {
-  return sumAdSpendUAH({ ad: { tenantId, productId }, ...(from || to ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) }, usdRate);
-}
 
 // ДОПОВНЕННЯ 2026-09-07 (фідбек власника): ціна постачальника змінюється в часі — приймаємо
 // [{cost, validFrom}], сортуємо за зростанням validFrom, відкидаємо биті рядки.
@@ -49,11 +46,12 @@ router.get('/product-expenses', asyncHandler(async (req, res) => {
     },
   });
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
+  const adSpendByProduct = await adSpendUAHByProduct(req.tenant.id, fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : null, usdRate);
 
-  const data = await Promise.all(products.map(async (p) => {
+  const data = products.map((p) => {
     const qty = p.orderItems.reduce((s, it) => s + it.quantity, 0);
     const revenue = p.orderItems.reduce((s, it) => s + Number(it.price) * it.quantity, 0);
-    const adSpend = await adSpendForProduct(req.tenant.id, p.id, fromDate, toDate, usdRate);
+    const adSpend = adSpendByProduct.get(p.id) || 0;
     const exp = p.productExpense;
     const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, it.order.createdAt), 0);
     const margin = marginBeforeAdSpend - adSpend;
@@ -71,7 +69,7 @@ router.get('/product-expenses', asyncHandler(async (req, res) => {
       margin,
       marginPercent: revenue > 0 ? (margin / revenue) * 100 : null,
     };
-  }));
+  });
 
   res.json({ ok: true, data });
 }));
@@ -132,12 +130,13 @@ router.get('/product-expenses/alerts', asyncHandler(async (req, res) => {
     include: { productExpense: true, orderItems: { where: { order: { ...REAL_SALE_ORDER_WHERE, createdAt: { gte: since } } }, include: { order: { select: { createdAt: true, isRefused: true } } } } },
   });
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
+  const adSpendByProduct = await adSpendUAHByProduct(req.tenant.id, { gte: since }, usdRate);
   const alerts = [];
   for (const p of products) {
     if (!p.productExpense) continue;
     const qty = p.orderItems.reduce((s, it) => s + it.quantity, 0);
     if (qty === 0) continue;
-    const adSpend = await adSpendForProduct(req.tenant.id, p.id, since, null, usdRate);
+    const adSpend = adSpendByProduct.get(p.id) || 0;
     const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, it.order.createdAt), 0);
     const margin = marginBeforeAdSpend - adSpend;
     if (margin < 0) alerts.push({ productId: p.id, name: p.name, sku: p.sku, margin, periodHours: 24 });

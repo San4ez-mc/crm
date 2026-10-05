@@ -7,7 +7,7 @@ const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { parseFrom, parseTo, kyivDayKey } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE } = require('../lib/margin');
-const { ensureFreshUsdRate, sumAdSpendUAH, rowToUAH } = require('../lib/currency');
+const { ensureFreshUsdRate, rowToUAH, adSpendUAHByProduct } = require('../lib/currency');
 const { ValidationError } = require('@crm/errors');
 
 const router = express.Router();
@@ -50,21 +50,43 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
   const spendDateWhere = from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {};
   const ads = await db.ad.findMany({ where: { tenantId: req.tenant.id }, include: { product: { select: { id: true, name: true } } } });
 
-  const data = await Promise.all(ads.map(async (ad) => {
-    const [clicks, spendUAH, spendAgg, firstTouchOrders, lastTouchOrders, revenueOrders] = await Promise.all([
-      db.adClick.count({ where: { adId: ad.id, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
-      // Реклама в Meta йде в $, решта показників (виручка/маржа) — у грн; без конвертації
-      // ROAS/CPC/CPM порівнювали б несумісні валюти (2026-09-07, фідбек власника).
-      sumAdSpendUAH({ adId: ad.id, ...spendDateWhere }, usdRate),
-      db.adSpendDaily.aggregate({ where: { adId: ad.id, ...spendDateWhere }, _sum: { impressions: true, clicks: true } }),
-      db.order.count({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE } }),
-      db.order.count({ where: { tenantId: req.tenant.id, lastTouchAdId: ad.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE } }),
-      db.order.findMany({ where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE }, select: { items: { select: { price: true, quantity: true } } } }),
-    ]);
-    const spend = spendUAH;
-    const impressions = Number(spendAgg._sum.impressions || 0);
-    const platformClicks = Number(spendAgg._sum.clicks || 0);
-    const revenueFirstTouch = revenueOrders.reduce((sum, o) => sum + o.items.reduce((s, it) => s + Number(it.price) * it.quantity, 0), 0);
+  // 2026-10-05: раніше — 6 запитів на КОЖНЕ оголошення одночасно (Promise.all по ~1700 рекламах ≈ 10 000 запитів при пулі
+  // з 9 з'єднань): пул вичерпувався, сторінка «Аналітика» падала й тягнула за собою весь CRM (тайм-аути в інших запитах).
+  // Тепер — по одному агрегованому запиту на показник для всіх оголошень, далі зводимо в памʼяті. Результат той самий.
+  const tenantAds = { tenantId: req.tenant.id };
+  const clickWhere = { ad: tenantAds, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) };
+  const orderWhere = { tenantId: req.tenant.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE };
+  const [clickRows, spendRows, firstRows, lastRows, revenueOrders] = await Promise.all([
+    db.adClick.groupBy({ by: ['adId'], where: clickWhere, _count: { _all: true } }),
+    // Реклама в Meta йде в $, решта показників (виручка/маржа) — у грн; без конвертації
+    // ROAS/CPC/CPM порівнювали б несумісні валюти (2026-09-07, фідбек власника).
+    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ad: tenantAds, ...spendDateWhere }, _sum: { amount: true, impressions: true, clicks: true } }),
+    db.order.groupBy({ by: ['firstTouchAdId'], where: { ...orderWhere, firstTouchAdId: { not: null } }, _count: { _all: true } }),
+    db.order.groupBy({ by: ['lastTouchAdId'], where: { ...orderWhere, lastTouchAdId: { not: null } }, _count: { _all: true } }),
+    db.order.findMany({ where: { ...orderWhere, firstTouchAdId: { not: null } }, select: { firstTouchAdId: true, items: { select: { price: true, quantity: true } } } }),
+  ]);
+  const clicksBy = new Map(clickRows.map((r) => [r.adId, r._count._all]));
+  const spendBy = new Map();
+  for (const r of spendRows) {
+    const s = spendBy.get(r.adId) || { spend: 0, impressions: 0, clicks: 0 };
+    s.spend += rowToUAH(r._sum.amount, r.currency, usdRate);
+    s.impressions += Number(r._sum.impressions || 0); s.clicks += Number(r._sum.clicks || 0);
+    spendBy.set(r.adId, s);
+  }
+  const firstBy = new Map(firstRows.map((r) => [r.firstTouchAdId, r._count._all]));
+  const lastBy = new Map(lastRows.map((r) => [r.lastTouchAdId, r._count._all]));
+  const revenueBy = new Map();
+  for (const o of revenueOrders) revenueBy.set(o.firstTouchAdId, (revenueBy.get(o.firstTouchAdId) || 0) + o.items.reduce((s, it) => s + Number(it.price) * it.quantity, 0));
+
+  const data = ads.map((ad) => {
+    const clicks = clicksBy.get(ad.id) || 0;
+    const sp = spendBy.get(ad.id) || { spend: 0, impressions: 0, clicks: 0 };
+    const spend = sp.spend;
+    const impressions = sp.impressions;
+    const platformClicks = sp.clicks;
+    const firstTouchOrders = firstBy.get(ad.id) || 0;
+    const lastTouchOrders = lastBy.get(ad.id) || 0;
+    const revenueFirstTouch = revenueBy.get(ad.id) || 0;
     return {
       adId: ad.id,
       name: ad.name || ad.externalId || ad.id,
@@ -85,7 +107,7 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
       revenueFirstTouch,
       roas: spend > 0 ? revenueFirstTouch / spend : null,
     };
-  }));
+  });
   res.json({ ok: true, data: data.sort((a, b) => b.spend - a.spend) });
 }));
 
@@ -105,15 +127,14 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     },
   });
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
+  // Витрати на рекламу — один агрегований запит на всі товари (раніше — окремий запит на кожен товар одночасно,
+  // це разом з ads-conversion вичерпувало пул зʼєднань, 2026-10-05). Реклама в Meta йде в $ — конвертуємо в грн (2026-09-07).
+  const adSpendByProduct = await adSpendUAHByProduct(req.tenant.id, fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : null, usdRate);
 
-  const data = await Promise.all(products.map(async (p) => {
+  const data = products.map((p) => {
     const qty = p.orderItems.reduce((s, it) => s + it.quantity, 0);
     const revenue = p.orderItems.reduce((s, it) => s + Number(it.price) * it.quantity, 0);
-    // Реклама в Meta йде в $ — конвертуємо в грн перед відніманням від маржі (2026-09-07).
-    const adSpend = await sumAdSpendUAH(
-      { ad: { tenantId: req.tenant.id, productId: p.id }, ...(fromDate || toDate ? { date: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}) },
-      usdRate,
-    );
+    const adSpend = adSpendByProduct.get(p.id) || 0;
     // Собівартість за ціною постачальника, що діяла на дату КОЖНОГО замовлення (не поточною) —
     // той самий принцип, що marginPerOrderItem, щоб managerCost-residual нижче був коректним.
     const exp = expenseByProduct.get(p.id);
@@ -124,7 +145,7 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     const managerCost = revenue - cogsTotal - marginBeforeAdSpend;
     const margin = marginBeforeAdSpend - adSpend;
     return { productId: p.id, name: p.name, sku: p.sku, revenue, qty, adSpend, cogs: cogsTotal, managerCost, margin, marginPercent: revenue > 0 ? (margin / revenue) * 100 : null };
-  }));
+  });
   res.json({ ok: true, data: data.filter((r) => r.qty > 0).sort((a, b) => b.margin - a.margin) });
 }));
 
