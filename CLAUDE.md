@@ -85,6 +85,11 @@ pm2 logs crm-api --lines 20
 **Помилка:** Після додавання Fop/TenantSecret/bulkPricing/isSet — задеплоїв (`git pull` → `migrate:deploy` → `build:admin` → `pm2 restart`), але перший же реальний запит (повторний прогін `migrate-keycrm.js --apply` на проді) впав з `PrismaClientValidationError: Unknown argument 'bulkPricing'`. Причина: `migrate:deploy` (на відміну від `migrate:dev`, який сам друкує "Running generate...") лишає СТАРИЙ згенерований `@prisma/client` на диску — `pm2 restart` підхопив старий клієнт, що не знав про нові поля/моделі. `yarn install --frozen-lockfile` теж не тригерить generate, якщо lockfile не змінився ("Already up-to-date" за 0.26с).
 **Правило:** Після КОЖНОГО `migrate:deploy`, де змінювалась схема (нові поля/моделі), явно запускати `yarn workspace @crm/db run generate` ПЕРЕД `pm2 restart` — не покладатись, що deploy/install зробить це сам. Внесено в чеклист §8.
 
+### 9.5 Запит у циклі по рядках (`Promise.all(ads.map(async …db…))`) — кладе весь CRM (2026-10-05)
+
+**Помилка:** `/analytics/ads-conversion` робив 6 запитів на КОЖНЕ оголошення одночасно (у goverla 1730 оголошень ≈ 10 000 запитів), так само `/analytics/margin`, `/product-expenses` і `/ads/spend-summary` — по запиту на товар/оголошення. Пул Prisma — 9 зʼєднань: «Timed out fetching a new connection from the connection pool», сторінка «Аналітика» не вантажилась, а разом із нею падали запити всіх інших сторінок.
+**Правило:** звіти по багатьох сутностях — агрегованими запитами (`groupBy` по `adId`/`currency`, один `findMany` з `firstTouchAdId: {not:null}`), зведення в памʼяті через `Map`. Витрати по товарах — `adSpendUAHByProduct()` з `lib/currency.js`; по оголошеннях — `computeAdStatsBatch()` у `routes/ads.js`. `sumAdSpendUAH` — лише для ОДНОГО фільтра, ніколи в циклі.
+
 ### 9.2 Git Bash + інлайн кирилиця в `curl -d '...'` — мовчки б'є байти
 
 **Помилка:** Тестові запити `curl -d '{"name":"Худі оверсайз"}'` через Git Bash на Windows зіпсували кирилицю в БД (`????`-байти), хоча JSON лишався валідним і запит повертав 200 — сам застосунок ні до чого, псується ще на рівні шелу до відправки.
