@@ -58,6 +58,16 @@ function marginPerOrderItem(item, expenseByProduct, isRefused = false, atDate = 
 // РІЗНИХ наборів замовлень і не збігались одне з одним. computeAdStats (routes/ads.js,
 // сторінка «Рекламні витрати») вже робив це правильно — решта звітів приведені до того
 // самого критерію.
-const REAL_SALE_ORDER_WHERE = { isRefused: false, returns: { none: {} } };
+//
+// 2026-10-06: у таблиці Order лежать ДВА різні види записів. З 09.09 кожна розмова з воронки — це картка (funnelSessionId, товар
+// із ціною, щойно бот показав картку товару), а замовленням вона стає лише коли є покупець (телефон, ПІБ). Без цього розрізнення
+// «Аналітика» рахувала кожну презентацію як продаж: за 7 днів 4,71 млн грн виручки замість 307 тис. (3313 «замовлень» замість 179).
+// Єдине визначення — тут; звіти беруть лише ці фрагменти:
+//   ORDER_PLACED_WHERE   — оформлене замовлення (є покупець), включно з відмовами (знаменник «% відмов»);
+//   REAL_SALE_ORDER_WHERE — фактичний продаж: оформлене, не відмова, без повернення;
+//   LEAD_WHERE           — розмова з воронки (картка; стає замовленням у тому ж рядку) — «контакти/повідомлення» для CPL і конверсії.
+const ORDER_PLACED_WHERE = { buyerId: { not: null } };
+const REAL_SALE_ORDER_WHERE = { ...ORDER_PLACED_WHERE, isRefused: false, returns: { none: {} } };
+const LEAD_WHERE = { funnelSessionId: { not: null } };
 
-module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE };
+module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE };

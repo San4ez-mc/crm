@@ -5,6 +5,66 @@ import { Field, Input, Textarea, Select, Button, Badge, ErrorBanner, money, form
 import Modal from '../components/common/Modal';
 import OrderEditor from './OrderEditor';
 
+// Реклама замовлення (Edits 3605aed1/2f4d68fd, 2026-10-06): видно для будь-якого замовлення (і створеного ботом), можна змінити вручну.
+// Перший дотик — реклама, з якої людина вперше прийшла в розмову (саме їй звіти зараховують замовлення); останній — остання реклама
+// перед замовленням. Бот ставить обидва автоматично з розмови.
+function AdLine({ ad }) {
+  if (!ad) return <span className="text-slate-500">— органіка / невідомо</span>;
+  return (
+    <span className="inline-flex items-center gap-2">
+      {ad.thumbnailUrl && <img src={ad.thumbnailUrl} alt="" className="h-8 w-8 rounded object-cover" />}
+      <span>{ad.name || ad.externalId}{ad.campaignName && ad.campaignName !== ad.name ? <span className="text-slate-500"> · {ad.campaignName}</span> : null}</span>
+    </span>
+  );
+}
+
+function AttributionSection({ order, onSaved, onError }) {
+  const [editing, setEditing] = useState(null); // 'firstTouchAdId' | 'lastTouchAdId'
+  const [q, setQ] = useState('');
+  const [found, setFound] = useState([]);
+  async function search(text) {
+    setQ(text);
+    if (text.trim().length < 2) { setFound([]); return; }
+    try { const r = await api.listAds({ search: text.trim(), status: 'all', take: '20' }); setFound(r.data || r || []); } catch (e) { onError(e.message); }
+  }
+  async function choose(adId) {
+    try {
+      const r = await api.setOrderAttribution(order.id, { [editing]: adId });
+      const ad = adId ? found.find((a) => a.id === adId) || null : null;
+      onSaved({ ...(r.data || {}), [editing === 'firstTouchAdId' ? 'firstTouchAd' : 'lastTouchAd']: ad });
+      setEditing(null); setQ(''); setFound([]);
+    } catch (e) { onError(e.message); }
+  }
+  const row = (label, key, ad) => (
+    <div className="flex items-center justify-between gap-2">
+      <div><span className="text-slate-500">{label}: </span><AdLine ad={ad} /></div>
+      <button onClick={() => { setEditing(editing === key ? null : key); setQ(''); setFound([]); }} className="shrink-0 text-xs text-brand-light hover:underline">{editing === key ? 'Скасувати' : 'Змінити'}</button>
+    </div>
+  );
+  return (
+    <section>
+      <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Реклама (атрибуція)</h4>
+      <div className="space-y-1.5 text-slate-300">
+        {row('Перший дотик (йому зараховується замовлення)', 'firstTouchAdId', order.firstTouchAd)}
+        {row('Останній дотик', 'lastTouchAdId', order.lastTouchAd)}
+      </div>
+      {editing && (
+        <div className="mt-2 rounded border border-slate-800 p-2">
+          <Input autoFocus placeholder="Назва оголошення, кампанії або Meta-id…" value={q} onChange={(e) => search(e.target.value)} />
+          <div className="mt-1 max-h-56 space-y-1 overflow-y-auto">
+            {found.map((a) => (
+              <button key={a.id} onClick={() => choose(a.id)} className="block w-full rounded px-2 py-1 text-left hover:bg-slate-800">
+                <AdLine ad={a} /> <span className="text-[11px] text-slate-500">{a.effectiveStatus || ''}</span>
+              </button>
+            ))}
+            <button onClick={() => choose(null)} className="block w-full rounded px-2 py-1 text-left text-slate-500 hover:bg-slate-800">— прибрати (органіка)</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function OrderDetailModal({ order: initialOrder, pipelines, onClose, onChanged, onOpenReturn, autoEdit = false }) {
   // Після збереження правок картка показує свіже замовлення (список оновлюється окремо через onChanged).
   const [order, setOrder] = useState(initialOrder);
@@ -107,13 +167,7 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
           <Textarea rows={2} value={managerComment} onChange={(e) => setManagerComment(e.target.value)} onBlur={saveComment} />
         </section>
 
-        <section>
-          <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Атрибуція</h4>
-          <div className="text-slate-400">
-            Перший дотик: {order.firstTouchAd?.name || '— (органіка)'}<br />
-            Останній дотик: {order.lastTouchAd?.name || '—'}
-          </div>
-        </section>
+        <AttributionSection order={order} onSaved={(o) => { setOrder({ ...order, ...o }); onChanged(); }} onError={setError} />
 
         <section>
           <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Стадія</h4>

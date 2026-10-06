@@ -6,7 +6,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { parseFrom, parseTo, kyivDayKey } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE } = require('../lib/margin');
 const { ensureFreshUsdRate, rowToUAH, adSpendUAHByProduct } = require('../lib/currency');
 const { ValidationError } = require('@crm/errors');
 
@@ -54,10 +54,10 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
   // з 9 з'єднань): пул вичерпувався, сторінка «Аналітика» падала й тягнула за собою весь CRM (тайм-аути в інших запитах).
   // Тепер — по одному агрегованому запиту на показник для всіх оголошень, далі зводимо в памʼяті. Результат той самий.
   const tenantAds = { tenantId: req.tenant.id };
-  const clickWhere = { ad: tenantAds, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) };
   const orderWhere = { tenantId: req.tenant.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE };
   const [clickRows, spendRows, firstRows, lastRows, revenueOrders] = await Promise.all([
-    db.adClick.groupBy({ by: ['adId'], where: clickWhere, _count: { _all: true } }),
+    // «Кліки» (наші) = розмови, які почались із цієї реклами (картки воронки з firstTouchAdId). Раніше — порожня таблиця AdClick.
+    db.order.groupBy({ by: ['firstTouchAdId'], where: { tenantId: req.tenant.id, ...periodWhere(from, to), ...LEAD_WHERE, firstTouchAdId: { not: null } }, _count: { _all: true } }).then((rows) => rows.map((r) => ({ adId: r.firstTouchAdId, _count: r._count }))),
     // Реклама в Meta йде в $, решта показників (виручка/маржа) — у грн; без конвертації
     // ROAS/CPC/CPM порівнювали б несумісні валюти (2026-09-07, фідбек власника).
     db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ad: tenantAds, ...spendDateWhere }, _sum: { amount: true, impressions: true, clicks: true } }),
@@ -222,13 +222,14 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   const usdRate = Number(tenant.usdExchangeRate || 0);
   const expenseByProduct = await loadExpenseMap(tenant.id);
 
-  const [orders, spendRows, clickRows, returns] = await Promise.all([
+  const [orders, spendRows, leadRows, returns] = await Promise.all([
     db.order.findMany({
-      where: { tenantId: tenant.id, ...periodWhere(from, to) },
+      where: { tenantId: tenant.id, ...periodWhere(from, to), ...ORDER_PLACED_WHERE },
       include: { items: true, buyer: { select: { id: true } }, returns: { select: { id: true } } },
     }),
     db.adSpendDaily.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
-    db.adClick.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+    // «Нові повідомлення» = нові розмови з воронки (картки). Раніше — таблиця AdClick, яку з 13.09 ніхто не заповнює (0 записів).
+    db.order.findMany({ where: { tenantId: tenant.id, ...periodWhere(from, to), ...LEAD_WHERE }, select: { createdAt: true } }),
     db.return.findMany({ where: { tenantId: tenant.id, ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
   ]);
 
@@ -282,8 +283,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     b.impressions = (b.impressions || 0) + Number(spend.impressions || 0);
     b.platformClicks = (b.platformClicks || 0) + Number(spend.clicks || 0);
   }
-  for (const click of clickRows) {
-    const b = bucket(dayKey(click.timestamp));
+  for (const lead of leadRows) {
+    const b = bucket(dayKey(lead.createdAt));
     b.messages = (b.messages || 0) + 1;
   }
   for (const ret of returns) {
@@ -350,15 +351,16 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
   const [ads, orders] = await Promise.all([
     db.ad.findMany({ where: { tenantId: tenant.id, productId: String(productId) } }),
     db.order.findMany({
-      where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...periodWhere(from, to) },
+      where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...periodWhere(from, to), ...ORDER_PLACED_WHERE },
       include: { items: { where: { productId: String(productId) } }, returns: { select: { id: true } } },
     }),
   ]);
   const adIds = ads.map((a) => a.id);
 
-  const [spendRows, clickRows] = await Promise.all([
+  const [spendRows, leadRows] = await Promise.all([
     db.adSpendDaily.findMany({ where: { adId: { in: adIds }, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
-    db.adClick.findMany({ where: { adId: { in: adIds }, ...(from || to ? { timestamp: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+    // Розмови про цей товар (картка воронки з цим товаром) — замість порожньої AdClick.
+    db.order.findMany({ where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...periodWhere(from, to), ...LEAD_WHERE }, select: { createdAt: true } }),
   ]);
 
   const days = new Map();
@@ -379,7 +381,7 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
   }
   // Meta пише суму у $ — конвертуємо в грн одразу тут (та сама логіка, що /analytics/daily).
   for (const spend of spendRows) bucket(dayKey(spend.date)).adSpend += rowToUAH(spend.amount, spend.currency, usdRate);
-  for (const click of clickRows) bucket(dayKey(click.timestamp)).messages += 1;
+  for (const lead of leadRows) bucket(dayKey(lead.createdAt)).messages += 1;
 
   const data = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
     const nonRefusedOrders = d.ordersCount - d.refusedCount;

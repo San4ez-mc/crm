@@ -8,6 +8,7 @@ const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
+const { touchFields } = require('../lib/adAttribution');
 
 const router = express.Router();
 
@@ -23,20 +24,22 @@ async function stageByName(tenantId, name) {
 // 2026-09-09 (власник: «всіх перенеси в замовлення»): кожна подія воронки = картка на дошці замовлень.
 // Перша подія створює картку (contactName/contactIg, позиція = презентований товар), наступні рухають її по
 // стадіях і оновлюють lastClientAt. Реальне замовлення (POST /orders з funnelSessionId) доповнює цю ж картку.
-async function upsertFunnelCard(tenantId, { sessionId, stageName, funnelSlug, igUsername, senderName, product, lastClientAt }) {
+async function upsertFunnelCard(tenantId, { sessionId, stageName, funnelSlug, igUsername, senderName, product, lastClientAt, firstTouch, lastTouch }) {
   const stage = await stageByName(tenantId, stageName);
   const existing = await db.order.findFirst({ where: { tenantId, funnelSessionId: String(sessionId) }, include: { items: { select: { id: true } } } });
+  // Реклама, з якої прийшла розмова (2026-10-06): картка отримує дотики з першої ж події, замовлення (той самий рядок) їх успадковує.
+  const touch = await touchFields(tenantId, { firstTouch, lastTouch }, existing);
   const contact = { ...(senderName ? { contactName: String(senderName).slice(0, 120) } : {}), ...(igUsername ? { contactIg: String(igUsername).slice(0, 120) } : {}) };
   const item = product && (product.name || product.sku) ? { productId: product.id || null, name: String(product.name || product.sku), price: Number(product.price) || 0, quantity: 1, properties: product.sku ? [{ name: 'Артикул', value: String(product.sku) }] : null, isUpsell: false } : null;
   const at = lastClientAt && !Number.isNaN(new Date(lastClientAt).getTime()) ? new Date(lastClientAt) : new Date(); // бекфіл передає реальний час останньої активності
   if (!existing) {
-    return db.order.create({ data: { tenantId, funnelSessionId: String(sessionId), stageId: stage ? stage.id : undefined, sourceName: 'Instagram' + (funnelSlug ? ' ' + String(funnelSlug) : ''), lastClientAt: at, ...contact, ...(item ? { items: { create: [item] } } : {}) } });
+    return db.order.create({ data: { tenantId, funnelSessionId: String(sessionId), stageId: stage ? stage.id : undefined, sourceName: 'Instagram' + (funnelSlug ? ' ' + String(funnelSlug) : ''), lastClientAt: at, ...contact, ...touch, ...(item ? { items: { create: [item] } } : {}) } });
   }
-  return db.order.update({ where: { id: existing.id }, data: { ...(stage ? { stageId: stage.id } : {}), lastClientAt: at, ...contact, ...(item && !existing.items.length ? { items: { create: [item] } } : {}) } });
+  return db.order.update({ where: { id: existing.id }, data: { ...(stage ? { stageId: stage.id } : {}), lastClientAt: at, ...contact, ...touch, ...(item && !existing.items.length ? { items: { create: [item] } } : {}) } });
 }
 
 router.post('/funnel-events', asyncHandler(async (req, res) => {
-  const { funnelSlug, sessionId, stageName, stageOrder, igUsername, senderName, product, lastClientAt } = req.body || {};
+  const { funnelSlug, sessionId, stageName, stageOrder, igUsername, senderName, product, lastClientAt, firstTouch, lastTouch } = req.body || {};
   if (!sessionId || !stageName) throw new ValidationError('sessionId і stageName обовʼязкові');
   const row = await db.funnelEvent.upsert({
     where: { tenantId_sessionId_stageName: { tenantId: req.tenant.id, sessionId: String(sessionId), stageName: String(stageName) } },
@@ -44,7 +47,7 @@ router.post('/funnel-events', asyncHandler(async (req, res) => {
     create: { tenantId: req.tenant.id, funnelSlug: funnelSlug ? String(funnelSlug) : null, sessionId: String(sessionId), stageName: String(stageName), stageOrder: Number(stageOrder) || 0 },
   });
   let card = null;
-  try { card = await upsertFunnelCard(req.tenant.id, { sessionId, stageName, funnelSlug, igUsername, senderName, product, lastClientAt }); }
+  try { card = await upsertFunnelCard(req.tenant.id, { sessionId, stageName, funnelSlug, igUsername, senderName, product, lastClientAt, firstTouch, lastTouch }); }
   catch (e) { /* картка на дошці — best-effort, аналітика подій важливіша */ }
   res.status(201).json({ ok: true, data: row, orderId: card ? card.id : null });
 }));

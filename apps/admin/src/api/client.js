@@ -93,6 +93,7 @@ export const api = {
   getOrder: (id) => get(`/orders/${id}`),
   createOrder: (data) => post('/orders', data),
   updateOrder: (id, data) => patch(`/orders/${id}`, data),
+  setOrderAttribution: (id, data) => patch(`/orders/${id}/attribution`, data),
   replaceOrderItems: (id, items) => put(`/orders/${id}/items`, { items }),
 
   listReturns: () => get('/returns'),

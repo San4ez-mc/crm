@@ -6,7 +6,8 @@ const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo, kyivDayKey } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, ORDER_PLACED_WHERE, REAL_SALE_ORDER_WHERE, LEAD_WHERE } = require('../lib/margin');
+const { findOrCreateAdByExternalId } = require('../lib/adAttribution');
 const { ensureFreshUsdRate, rowToUAH } = require('../lib/currency');
 
 const router = express.Router();
@@ -29,9 +30,12 @@ async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, u
     // Meta пише суму у $ — конвертуємо в грн, щоб margin/spend (ROI) не змішували валюти
     // (2026-09-07, фідбек власника).
     db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ...(one ? { adId: ids[0] } : { ad: { tenantId } }), ...(dateWhere ? { date: dateWhere } : {}) }, _sum: { amount: true } }),
-    db.adClick.groupBy({ by: ['adId'], where: { ...(one ? { adId: ids[0] } : { ad: { tenantId } }), ...(dateWhere ? { timestamp: dateWhere } : {}) }, _count: { _all: true } }),
+    // Контакти = розмови, що почались із цієї реклами (картки воронки, lib/margin LEAD_WHERE); раніше — порожня AdClick.
+    db.order.groupBy({ by: ['firstTouchAdId'], where: { tenantId, firstTouchAdId: one ? ids[0] : { not: null }, ...LEAD_WHERE, ...(dateWhere ? { createdAt: dateWhere } : {}) }, _count: { _all: true } })
+      .then((rows) => rows.map((r) => ({ adId: r.firstTouchAdId, _count: r._count }))),
+    // Замовлення = оформлені (є покупець), не картки розмов, яким бот лише показав товар.
     db.order.findMany({
-      where: { tenantId, firstTouchAdId: one ? ids[0] : { not: null }, ...(dateWhere ? { createdAt: dateWhere } : {}) },
+      where: { tenantId, firstTouchAdId: one ? ids[0] : { not: null }, ...ORDER_PLACED_WHERE, ...(dateWhere ? { createdAt: dateWhere } : {}) },
       select: {
         id: true, createdAt: true, isRefused: true, firstTouchAdId: true,
         returns: { select: { id: true } },
@@ -131,7 +135,7 @@ router.get('/ads/accounts', asyncHandler(async (req, res) => {
 }));
 
 router.get('/ads', asyncHandler(async (req, res) => {
-  const { productId, externalId, adAccountId, status, take = '100', skip = '0' } = req.query;
+  const { productId, externalId, adAccountId, status, search, take = '100', skip = '0' } = req.query;
   const tenant = await ensureFreshUsdRate(req.tenant);
   const usdRate = Number(tenant.usdExchangeRate || 0);
   // externalId — точковий пошук (2026-09-13, живий баг "дублі реклами" + "olgakovalenko_ok
@@ -151,6 +155,8 @@ router.get('/ads', asyncHandler(async (req, res) => {
     ...(productId ? { productId: String(productId) } : {}),
     ...(externalId ? { externalId: String(externalId) } : {}),
     ...(acctIds.length ? { adAccountId: { in: acctIds } } : {}),
+    // search — вибір реклами для замовлення вручну (картка замовлення, 2026-10-06): назва, кампанія або Meta-id.
+    ...(search ? { AND: [{ OR: [{ name: { contains: String(search), mode: 'insensitive' } }, { campaignName: { contains: String(search), mode: 'insensitive' } }, { externalId: { contains: String(search) } }] }] } : {}),
     ...statusFilter,
   };
   const ads = await db.ad.findMany({
@@ -361,7 +367,7 @@ router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
   const [spendRows, orders] = await Promise.all([
     db.adSpendDaily.findMany({ where: { adId: ad.id, ...(dateWhere ? { date: dateWhere } : {}) }, select: { date: true, amount: true, currency: true } }),
     db.order.findMany({
-      where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...(dateWhere ? { createdAt: dateWhere } : {}), isRefused: false, returns: { none: {} } },
+      where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...(dateWhere ? { createdAt: dateWhere } : {}), ...REAL_SALE_ORDER_WHERE },
       select: { createdAt: true, items: { select: { productId: true, price: true, quantity: true } } },
     }),
   ]);
@@ -422,22 +428,6 @@ router.post('/ad-spend/sync-now', asyncHandler(async (req, res) => {
   } catch (e) { autoBind = 'error'; }
   res.json({ ok: true, data: { status: snap.metaSyncStatus || 'unknown', date: snap.metaSyncDate || null, adsCount: snap.metaSyncAdsCount ?? null, written: snap.metaSyncWritten ?? null, error: snap.metaSyncError || null, autoBind } });
 }));
-
-async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {}) {
-  let ad = await db.ad.findFirst({ where: { tenantId, externalId } });
-  if (!ad) {
-    ad = await db.ad.create({
-      data: { tenantId, externalId, name: name || null, campaignId: meta.campaignId || null, campaignName: meta.campaignName || null, adAccountId: meta.adAccountId || null, thumbnailUrl: meta.thumbnailUrl || null },
-    });
-  } else if (meta.campaignName || meta.campaignId || meta.adAccountId || meta.thumbnailUrl) {
-    // Meta не міняє campaignId/adAccountId заднім числом, але назва кампанії/фото креативу могли оновитись.
-    ad = await db.ad.update({
-      where: { id: ad.id },
-      data: { ...(meta.campaignId ? { campaignId: meta.campaignId } : {}), ...(meta.campaignName ? { campaignName: meta.campaignName } : {}), ...(meta.adAccountId ? { adAccountId: meta.adAccountId } : {}), ...(meta.thumbnailUrl ? { thumbnailUrl: meta.thumbnailUrl } : {}) },
-    });
-  }
-  return ad;
-}
 
 // §5: `POST /ad-spend-daily` — щоденні витрати від Flows-автоматизації (Zernio/Meta Ads).
 // impressions/clicks — платформні метрики самого Facebook (для CPC/CTR/CPM), не наш AdClick.

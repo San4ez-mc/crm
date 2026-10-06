@@ -1,6 +1,7 @@
 // §4.8 Order + OrderItem — основний робочий екран менеджера (§9.7/9.8) + операції для воронки (§5).
 const express = require('express');
 const { db } = require('@crm/db');
+const { touchFields } = require('../lib/adAttribution');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
@@ -15,8 +16,8 @@ const ORDER_INCLUDE = {
   // пріоритетніше за загальне фото товару.
   items: { include: { product: { select: { id: true, name: true, sku: true, thumbnailUrl: true, images: true } }, offer: { select: { id: true, sku: true, images: true } } } },
   returns: true,
-  firstTouchAd: { select: { id: true, name: true } },
-  lastTouchAd: { select: { id: true, name: true } },
+  firstTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true } },
+  lastTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true } },
 };
 
 async function defaultStageId(tenantId) {
@@ -104,6 +105,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
   if (b.funnelSessionId) {
     const card = await db.order.findFirst({ where: { tenantId: req.tenant.id, funnelSessionId: String(b.funnelSessionId) } });
     if (card) {
+      const cardTouch = await touchFields(req.tenant.id, { firstTouch: b.firstTouch, lastTouch: b.lastTouch }, card);
       await db.orderItem.deleteMany({ where: { orderId: card.id } });
       const updated = await db.order.update({
         where: { id: card.id },
@@ -115,6 +117,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
           ttn: Array.isArray(b.ttn) ? b.ttn : card.ttn,
           ...(b.firstTouchAdId ? { firstTouchAdId: b.firstTouchAdId, firstTouchAt: b.firstTouchAt ? new Date(b.firstTouchAt) : new Date() } : {}),
           ...(b.lastTouchAdId ? { lastTouchAdId: b.lastTouchAdId, lastTouchAt: b.lastTouchAt ? new Date(b.lastTouchAt) : new Date() } : {}),
+          ...cardTouch,
           lastClientAt: new Date(),
           items: { create: b.items.map((it) => ({ productId: it.productId || null, offerId: it.offerId || null, name: it.name, price: it.price, quantity: Number(it.quantity) || 1, properties: it.properties || null, isUpsell: !!it.isUpsell })) },
         },
@@ -124,6 +127,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
     }
   }
 
+  const newTouch = await touchFields(req.tenant.id, { firstTouch: b.firstTouch, lastTouch: b.lastTouch }, null);
   const order = await db.order.create({
     data: {
       tenantId: req.tenant.id,
@@ -139,6 +143,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
       firstTouchAt: b.firstTouchAt ? new Date(b.firstTouchAt) : (b.firstTouchAdId ? new Date() : null),
       lastTouchAdId: b.lastTouchAdId || null,
       lastTouchAt: b.lastTouchAt ? new Date(b.lastTouchAt) : (b.lastTouchAdId ? new Date() : null),
+      ...newTouch, // дотики за Meta-id (Flows) — після явних firstTouchAdId/lastTouchAdId, щоб null не перекрив знайдене
       items: {
         create: b.items.map((it) => ({
           productId: it.productId || null,
@@ -258,6 +263,19 @@ router.patch('/orders/:id/attribution', asyncHandler(async (req, res) => {
     },
   });
   res.json({ ok: true, data: order });
+}));
+
+// Дотики реклами за розмовою воронки (Meta-id) — для бекфілу з історії Flows і будь-якого входу, де відомий лише sessionId.
+// Та сама логіка, що в картці /funnel-events: firstTouch не перезаписується, lastTouch — лише новіший.
+router.post('/orders/attribution-by-session', asyncHandler(async (req, res) => {
+  const { sessionId, firstTouch, lastTouch } = req.body || {};
+  if (!sessionId) throw new ValidationError('sessionId обовʼязковий');
+  const order = await db.order.findFirst({ where: { tenantId: req.tenant.id, funnelSessionId: String(sessionId) } });
+  if (!order) return void res.json({ ok: true, data: null, reason: 'no_order_for_session' });
+  const data = await touchFields(req.tenant.id, { firstTouch, lastTouch }, order);
+  if (!Object.keys(data).length) return void res.json({ ok: true, data: { id: order.id, unchanged: true } });
+  const upd = await db.order.update({ where: { id: order.id }, data, select: { id: true, firstTouchAdId: true, lastTouchAdId: true } });
+  res.json({ ok: true, data: upd });
 }));
 
 module.exports = router;
