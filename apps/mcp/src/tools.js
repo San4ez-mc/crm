@@ -71,7 +71,7 @@ const TOOLS = [
 
   // ── Ad §4.9 — підключення рекламних кабінетів/оголошень ─────────────
   { name: 'list_ads', description: 'Оголошення tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
-  { name: 'create_ad', description: 'Зареєструвати оголошення (з рекламного кабінету).', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, externalId: { type: 'string' }, name: { type: 'string' }, productId: { type: 'string' } }, required: ['tenantId'] } },
+  { name: 'create_ad', description: 'Зареєструвати оголошення (з рекламного кабінету). postId — пост, який рекламується (Meta effective_object_story_id), для групування просувань.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, externalId: { type: 'string' }, name: { type: 'string' }, productId: { type: 'string' }, postId: { type: 'string' } }, required: ['tenantId'] } },
   { name: 'update_ad', description: 'Прив\'язати оголошення до товару / перейменувати.', inputSchema: { type: 'object', properties: { adId: { type: 'string' }, productId: { type: 'string' }, name: { type: 'string' } }, required: ['adId'] } },
 ];
 
@@ -241,7 +241,7 @@ async function callTool(name, args = {}) {
     case 'list_ads':
       return db.ad.findMany({ where: { tenantId: args.tenantId }, include: { product: true } });
     case 'create_ad':
-      return db.ad.create({ data: { tenantId: args.tenantId, externalId: args.externalId || null, name: args.name || null, productId: args.productId || null } });
+      return db.ad.create({ data: { tenantId: args.tenantId, externalId: args.externalId || null, name: args.name || null, productId: args.productId || null, postId: args.postId || null } });
     case 'update_ad': {
       const data = {};
       if (args.productId !== undefined) { data.productId = args.productId || null; data.productLinkSource = args.productId ? 'manual' : null; data.productLinkNote = null; }

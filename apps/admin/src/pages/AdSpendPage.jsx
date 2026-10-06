@@ -90,7 +90,8 @@ export default function AdSpendPage() {
                   <th className="px-4 py-3">Назва рекламного оголошення</th>
                   <th className="px-4 py-3">Статус</th>
                   <th className="px-4 py-3 text-right">Витрати</th>
-                  <th className="px-4 py-3 text-right">Замовлення</th>
+                  <th className="px-4 py-3 text-right" title="Розмови в Instagram, які почались із цієї реклами">Розмови</th>
+                  <th className="px-4 py-3 text-right" title="Оформлені замовлення (є телефон покупця), перший дотик — ця реклама">Замовлення</th>
                   <th className="px-4 py-3 text-right">Ціна за замовлення</th>
                   <th className="px-4 py-3 text-right">Окупність</th>
                   <th className="px-4 py-3 text-right">Прибуток</th>
@@ -108,9 +109,23 @@ export default function AdSpendPage() {
                     <td className="px-4 py-3">
                       <div>{ad.name || ad.externalId || ad.id.slice(0, 8)}</div>
                       {ad.productName && <div className="text-xs text-slate-500">{ad.productName}</div>}
+                      {ad.boosts?.length > 1 && (
+                        <details className="mt-1 text-xs text-slate-400">
+                          <summary className="cursor-pointer text-brand-light">Пост просували {ad.boosts.length} разів — показати</summary>
+                          <div className="mt-1 space-y-0.5">
+                            {ad.boosts.map((b) => (
+                              <div key={b.id} className="flex justify-between gap-3">
+                                <Link to={`/ad-spend/${b.id}?from=${range.from}&to=${range.to}`} className="truncate hover:underline">{b.adCreatedAt ? new Date(b.adCreatedAt).toLocaleDateString('uk-UA') + ' · ' : ''}{b.campaignName || b.name}{b.effectiveStatus === 'ACTIVE' ? ' · активне' : ''}</Link>
+                                <span className="shrink-0">{money(b.spend)} · {b.contacts} розм. · {b.ordersCreated} зам.</span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
                     </td>
                     <td className="px-4 py-3">{ad.spend > 0 ? <Badge color="green">Активне</Badge> : <Badge>Без витрат</Badge>}</td>
                     <td className="px-4 py-3 text-right">{money(ad.spend)}</td>
+                    <td className="px-4 py-3 text-right">{ad.contacts ?? 0}</td>
                     <td className="px-4 py-3 text-right">{ad.ordersCreated}</td>
                     <td className="px-4 py-3 text-right">{ad.cpa !== null ? money(ad.cpa) : '—'}</td>
                     <td className="px-4 py-3 text-right">

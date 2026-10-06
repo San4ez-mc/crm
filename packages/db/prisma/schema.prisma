@@ -475,6 +475,7 @@ model Ad {
   // раніше зберігався лише campaignId): третій рівень ієрархії Meta, окремо від externalId (=Ad ID).
   adSetId   String?
   adSetName String?
+  postId    String? // 2026-10-06: пост, який рекламується (Meta creative.effective_object_story_id) — групування просувань одного поста у звіті
   // 2026-09-29: хто привʼязав товар — 'manual' (адмін) | 'auto_article' | 'auto_vision' (автоприв'язка Flows при отриманні реклами).
   productLinkSource String?
   productLinkNote   String?
@@ -487,6 +488,7 @@ model Ad {
 
   @@index([tenantId])
   @@index([tenantId, productId])
+  @@index([tenantId, postId])
 }
 
 model AdSpendDaily {

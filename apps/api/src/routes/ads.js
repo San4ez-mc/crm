@@ -199,7 +199,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
   // n_lookup-crm-code.js реєструє на льоту при першому кліку клієнта (ще до щоденної
   // синхронізації Meta Ads, яка знає лише про платні кампанії), раніше не мали фото
   // взагалі — thumbnailUrl тут просто не приймався, навіть якщо його прислали.
-  const { externalId, name, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, effectiveStatus, adCreatedAt, thumbnailUrl, captionText, videoUrl, mediaType, productLinkSource, productLinkNote } = req.body || {};
+  const { postId, externalId, name, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, effectiveStatus, adCreatedAt, thumbnailUrl, captionText, videoUrl, mediaType, productLinkSource, productLinkNote } = req.body || {};
   let { productId } = req.body || {};
   const _isAuto = /^auto_/.test(String(productLinkSource || ''));
   const _adCreatedAtDate = adCreatedAt ? new Date(adCreatedAt) : null;
@@ -240,6 +240,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
         ...(captionText ? { captionText } : {}),
         ...(videoUrl ? { videoUrl } : {}),
         ...(mediaType ? { mediaType } : {}),
+        ...(postId ? { postId: String(postId) } : {}),
       },
     });
     return void res.status(200).json({ ok: true, data: ad, reused: true });
@@ -250,7 +251,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
       campaignId: campaignId || null, campaignName: campaignName || null, adSetId: adSetId || null, adSetName: adSetName || null,
       adAccountId: adAccountId || null, adAccountName: adAccountName || null, effectiveStatus: effectiveStatus || null,
       adCreatedAt: _adCreatedAtDate, thumbnailUrl: thumbnailUrl || null,
-      captionText: captionText || null, videoUrl: videoUrl || null, mediaType: mediaType || null,
+      captionText: captionText || null, videoUrl: videoUrl || null, mediaType: mediaType || null, postId: postId ? String(postId) : null,
     },
   });
   res.status(201).json({ ok: true, data: ad });
@@ -336,17 +337,39 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
     return acc;
   }, { spend: 0, margin: 0, orders: 0, activeAds: 0 });
 
-  const rows = ads.map((ad) => ({
+  const adRows = ads.map((ad) => ({
     id: ad.id, name: ad.name, externalId: ad.externalId, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName,
+    effectiveStatus: ad.effectiveStatus, adCreatedAt: ad.adCreatedAt, postId: ad.postId || null,
     productId: ad.productId, productName: ad.product?.name || null,
     ...statsByAd.get(ad.id),
   }));
+  // Один рядок на пост (Edit 71b501a3, 2026-10-06): кожне «Просувати допис» — окреме оголошення Meta, і той самий пост
+  // показувався 26 разів. Групуємо за postId (Meta effective_object_story_id) ДО пагінації; без postId — рядок сам по собі.
+  // ?group=ad — по оголошеннях, як раніше.
+  let rows = adRows;
+  if (req.query.group !== 'ad') {
+    const groups = new Map();
+    for (const r of adRows) { const k = r.postId ? 'p:' + r.postId : 'a:' + r.id; (groups.get(k) || groups.set(k, []).get(k)).push(r); }
+    rows = [...groups.values()].map((g) => {
+      if (g.length === 1) return { ...g[0], boosts: [] };
+      const lead = [...g].sort((a, b) => (b.spend || 0) - (a.spend || 0))[0];
+      const sum = (f) => g.reduce((s, r) => s + (Number(r[f]) || 0), 0);
+      const spend = sum('spend'), margin = sum('margin'), contacts = sum('contacts'), ordersCreated = sum('ordersCreated'), ordersPickedUp = sum('ordersPickedUp');
+      const profit = margin - spend;
+      return {
+        ...lead, spend, margin, profit, contacts, ordersCreated, ordersPickedUp, revenue: sum('revenue'), refusedCount: sum('refusedCount'),
+        roi: spend > 0 ? margin / spend : null, romi: spend > 0 ? (profit / spend) * 100 : null,
+        cpa: ordersCreated > 0 ? spend / ordersCreated : null, costPerContact: contacts > 0 ? spend / contacts : null,
+        boosts: g.sort((a, b) => (b.spend || 0) - (a.spend || 0)).map((r) => ({ id: r.id, name: r.name, campaignName: r.campaignName, effectiveStatus: r.effectiveStatus, adCreatedAt: r.adCreatedAt, spend: r.spend, contacts: r.contacts, ordersCreated: r.ordersCreated })),
+      };
+    }).sort((a, b) => (b.spend || 0) - (a.spend || 0));
+  }
   const paged = rows.slice(Number(skip), Number(skip) + Number(take));
 
   res.json({
     ok: true,
     data: paged,
-    meta: { total, take: Number(take), skip: Number(skip) },
+    meta: { total: req.query.group === 'ad' ? total : rows.length, take: Number(take), skip: Number(skip) },
     totals: { activeAds: totals.activeAds, spend: totals.spend, orders: totals.orders, roi: totals.spend > 0 ? totals.margin / totals.spend : null },
   });
 }));
