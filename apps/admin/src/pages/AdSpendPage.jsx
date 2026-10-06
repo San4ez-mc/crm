@@ -109,6 +109,7 @@ export default function AdSpendPage() {
                     <td className="px-4 py-3">
                       <div>{ad.name || ad.externalId || ad.id.slice(0, 8)}</div>
                       {ad.productName && <div className="text-xs text-slate-500">{ad.productName}</div>}
+                      {ad.postUrl && <a href={ad.postUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-light hover:underline">відкрити пост ↗</a>}
                       {ad.boosts?.length > 1 && (
                         <details className="mt-1 text-xs text-slate-400">
                           <summary className="cursor-pointer text-brand-light">Пост просували {ad.boosts.length} разів — показати</summary>

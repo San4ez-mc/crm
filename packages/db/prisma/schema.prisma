@@ -475,7 +475,8 @@ model Ad {
   // раніше зберігався лише campaignId): третій рівень ієрархії Meta, окремо від externalId (=Ad ID).
   adSetId   String?
   adSetName String?
-  postId    String? // 2026-10-06: пост, який рекламується (Meta creative.effective_object_story_id) — групування просувань одного поста у звіті
+  postId    String? // 2026-10-06: пост Instagram, який рекламується (Meta creative.effective_instagram_media_id; запасний — effective_object_story_id) — групування просувань одного поста у звіті
+  postUrl   String? // посилання на цей пост (creative.instagram_permalink_url) — різні пости з однаковим початком підпису розрізнити у звіті
   // 2026-09-29: хто привʼязав товар — 'manual' (адмін) | 'auto_article' | 'auto_vision' (автоприв'язка Flows при отриманні реклами).
   productLinkSource String?
   productLinkNote   String?

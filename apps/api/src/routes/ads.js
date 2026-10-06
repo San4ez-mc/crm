@@ -199,7 +199,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
   // n_lookup-crm-code.js реєструє на льоту при першому кліку клієнта (ще до щоденної
   // синхронізації Meta Ads, яка знає лише про платні кампанії), раніше не мали фото
   // взагалі — thumbnailUrl тут просто не приймався, навіть якщо його прислали.
-  const { postId, externalId, name, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, effectiveStatus, adCreatedAt, thumbnailUrl, captionText, videoUrl, mediaType, productLinkSource, productLinkNote } = req.body || {};
+  const { postId, postUrl, externalId, name, campaignId, campaignName, adSetId, adSetName, adAccountId, adAccountName, effectiveStatus, adCreatedAt, thumbnailUrl, captionText, videoUrl, mediaType, productLinkSource, productLinkNote } = req.body || {};
   let { productId } = req.body || {};
   const _isAuto = /^auto_/.test(String(productLinkSource || ''));
   const _adCreatedAtDate = adCreatedAt ? new Date(adCreatedAt) : null;
@@ -241,6 +241,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
         ...(videoUrl ? { videoUrl } : {}),
         ...(mediaType ? { mediaType } : {}),
         ...(postId ? { postId: String(postId) } : {}),
+        ...(postUrl ? { postUrl: String(postUrl) } : {}),
       },
     });
     return void res.status(200).json({ ok: true, data: ad, reused: true });
@@ -251,7 +252,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
       campaignId: campaignId || null, campaignName: campaignName || null, adSetId: adSetId || null, adSetName: adSetName || null,
       adAccountId: adAccountId || null, adAccountName: adAccountName || null, effectiveStatus: effectiveStatus || null,
       adCreatedAt: _adCreatedAtDate, thumbnailUrl: thumbnailUrl || null,
-      captionText: captionText || null, videoUrl: videoUrl || null, mediaType: mediaType || null, postId: postId ? String(postId) : null,
+      captionText: captionText || null, videoUrl: videoUrl || null, mediaType: mediaType || null, postId: postId ? String(postId) : null, postUrl: postUrl ? String(postUrl) : null,
     },
   });
   res.status(201).json({ ok: true, data: ad });
@@ -339,7 +340,7 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
 
   const adRows = ads.map((ad) => ({
     id: ad.id, name: ad.name, externalId: ad.externalId, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName,
-    effectiveStatus: ad.effectiveStatus, adCreatedAt: ad.adCreatedAt, postId: ad.postId || null,
+    effectiveStatus: ad.effectiveStatus, adCreatedAt: ad.adCreatedAt, postId: ad.postId || null, postUrl: ad.postUrl || null,
     productId: ad.productId, productName: ad.product?.name || null,
     ...statsByAd.get(ad.id),
   }));
