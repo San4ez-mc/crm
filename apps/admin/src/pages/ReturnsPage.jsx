@@ -40,7 +40,8 @@ export default function ReturnsPage() {
                 <tr key={r.id} className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30">
                   <td className="px-4 py-3 text-slate-400">{formatDate(r.createdAt)}</td>
                   <td className="px-4 py-3"><a className="text-brand-light hover:underline" href={`/orders?open=${r.orderId}`}>#{r.orderId.slice(0, 8)}</a></td>
-                  <td className="px-4 py-3 text-slate-400">{r.order?.buyer?.fullName || r.order?.buyer?.phone || '—'}</td>
+                  {/* Обмін по розмові без оформленого замовлення (оформлював менеджер у чаті) — покупця нема, показуємо Instagram-контакт картки. */}
+                  <td className="px-4 py-3 text-slate-400">{r.order?.buyer?.fullName || r.order?.buyer?.phone || (r.order?.contactIg ? '@' + r.order.contactIg : '') || r.order?.contactName || '—'}{r.order?.funnelSessionId && <a className="ml-1.5 text-xs text-brand-light hover:underline" href={`https://flows.fineko.space/sessions/${r.order.funnelSessionId}`} target="_blank" rel="noreferrer">розмова ↗</a>}</td>
                   <td className="px-4 py-3">{TYPE_LABEL[r.type]}{r.source === 'bot' && <span className="ml-1.5"><Badge color="teal">бот</Badge></span>}</td>
                   <td className="px-4 py-3 text-slate-400">
                     {r.reason || '—'}

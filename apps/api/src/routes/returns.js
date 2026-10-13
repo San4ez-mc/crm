@@ -22,9 +22,19 @@ router.get('/returns', asyncHandler(async (req, res) => {
 }));
 
 router.post('/returns', asyncHandler(async (req, res) => {
-  const { orderId, type, reason, status, ttn, exchangeFor, source } = req.body || {};
-  if (!orderId) throw new ValidationError('orderId обовʼязковий');
+  const { type, reason, status, ttn, exchangeFor, source, funnelSessionId, igUsername, senderName } = req.body || {};
+  let { orderId } = req.body || {};
   if (!['return', 'exchange'].includes(type)) throw new ValidationError('type: return | exchange');
+  // Без orderId — за розмовою воронки (2026-10-14): замовлення, оформлені менеджером у чаті, у CRM не потрапляли, тож бот не мав
+  // до чого привʼязати обмін/повернення — розділ «Повернення/обміни» був порожній (9 справжніх обмінів/повернень за 11–13.10).
+  // Привʼязуємо до картки цієї розмови (є на кожну розмову бота); нема — створюємо картку з нікнеймом. Без покупця картка —
+  // не «замовлення» в аналітиці (lib/margin ORDER_PLACED_WHERE), тож продажі не спотворюються.
+  if (!orderId && funnelSessionId) {
+    let card = await db.order.findFirst({ where: { tenantId: req.tenant.id, funnelSessionId: String(funnelSessionId) }, select: { id: true } });
+    if (!card) card = await db.order.create({ data: { tenantId: req.tenant.id, funnelSessionId: String(funnelSessionId), sourceName: 'Instagram', lastClientAt: new Date(), ...(senderName ? { contactName: String(senderName).slice(0, 120) } : {}), ...(igUsername ? { contactIg: String(igUsername).slice(0, 120) } : {}) }, select: { id: true } });
+    orderId = card.id;
+  }
+  if (!orderId) throw new ValidationError('orderId або funnelSessionId обовʼязковий');
   const order = await db.order.findFirst({ where: { id: orderId, tenantId: req.tenant.id }, include: { stage: { select: { pipelineId: true } } } });
   if (!order) throw new NotFoundError('Order', orderId);
   const ret = await db.return.create({
