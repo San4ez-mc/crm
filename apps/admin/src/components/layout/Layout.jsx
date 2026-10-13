@@ -1,11 +1,17 @@
 // Мобільна версія: сайдбар — off-canvas drawer, що виїжджає поверх контенту
 // (не звужує його) з бекдропом; на md+ — звичайний статичний сайдбар, як і був.
 import { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import { useAuthStore } from '../../stores/authStore';
+import { canSeePath, firstAllowedPath } from '../../lib/pageAccess';
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
+  const { role, pageIds } = useAuthStore();
+  // Закритий розділ за прямим посиланням (напр. менеджер відкрив /analytics) — на перший дозволений; сервер теж відмовить.
+  if (!canSeePath(location.pathname, { role, pageIds })) return <Navigate to={firstAllowedPath({ role, pageIds })} replace />;
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-100">

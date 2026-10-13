@@ -7,6 +7,7 @@ const { AuthError, ForbiddenError, NotFoundError } = require('@crm/errors');
 const asyncHandler = require('./asyncHandler');
 const { bearer } = require('./tenantApiKeyAuth');
 const ssoClient = require('../lib/ssoClient');
+const { isAllowed } = require('../lib/pageAccess');
 
 const resolveTenant = asyncHandler(async (req, res, next) => {
   const apiKey = bearer(req);
@@ -37,7 +38,10 @@ const resolveTenant = asyncHandler(async (req, res, next) => {
 
   req.tenant = tenant;
   req.authMethod = 'sso-session';
-  req.access = { role: perms.role, canEdit: perms.canEdit !== false };
+  req.access = { role: perms.role, canEdit: perms.canEdit !== false, pageIds: Array.isArray(perms.pageIds) ? perms.pageIds : [] };
+  // Розділи за сторінками SSO-панелі (lib/pageAccess.js): напр. менеджери — лише замовлення/покупці/повернення,
+  // без аналітики, витрат, платежів і налаштувань із ключами.
+  if (!isAllowed(req.access, req.method, req.path)) throw new ForbiddenError('Немає доступу до цього розділу');
   next();
 });
 

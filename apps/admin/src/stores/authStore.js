@@ -7,6 +7,8 @@ export const useAuthStore = create((set, get) => ({
   isAuthenticated: false,
   user: null,
   role: 'none',
+  pageIds: [], // розділи з SSO-панелі; [] = усі (lib/pageAccess.js)
+  canEdit: true,
   tenants: [],
   currentTenantId: localStorage.getItem('crm_tenant_id') || null,
 
@@ -25,7 +27,7 @@ export const useAuthStore = create((set, get) => ({
       const saved = get().currentTenantId;
       const currentTenantId = tenants.some((t) => t.id === saved) ? saved : (tenants[0]?.id || null);
       if (currentTenantId) localStorage.setItem('crm_tenant_id', currentTenantId);
-      set({ isAuthenticated: true, user: json.data.user, role: json.data.role, tenants, currentTenantId, isLoading: false });
+      set({ isAuthenticated: true, user: json.data.user, role: json.data.role, pageIds: json.data.pageIds || [], canEdit: json.data.canEdit !== false, tenants, currentTenantId, isLoading: false });
     } catch {
       set({ isAuthenticated: false, user: null, tenants: [], isLoading: false });
     }

@@ -67,7 +67,8 @@ router.get('/me', asyncHandler(async (req, res) => {
   const tenants = perms.role === 'superadmin'
     ? await db.tenant.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
     : await db.tenant.findMany({ where: { id: { in: perms.projectIds } }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
-  res.json({ ok: true, data: { user: { id: identity.sub, email: identity.email, name: identity.name }, role: perms.role, tenants } });
+  // pageIds — щоб адмінка показала лише дозволені розділи ([] = усі); сервер перевіряє те саме в resolveTenant.
+  res.json({ ok: true, data: { user: { id: identity.sub, email: identity.email, name: identity.name }, role: perms.role, tenants, pageIds: perms.role === 'superadmin' ? [] : (Array.isArray(perms.pageIds) ? perms.pageIds : []), canEdit: perms.canEdit !== false } });
 }));
 
 // ── Контракт SSO-панелі (server-to-server, x-sso-secret) ──────────────────

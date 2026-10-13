@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuthStore } from '../../stores/authStore';
+import { canSeePath } from '../../lib/pageAccess';
 
 const SECTIONS = [
   { title: 'Каталог', items: [
@@ -43,7 +44,9 @@ function linkClass({ isActive }) {
 // mobileOpen/onClose — off-canvas drawer на вузьких екранах (<768px); на md+ це
 // звичайний статичний сайдбар (властивості ігноруються, завжди видимий).
 export default function Sidebar({ mobileOpen = false, onClose = () => {} }) {
-  const { user, tenants, currentTenantId, setTenant, logout } = useAuthStore();
+  const { user, tenants, currentTenantId, setTenant, logout, role, pageIds } = useAuthStore();
+  // Лише дозволені розділи (SSO-панель: сторінки користувача; [] = усі) — напр. менеджерам без аналітики й фінансів.
+  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((it) => canSeePath(it.to, { role, pageIds })) })).filter((s) => s.items.length);
 
   return (
     <>
@@ -77,7 +80,7 @@ export default function Sidebar({ mobileOpen = false, onClose = () => {} }) {
         )}
 
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
-          {SECTIONS.map((section) => (
+          {sections.map((section) => (
             <div key={section.title}>
               <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">{section.title}</div>
               <div className="space-y-0.5">
