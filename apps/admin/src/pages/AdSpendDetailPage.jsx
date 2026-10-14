@@ -204,9 +204,12 @@ export default function AdSpendDetailPage() {
                 {/* 2026-10-14 (власник): імʼя й нікнейм Instagram замість id; клік — розмова у Flows, без розмови (оформив менеджер) — картка в CRM. */}
                 <td className="px-4 py-3">{(() => {
                   const label = (<span>{o.buyerName || (o.igUsername ? '' : '#' + o.id.slice(0, 6))}{o.igUsername && <span className={o.buyerName ? 'ml-1.5 text-xs text-slate-400' : ''}>@{o.igUsername}</span>}</span>);
-                  return o.funnelSessionId
-                    ? <a className="text-brand-light hover:underline" href={`https://flows.fineko.space/sessions/${o.funnelSessionId}`} target="_blank" rel="noreferrer" title="Відкрити розмову у Flows">{label} ↗</a>
-                    : <a className="text-brand-light hover:underline" href={`/orders?open=${o.id}`} title="Відкрити замовлення в CRM (розмови у Flows нема)">{label}</a>;
+                  // Розмова є завжди: привʼязана — напряму; оформив менеджер — пошук у Flows за нікнеймом/телефоном (відкриває останню розмову).
+                  const href = o.funnelSessionId ? `https://flows.fineko.space/sessions/${o.funnelSessionId}`
+                    : o.flowsSearch ? `https://flows.fineko.space/sessions?search=${encodeURIComponent(o.flowsSearch)}&open=1` : null;
+                  return href
+                    ? <a className="text-brand-light hover:underline" href={href} target="_blank" rel="noreferrer" title="Відкрити розмову у Flows">{label} ↗</a>
+                    : <a className="text-brand-light hover:underline" href={`/orders?open=${o.id}`} title="Ні нікнейму, ні телефону — відкрити замовлення в CRM">{label}</a>;
                 })()}</td>
                 <td className="px-4 py-3 text-slate-400">{o.itemsLabel}</td>
                 <td className="px-4 py-3"><Badge color={STATUS_COLOR[o.status]}>{STATUS_LABEL[o.status]}</Badge></td>

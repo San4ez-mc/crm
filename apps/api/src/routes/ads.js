@@ -90,6 +90,8 @@ function statsFromData(ad, spend, contacts, orders, expenseByProduct) {
       // 2026-10-14 (власник): у списку — імʼя людини й нікнейм Instagram замість id.
       buyerName: (o.buyer && o.buyer.fullName) || o.contactName || null,
       igUsername: String((o.buyer && o.buyer.igUsername) || o.contactIg || '').replace(/^@/, '') || null,
+      // Пошук розмови у Flows для замовлень, оформлених менеджером (без funnelSessionId): нікнейм, інакше останні 9 цифр телефону.
+      flowsSearch: String((o.buyer && o.buyer.igUsername) || o.contactIg || '').replace(/^@/, '') || String((o.buyer && o.buyer.phone) || '').replace(/\D/g, '').slice(-9) || null,
       createdAt: o.createdAt,
       itemsLabel: o.items.map((it) => it.product?.name || it.name).join(', ') || '—',
       status: o.isRefused ? 'refused' : (o.returns.length > 0 ? 'returned' : 'picked_up'),
