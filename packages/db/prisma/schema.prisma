@@ -481,6 +481,9 @@ model Ad {
   // 2026-09-29: хто привʼязав товар — 'manual' (адмін) | 'auto_article' | 'auto_vision' (автоприв'язка Flows при отриманні реклами).
   productLinkSource String?
   productLinkNote   String?
+  // 2026-10-14: «…_Group_1» з рефералу розмови — варіант Advantage+ справжнього оголошення (lib/adVariants.js); розмови й продажі
+  // зараховуються оголошенню variantOfAdId, сам рядок лишається, щоб бот за id з рефералу знаходив товар.
+  variantOfAdId     String?
   createdAt  DateTime @default(now())
 
   spendDaily      AdSpendDaily[]
@@ -491,6 +494,7 @@ model Ad {
   @@index([tenantId])
   @@index([tenantId, productId])
   @@index([tenantId, postId])
+  @@index([tenantId, variantOfAdId])
 }
 
 model AdSpendDaily {

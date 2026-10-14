@@ -9,6 +9,7 @@
 //   lastTouch  — остання реклама перед замовленням (оновлюється щоразу, коли людина приходить з іншої реклами).
 // Звіти за замовчуванням зараховують замовлення першому дотику; «Реклама → конверсія» показує обидва.
 const { db } = require('@crm/db');
+const { linkAdVariantsFor } = require('./adVariants');
 
 async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {}) {
   let ad = await db.ad.findFirst({ where: { tenantId, externalId } });
@@ -16,6 +17,8 @@ async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {})
     ad = await db.ad.create({
       data: { tenantId, externalId, name: name || null, campaignId: meta.campaignId || null, campaignName: meta.campaignName || null, adAccountId: meta.adAccountId || null, thumbnailUrl: meta.thumbnailUrl || null },
     });
+    await linkAdVariantsFor(ad).catch(() => null);
+    ad = await db.ad.findUnique({ where: { id: ad.id } });
   } else if (meta.campaignName || meta.campaignId || meta.adAccountId || meta.thumbnailUrl) {
     // Meta не міняє campaignId/adAccountId заднім числом, але назва кампанії/фото креативу могли оновитись.
     ad = await db.ad.update({
@@ -36,9 +39,12 @@ async function touchFields(tenantId, { firstTouch, lastTouch } = {}, existing = 
   const out = {};
   const resolve = async (t) => {
     if (!t) return null;
-    if (t.adId) return db.ad.findFirst({ where: { id: String(t.adId), tenantId } });
-    if (t.externalId) return findOrCreateAdByExternalId(tenantId, String(t.externalId), t.name || null);
-    return null;
+    let ad = null;
+    if (t.adId) ad = await db.ad.findFirst({ where: { id: String(t.adId), tenantId } });
+    else if (t.externalId) ad = await findOrCreateAdByExternalId(tenantId, String(t.externalId), t.name || null);
+    // Варіант Advantage+ («_Group_1») — дотик зараховуємо справжньому оголошенню (lib/adVariants.js).
+    if (ad && ad.variantOfAdId) ad = (await db.ad.findFirst({ where: { id: ad.variantOfAdId, tenantId } })) || ad;
+    return ad;
   };
   if (firstTouch && !(existing && existing.firstTouchAdId)) {
     const ad = await resolve(firstTouch);

@@ -8,6 +8,7 @@ const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo, kyivDayKey } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem, ORDER_PLACED_WHERE, REAL_SALE_ORDER_WHERE, LEAD_WHERE } = require('../lib/margin');
 const { findOrCreateAdByExternalId } = require('../lib/adAttribution');
+const { linkAdVariantsFor, linkAllAdVariants } = require('../lib/adVariants');
 const { ensureFreshUsdRate, rowToUAH } = require('../lib/currency');
 
 const router = express.Router();
@@ -244,6 +245,7 @@ router.post('/ads', asyncHandler(async (req, res) => {
         ...(postUrl ? { postUrl: String(postUrl) } : {}),
       },
     });
+    await linkAdVariantsFor(ad).catch(() => null);
     return void res.status(200).json({ ok: true, data: ad, reused: true });
   }
   ad = await db.ad.create({
@@ -255,7 +257,14 @@ router.post('/ads', asyncHandler(async (req, res) => {
       captionText: captionText || null, videoUrl: videoUrl || null, mediaType: mediaType || null, postId: postId ? String(postId) : null, postUrl: postUrl ? String(postUrl) : null,
     },
   });
+  await linkAdVariantsFor(ad).catch(() => null);
   res.status(201).json({ ok: true, data: ad });
+}));
+
+// Варіанти Advantage+ («_Group_1») → справжні оголошення, повний прохід (бекфіл; далі звʼязує POST /ads і атрибуція самі).
+router.post('/ads/link-variants', asyncHandler(async (req, res) => {
+  const dryRun = !!(req.body && req.body.dryRun);
+  res.json({ ok: true, data: await linkAllAdVariants(req.tenant.id, { dryRun }) });
 }));
 
 // Прив'язка оголошення до товару — inline-редагування в §9.13 (рядки без товару підсвічені).

@@ -71,6 +71,7 @@ const TOOLS = [
 
   // ── Ad §4.9 — підключення рекламних кабінетів/оголошень ─────────────
   { name: 'list_ads', description: 'Оголошення tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
+  { name: 'update_ad_variants', description: 'Звʼязати варіанти Advantage+ («…_Group_1» з рефералу розмов, кабінет instagram_messages) зі справжніми оголошеннями: товар і дотики замовлень переходять на оголошення (variantOfAdId). dryRun — лише показати.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, dryRun: { type: 'boolean' } }, required: ['tenantId'] } },
   { name: 'create_ad', description: 'Зареєструвати оголошення (з рекламного кабінету). postId — пост, який рекламується (Meta effective_object_story_id), для групування просувань.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, externalId: { type: 'string' }, name: { type: 'string' }, productId: { type: 'string' }, postId: { type: 'string' }, postUrl: { type: 'string' } }, required: ['tenantId'] } },
   { name: 'update_ad', description: 'Прив\'язати оголошення до товару / перейменувати.', inputSchema: { type: 'object', properties: { adId: { type: 'string' }, productId: { type: 'string' }, name: { type: 'string' } }, required: ['adId'] } },
 ];
@@ -238,6 +239,8 @@ async function callTool(name, args = {}) {
       return { id: args.stageId, deleted: true };
     }
 
+    case 'update_ad_variants':
+      return require('../../api/src/lib/adVariants').linkAllAdVariants(args.tenantId, { dryRun: !!args.dryRun });
     case 'list_ads':
       return db.ad.findMany({ where: { tenantId: args.tenantId }, include: { product: true } });
     case 'create_ad':

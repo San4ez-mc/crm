@@ -170,7 +170,8 @@ export default function AdsPage() {
                       <div className="mt-0.5 space-y-0.5 font-mono text-[11px] text-slate-500">
                         {ad.campaignId && <div>Campaign ID: {ad.campaignId}</div>}
                         {ad.adSetId && <div>Ad Set ID: {ad.adSetId}</div>}
-                        {ad.externalId && <div>Ad ID: {ad.externalId}</div>}
+                        {/* 2026-10-14 (Олексій: «що це за ID — пост не рекламував»): 17–18 цифр у псевдо-кабінеті — це id поста Instagram, не реклами. */}
+                        {ad.externalId && <div>{ad.adAccountId === 'instagram_messages' && /^1[78]\d{15,17}$/.test(ad.externalId) ? 'ID поста Instagram' : ad.adAccountId === 'instagram_messages' ? 'ID з повідомлень клієнтів' : 'Ad ID'}: {ad.externalId}</div>}
                       </div>
                     )}
                     {/* 2026-09-13 (власник: "якщо там та ж сама мініатюра, то краще прибрати" —
@@ -181,8 +182,14 @@ export default function AdsPage() {
                     {/* 2026-10-02 (Олексій: «в Ads Manager у мене нема таких ІД»): реклама, яку бот бачить лише з повідомлень
                         клієнтів (просування поза кабінетом Ads Manager, напр. кнопкою «Просувати» в Instagram), — окремий «кабінет»
                         instagram_messages; посилання в Ads Manager для неї не відкриється, тож пояснюємо, звідки вона. */}
+                    {/* 2026-10-14: «…_Group_1» — варіант Advantage+ справжнього оголошення (Meta шле його id у рефералі розмови, в Ads Manager
+                        його нема); CRM звʼязує їх сама (lib/adVariants.js), розмови й продажі зараховуються оголошенню з кабінету. */}
                     {ad.adAccountId === 'instagram_messages' && (
-                      <div className="mt-0.5 max-w-xs text-xs text-amber-400/80">📩 Пост Instagram без активної реклами (органіка або давня реклама) — бот бачить його з повідомлень клієнтів</div>
+                      <div className="mt-0.5 max-w-xs text-xs text-amber-400/80">{
+                        ad.variantOfAdId ? '🔗 Варіант «Рекламний матеріал Advantage+» оголошення з кабінету — розмови й продажі зараховано тому оголошенню'
+                          : /_Group_\d+\s*$/.test(ad.name || '') ? '⏳ Варіант Advantage+ — оголошення в кабінеті ще не знайдено (зʼявиться після синхронізації)'
+                            : '📩 Пост Instagram без реклами (органіка) — бот бачить його, коли клієнт пише з поста чи пересилає його'
+                      }</div>
                     )}
                     {ad.adAccountId && ad.adAccountId !== 'instagram_messages' && ad.externalId && (
                       <div className="mt-0.5 flex flex-wrap gap-2 text-xs">
