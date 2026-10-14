@@ -12,7 +12,7 @@
 // Увесь зміст перенесено в звичайні KnowledgeEntry (shop-scope), KnowledgeProfile очищено —
 // одне джерело істини замість двох. Модель/API KnowledgeProfile не видалені (безпечніше, ніж
 // ламати n_shop_profile-code.js без потреби) — просто більше нема чого туди писати.
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { PageHeader, Card, Input, Textarea, Select, Button, IconButton, Field, Label, Badge, EmptyState, ErrorBanner, Thumb } from '../components/common/Common';
@@ -678,10 +678,92 @@ function CrmChecksTab({ onCounts }) {
   );
 }
 
+// Скріни до тікета (2026-10-14): той самий POST /api/uploads, що й фото товарів (api.uploadFile) — лише зображення, до 5MB.
+const MAX_UPLOAD_MB = 5;
+const isImageFile = (f) => (f.type || '').startsWith('image/') || /\.(hei[cf]|jpe?g|png|webp|gif)$/i.test(f.name || '');
+
+function useImageUpload(onUploaded) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  async function upload(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const images = files.filter(isImageFile);
+    const tooBig = images.filter((f) => f.size > MAX_UPLOAD_MB * 1024 * 1024);
+    const ok = images.filter((f) => f.size <= MAX_UPLOAD_MB * 1024 * 1024);
+    const problems = [];
+    if (images.length < files.length) problems.push('можна лише зображення');
+    if (tooBig.length) problems.push(`файл більший за ${MAX_UPLOAD_MB} МБ: ${tooBig.map((f) => f.name).join(', ')}`);
+    setError(problems.join('; '));
+    if (!ok.length) return;
+    setUploading(true);
+    try {
+      const uploaded = await Promise.all(ok.map(async (f) => ({ url: await api.uploadFile(f), name: f.name || 'скрін' })));
+      await onUploaded(uploaded);
+    } catch (e) { setError(e.message); } finally { setUploading(false); }
+  }
+  // Ctrl+V скріна в полі тексту
+  function onPaste(e) {
+    const files = Array.from(e.clipboardData?.files || []).filter(isImageFile);
+    if (!files.length) return;
+    e.preventDefault();
+    upload(files);
+  }
+  return { uploading, error, upload, onPaste };
+}
+
+// Зона перетягування + кнопка «📎 Прикріпити скрін».
+function AttachDropZone({ upload, uploading, error, children }) {
+  const inputId = useId();
+  const [over, setOver] = useState(false);
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { e.preventDefault(); setOver(false); upload(e.dataTransfer.files); }}
+      className={`rounded-lg ${over ? 'outline outline-2 outline-offset-2 outline-brand' : ''}`}
+    >
+      {children}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => document.getElementById(inputId)?.click()} disabled={uploading} className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700 disabled:opacity-50">
+          {uploading ? 'Завантаження…' : '📎 Прикріпити скрін'}
+        </button>
+        <span className="text-[11px] text-slate-500">або перетягніть файл сюди чи вставте Ctrl+V у поле</span>
+      </div>
+      <input id={inputId} type="file" accept="image/*,.heic,.heif" multiple className="hidden" onChange={(e) => { upload(e.target.files); e.target.value = ''; }} />
+      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+function AttachmentThumbs({ items, onRemove }) {
+  if (!items?.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {items.map((a) => (
+        <div key={a.url} className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-700 bg-slate-950/40">
+          <a href={a.url} target="_blank" rel="noopener noreferrer" title={[a.name, a.uploadedBy, a.uploadedAt && fmtDate(a.uploadedAt)].filter(Boolean).join(' · ')}>
+            <img src={a.url} alt={a.name || 'скрін'} className="h-full w-full object-cover" loading="lazy" />
+          </a>
+          {onRemove && (
+            <button type="button" onClick={() => onRemove(a)} aria-label="Видалити скрін" className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs text-red-300 hover:text-red-200">✕</button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CheckCard({ check, onUpdate }) {
   const [answer, setAnswer] = useState(check.answer || '');
   const [saving, setSaving] = useState(false);
   useEffect(() => { setAnswer(check.answer || ''); }, [check.answer]);
+  const attachments = Array.isArray(check.attachments) ? check.attachments : [];
+  const { uploading, error: uploadError, upload, onPaste } = useImageUpload((uploaded) => onUpdate(check.id, { addAttachments: uploaded }));
+  async function removeAttachment(a) {
+    if (!confirm('Прибрати цей скрін з тікета?')) return;
+    await onUpdate(check.id, { removeAttachmentUrls: [a.url] });
+  }
   const links = Array.isArray(check.sessionLinks) ? check.sessionLinks : [];
   const closed = check.status === 'closed';
   const external = check.pageUrl && /^https?:\/\//i.test(check.pageUrl);
@@ -729,8 +811,11 @@ function CheckCard({ check, onUpdate }) {
 
       {!closed ? (
         <div className="mb-2">
-          <Textarea rows={3} placeholder="Ваша відповідь: що перевірили / виправили / як насправді…" value={answer} onChange={(e) => setAnswer(e.target.value)} />
-          <div className="mt-2 flex flex-wrap gap-2">
+          <AttachDropZone upload={upload} uploading={uploading} error={uploadError}>
+            <Textarea rows={3} placeholder="Ваша відповідь: що перевірили / виправили / як насправді…" value={answer} onChange={(e) => setAnswer(e.target.value)} onPaste={onPaste} />
+          </AttachDropZone>
+          <AttachmentThumbs items={attachments} onRemove={removeAttachment} />
+          <div className="mt-3 flex flex-wrap gap-2">
             <Button onClick={() => run({ answer })} disabled={saving || !answerChanged}>Зберегти відповідь</Button>
             <Button variant="secondary" onClick={() => run({ status: 'closed', ...(answerChanged ? { answer } : {}) })} disabled={saving}>Закрити тікет</Button>
           </div>
@@ -738,6 +823,7 @@ function CheckCard({ check, onUpdate }) {
       ) : (
         <div className="mb-2">
           {check.answer && <div className="mb-2 whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/40 p-2 text-sm text-slate-300 [overflow-wrap:anywhere]">{check.answer}</div>}
+          {attachments.length > 0 && <div className="mb-2"><AttachmentThumbs items={attachments} /></div>}
           <Button variant="secondary" onClick={() => run({ status: 'open' })} disabled={saving}>Відкрити знову</Button>
         </div>
       )}
@@ -753,13 +839,15 @@ function CheckCard({ check, onUpdate }) {
 
 function NewCheckForm({ onDone }) {
   const [form, setForm] = useState({ title: '', page: '', pageUrl: '', details: '', priority: 'normal' });
+  const [attachments, setAttachments] = useState([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const { uploading, error: uploadError, upload, onPaste } = useImageUpload((uploaded) => setAttachments((prev) => [...prev, ...uploaded]));
 
   async function save() {
     setError(''); setSaving(true);
-    try { await api.createCrmCheck(form); onDone(); } catch (e) { setError(e.message); } finally { setSaving(false); }
+    try { await api.createCrmCheck({ ...form, attachments }); onDone(); } catch (e) { setError(e.message); } finally { setSaving(false); }
   }
 
   return (
@@ -776,8 +864,13 @@ function NewCheckForm({ onDone }) {
           </Select>
         </Field>
       </div>
-      <Field label="Деталі"><Textarea rows={4} value={form.details} onChange={set('details')} placeholder="Що саме не так і що зробити" /></Field>
-      <Button onClick={save} disabled={saving || !form.title.trim()}>Додати</Button>
+      <Field label="Деталі">
+        <AttachDropZone upload={upload} uploading={uploading} error={uploadError}>
+          <Textarea rows={4} value={form.details} onChange={set('details')} onPaste={onPaste} placeholder="Що саме не так і що зробити" />
+        </AttachDropZone>
+        <AttachmentThumbs items={attachments} onRemove={(a) => setAttachments((prev) => prev.filter((x) => x.url !== a.url))} />
+      </Field>
+      <Button onClick={save} disabled={saving || uploading || !form.title.trim()}>Додати</Button>
     </Card>
   );
 }

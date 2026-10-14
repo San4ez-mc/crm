@@ -24,6 +24,21 @@ function cleanLinks(v) {
     .slice(0, 50);
 }
 
+// Скріни (2026-10-14): файл вантажиться через наявний POST /api/uploads (лише зображення, до 5MB) → сюди приходить
+// його url. Приймаємо лише файли цього ж магазину (/uploads/<tenantId>/…) або повні http(s)-посилання (MCP/бот).
+const MAX_ATTACHMENTS = 20;
+function cleanAttachments(tenantId, v, who) {
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v)) throw new ValidationError('attachments має бути масивом {url,name}');
+  const now = new Date().toISOString();
+  return v.map((a) => {
+    const url = String((typeof a === 'string' ? a : a?.url) || '').trim();
+    const own = url.startsWith(`/uploads/${tenantId}/`) && !url.includes('..');
+    if (!own && !/^https?:\/\//i.test(url)) throw new ValidationError(`Вкладення: url має бути з /api/uploads цього магазину або http(s) — ${url.slice(0, 80)}`);
+    return { url: url.slice(0, 1000), name: String((typeof a === 'object' && a?.name) || url.split('/').pop() || '').slice(0, 200), uploadedBy: who || null, uploadedAt: now };
+  });
+}
+
 // Відносний шлях адмінки (/products?search=…) або повний http(s)-URL; інше (javascript: тощо) — відкидаємо.
 function cleanPageUrl(v) {
   const s = cleanStr(v, 1000);
@@ -68,6 +83,7 @@ async function createCheck(tenantId, b = {}, { actor } = {}) {
       pageUrl: cleanPageUrl(b.pageUrl) ?? null,
       details: cleanStr(b.details) ?? null,
       sessionLinks: cleanLinks(b.sessionLinks) ?? [],
+      attachments: (cleanAttachments(tenantId, b.attachments, cleanStr(b.createdBy, 200) ?? actor) ?? []).slice(0, MAX_ATTACHMENTS),
       priority,
       createdBy: cleanStr(b.createdBy, 200) ?? actor ?? null,
       source: cleanStr(b.source, 300) ?? null,
@@ -77,7 +93,7 @@ async function createCheck(tenantId, b = {}, { actor } = {}) {
 
 /**
  * Часткове оновлення. answer (непорожній) → status answered + answeredAt/By; status closed → closedAt/By;
- * status open (повторне відкриття) → знімає closedAt/By. actor — email із SSO-сесії або body.actor/'bot' для ключа магазину.
+ * status open (повторне відкриття) → знімає closedAt/By. addAttachments/removeAttachmentUrls — скріни. actor — email із SSO-сесії або body.actor/'bot' для ключа магазину.
  */
 async function updateCheck(tenantId, id, b = {}, { actor } = {}) {
   const existing = await getCheck(tenantId, id);
@@ -103,6 +119,19 @@ async function updateCheck(tenantId, id, b = {}, { actor } = {}) {
       if (status === undefined && existing.status === 'open') status = 'answered';
     }
   }
+  // Вкладення: addAttachments [{url,name}] — додати, removeAttachmentUrls [url] — прибрати. Закритий тікет — лише для читання
+  // (спершу «Відкрити знову»), щоб докази до закритої відповіді не зникали.
+  const add = cleanAttachments(tenantId, b.addAttachments, who);
+  const remove = Array.isArray(b.removeAttachmentUrls) ? b.removeAttachmentUrls.map(String) : [];
+  if ((add && add.length) || remove.length) {
+    if (existing.status === 'closed') throw new ValidationError('Тікет закрито — щоб змінити скріни, відкрийте його знову');
+    const current = Array.isArray(existing.attachments) ? existing.attachments : [];
+    const next = current.filter((a) => !remove.includes(a.url));
+    for (const a of add || []) if (!next.some((x) => x.url === a.url)) next.push(a);
+    if (next.length > MAX_ATTACHMENTS) throw new ValidationError(`Не більше ${MAX_ATTACHMENTS} скрінів на тікет`);
+    data.attachments = next;
+  }
+
   if (status !== undefined && status !== existing.status) {
     data.status = status;
     if (status === 'closed') { data.closedAt = new Date(); data.closedBy = who; }

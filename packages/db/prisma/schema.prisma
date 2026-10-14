@@ -670,6 +670,7 @@ model CrmCheck {
   pageUrl      String? // відносний шлях адмінки, напр. /products?search=A0188
   details      String? // що саме перевірити/виправити і чому
   sessionLinks Json      @default("[]") // [{label,url}] — розмови у Flows як докази
+  attachments  Json      @default("[]") // [{url,name,uploadedBy,uploadedAt}] — скріни менеджера до відповіді (через /api/uploads)
   priority     String    @default("normal") // high | normal
   status       String    @default("open") // open | answered | closed
   answer       String?
