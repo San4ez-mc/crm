@@ -1,0 +1,1 @@
+ALTER TABLE "Fop" ADD COLUMN IF NOT EXISTS "cardComment" TEXT;

@@ -9,7 +9,7 @@
 // Синхронізація реклами і Webhook-креденшли — на сторінках Оголошення / Загальні.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Field, Input, Button, IconButton, ErrorBanner, formatDateTime } from '../components/common/Common';
+import { PageHeader, Card, Field, Input, Textarea, Button, IconButton, ErrorBanner, formatDateTime } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 
 const SERVICE_GROUPS = [
@@ -230,7 +230,7 @@ export default function AutomationsPage() {
                   <td className="py-2"><input type="radio" name="active-fop" checked={!!f.isActive} onChange={() => activateFop(f.id)} title="Зробити активним" /></td>
                   <td className="py-2">{f.name} {f.isActive && <span className="ml-1 rounded bg-brand/20 px-1.5 py-0.5 text-[10px] text-brand-light">активний</span>}</td>
                   <td className="py-2 text-slate-400">{f.iban || '—'}</td>
-                  <td className="py-2 text-slate-400">{f.cardNumber || '—'}</td>
+                  <td className="py-2 text-slate-400">{f.cardNumber || '—'}{f.cardComment && <div className="whitespace-pre-line text-xs text-slate-500">{f.cardComment}</div>}</td>
                   <td className="py-2 text-slate-400">{f.taxId || '—'}</td>
                   <td className="py-2 text-slate-400">{f.monobankToken ? '✓ задано' : '—'}</td>
                   <td className="py-2 text-right">
@@ -324,13 +324,16 @@ function SecretForm({ initial, onSave, onCancel }) {
 
 function FopForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState({
-    id: initial.id, name: initial.name || '', iban: initial.iban || '', cardNumber: initial.cardNumber || '', taxId: initial.taxId || '', monobankToken: initial.monobankToken || '',
+    id: initial.id, name: initial.name || '', iban: initial.iban || '', cardNumber: initial.cardNumber || '', cardComment: initial.cardComment || '', taxId: initial.taxId || '', monobankToken: initial.monobankToken || '',
   });
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
       <Field label="Назва / ПІБ ФОП"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
       <Field label="IBAN"><Input value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} placeholder="UA…" /></Field>
       <Field label="Номер картки"><Input value={form.cardNumber} onChange={(e) => setForm({ ...form, cardNumber: e.target.value })} placeholder="для card-to-card, окрім IBAN — необовʼязково" /></Field>
+      <Field label="Коментар до картки"><Textarea rows={3} value={form.cardComment} onChange={(e) => setForm({ ...form, cardComment: e.target.value })} placeholder={'Бот пише його під номером картки замість назви ФОП, напр.:
+Отримувач: …
+Банк: …'} /></Field>
       <Field label="ІПН"><Input value={form.taxId} onChange={(e) => setForm({ ...form, taxId: e.target.value })} /></Field>
       <Field label="Токен Monobank API"><Input value={form.monobankToken} onChange={(e) => setForm({ ...form, monobankToken: e.target.value })} placeholder="для звірки надходжень" /></Field>
       <div className="mt-4 flex justify-end gap-2">

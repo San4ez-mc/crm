@@ -149,6 +149,7 @@ model Fop {
   name          String // назва/ПІБ ФОП
   iban          String?
   cardNumber    String? // номер картки для card-to-card оплати (окрім IBAN) — воронка НІКОЛИ не вигадує його сама
+  cardComment   String? // підпис до картки в повідомленні бота (отримувач/банк), замість назви ФОП, якщо заповнено (2026-10-14)
   taxId         String? // ІПН
   monobankToken String? // токен Monobank Open API для звірки надходжень
   isActive      Boolean  @default(false) // "активний" ФОП магазину — лише один true на tenant (див. §API PATCH /fops/:id/activate)
