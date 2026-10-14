@@ -13,6 +13,7 @@
 // одне джерело істини замість двох. Модель/API KnowledgeProfile не видалені (безпечніше, ніж
 // ламати n_shop_profile-code.js без потреби) — просто більше нема чого туди писати.
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { PageHeader, Card, Input, Textarea, Select, Button, IconButton, Field, Label, Badge, EmptyState, ErrorBanner, Thumb } from '../components/common/Common';
 
@@ -21,7 +22,9 @@ const KIND_COLOR = { faq: 'teal', policy: 'slate', objection: 'amber', script: '
 const SCOPE_LABEL = { shop: 'Весь магазин', category: 'Категорія', supplier: 'Постачальник', product: 'Товар' };
 
 export default function KnowledgeBasePage() {
-  const [tab, setTab] = useState('shop');
+  // ?tab=checks — пряме посилання на вкладку (напр. зі сповіщення про новий тікет «Перевірити в CRM»).
+  const [tab, setTab] = useState(() => new URLSearchParams(window.location.search).get('tab') || 'shop');
+  const [openChecks, setOpenChecks] = useState(0);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -30,6 +33,7 @@ export default function KnowledgeBasePage() {
     api.listCategories().then((r) => setCategories(r.data)).catch(() => {});
     api.listSuppliers().then((r) => setSuppliers(r.data)).catch(() => {});
     api.listProducts({ take: '500' }).then((r) => setProducts(r.data)).catch(() => {});
+    api.listCrmChecks({ status: 'open' }).then((r) => setOpenChecks(r.meta?.counts?.open || 0)).catch(() => {});
   }, []);
 
   const ctx = { categories, suppliers, products };
@@ -39,21 +43,24 @@ export default function KnowledgeBasePage() {
       <PageHeader
         title="База знань"
         action={
-          <div className="flex gap-2">
-            {[['shop', 'Загальні питання'], ['category', 'Категорії й постачальники'], ['product', 'Товари'], ['import', 'Імпорт']].map(([v, label]) => (
-              <button key={v} onClick={() => setTab(v)} className={`rounded-lg px-3 py-1.5 text-xs ${tab === v ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300'}`}>{label}</button>
+          <div className="flex flex-wrap gap-2">
+            {[['shop', 'Загальні питання'], ['category', 'Категорії й постачальники'], ['product', 'Товари'], ['import', 'Імпорт'], ['checks', 'Перевірити в CRM']].map(([v, label]) => (
+              <button key={v} onClick={() => setTab(v)} className={`rounded-lg px-3 py-1.5 text-xs ${tab === v ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300'}`}>
+                {label}
+                {v === 'checks' && openChecks > 0 && <span className="ml-1.5 rounded-full bg-amber-500/90 px-1.5 text-[10px] font-semibold text-slate-950">{openChecks}</span>}
+              </button>
             ))}
           </div>
         }
       />
-      <p className="mb-4 max-w-3xl text-sm text-slate-400">
+      {tab !== 'checks' && <p className="mb-4 max-w-3xl text-sm text-slate-400">
         Тут менеджер веде знання магазину в одному місці — замість того щоб дублювати їх у ключах
         кожної окремої воронки. «Загальні питання» — правила всього магазину; «Категорії й
         постачальники» — те, що стосується групи товарів або конкретного постачальника; «Товари» —
         відповіді по одному артикулу (ті самі відповіді видно і прямо в картці товару, у розділі
         «Відповіді»). Питання клієнтів, на які бот не знайшов відповіді, зʼявляються тут же під
         позначкою «Потребують відповіді» — досить один раз дописати відповідь.
-      </p>
+      </p>}
       {tab === 'shop' && (
         <>
           <TestBotCard />
@@ -63,6 +70,7 @@ export default function KnowledgeBasePage() {
       {tab === 'category' && <EntriesSection scopes={['category', 'supplier']} {...ctx} />}
       {tab === 'product' && <EntriesSection scopes={['product']} {...ctx} />}
       {tab === 'import' && <ImportTab />}
+      {tab === 'checks' && <CrmChecksTab onCounts={(c) => setOpenChecks(c.open || 0)} />}
     </div>
   );
 }
@@ -594,5 +602,182 @@ function ImportTab() {
         </Card>
       )}
     </div>
+  );
+}
+
+// ── «Перевірити в CRM» (CrmCheck, 2026-10-14) ─────────────────────────────
+// Тікети для менеджера: що в даних CRM звірити/виправити (залишки, склад, назви, синоніми), з доказами —
+// розмовами у Flows. Бот/Claude створюють їх після аудиту розмов; менеджер відповідає й закриває.
+const CHECK_GROUPS = [['open', 'Відкриті'], ['answered', 'З відповіддю'], ['closed', 'Закриті']];
+
+function fmtDate(v) {
+  if (!v) return '';
+  try { return new Date(v).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+}
+
+function CrmChecksTab({ onCounts }) {
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState('');
+  const [showClosed, setShowClosed] = useState(false);
+  const [adding, setAdding] = useState(false);
+
+  async function load() {
+    setError('');
+    try {
+      const r = await api.listCrmChecks();
+      setItems(r.data);
+      onCounts?.(r.meta?.counts || {});
+    } catch (e) { setError(e.message); setItems((prev) => prev || []); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function update(id, data) {
+    try { await api.updateCrmCheck(id, data); await load(); } catch (e) { alert(e.message); }
+  }
+
+  if (items === null) return <ErrorBanner message={error} />;
+
+  return (
+    <div className="max-w-4xl">
+      <ErrorBanner message={error} />
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+        <p className="max-w-2xl text-sm text-slate-400">
+          Що варто звірити або виправити в даних CRM: бот бере наявність, склад і назви лише звідси, тому розбіжність
+          з реальністю = неправильна відповідь клієнту. Відкрийте розділ кнопкою, виправте, напишіть коротку відповідь
+          і закрийте тікет.
+        </p>
+        <Button variant="secondary" onClick={() => setAdding((v) => !v)}>{adding ? 'Скасувати' : '+ Додати'}</Button>
+      </div>
+      {adding && <NewCheckForm onDone={() => { setAdding(false); load(); }} />}
+
+      {items.length === 0 && <EmptyState title="Поки нічого перевіряти" hint="Тут зʼявляться завдання, коли бот або аудит розмов знайде розбіжність між CRM і реальністю." />}
+
+      {CHECK_GROUPS.map(([status, label]) => {
+        const group = items.filter((c) => c.status === status);
+        if (!group.length) return null;
+        const collapsed = status === 'closed' && !showClosed;
+        return (
+          <div key={status} className="mb-6">
+            <button
+              type="button"
+              onClick={() => status === 'closed' && setShowClosed((v) => !v)}
+              className={`mb-2 flex items-center gap-2 text-sm font-semibold text-slate-200 ${status === 'closed' ? 'cursor-pointer hover:text-white' : 'cursor-default'}`}
+            >
+              {status === 'closed' && <span className="text-slate-500">{collapsed ? '▸' : '▾'}</span>}
+              {label} <span className="text-xs font-normal text-slate-500">({group.length})</span>
+            </button>
+            {!collapsed && (
+              <div className="space-y-3">
+                {group.map((c) => <CheckCard key={c.id} check={c} onUpdate={update} />)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CheckCard({ check, onUpdate }) {
+  const [answer, setAnswer] = useState(check.answer || '');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setAnswer(check.answer || ''); }, [check.answer]);
+  const links = Array.isArray(check.sessionLinks) ? check.sessionLinks : [];
+  const closed = check.status === 'closed';
+  const external = check.pageUrl && /^https?:\/\//i.test(check.pageUrl);
+  const openLabel = `Відкрити: ${check.page || 'розділ'}`;
+  const answerChanged = answer.trim() && answer.trim() !== (check.answer || '').trim();
+
+  async function run(data) {
+    setSaving(true);
+    try { await onUpdate(check.id, data); } finally { setSaving(false); }
+  }
+
+  return (
+    <Card className={`p-4 ${closed ? 'opacity-70' : ''} ${check.priority === 'high' && !closed ? 'border-amber-800/60' : ''}`}>
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 text-sm font-semibold text-slate-100 [overflow-wrap:anywhere]">{check.title}</div>
+        <div className="flex flex-wrap gap-1.5">
+          {check.priority === 'high' ? <Badge color="amber">Важливо</Badge> : <Badge>Звичайне</Badge>}
+          {check.status === 'answered' && <Badge color="teal">Є відповідь</Badge>}
+          {closed && <Badge color="green">Закрито</Badge>}
+        </div>
+      </div>
+
+      {check.pageUrl && (
+        <div className="mb-3">
+          {external
+            ? <a href={check.pageUrl} target="_blank" rel="noopener noreferrer" className="inline-flex rounded-lg border border-teal-800/60 bg-teal-900/30 px-3 py-1.5 text-xs font-medium text-teal-300 hover:bg-teal-900/50">{openLabel} ↗</a>
+            : <Link to={check.pageUrl} className="inline-flex rounded-lg border border-teal-800/60 bg-teal-900/30 px-3 py-1.5 text-xs font-medium text-teal-300 hover:bg-teal-900/50">{openLabel} →</Link>}
+        </div>
+      )}
+
+      {check.details && <div className="mb-3 whitespace-pre-wrap text-sm text-slate-300 [overflow-wrap:anywhere]">{check.details}</div>}
+
+      {links.length > 0 && (
+        <div className="mb-3">
+          <div className="mb-1 text-xs text-slate-500">Розмови-докази:</div>
+          <ul className="space-y-1">
+            {links.map((l, i) => (
+              <li key={i} className="text-xs [overflow-wrap:anywhere]">
+                <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-teal-400 hover:underline">{l.label || l.url}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {!closed ? (
+        <div className="mb-2">
+          <Textarea rows={3} placeholder="Ваша відповідь: що перевірили / виправили / як насправді…" value={answer} onChange={(e) => setAnswer(e.target.value)} />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button onClick={() => run({ answer })} disabled={saving || !answerChanged}>Зберегти відповідь</Button>
+            <Button variant="secondary" onClick={() => run({ status: 'closed', ...(answerChanged ? { answer } : {}) })} disabled={saving}>Закрити тікет</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-2">
+          {check.answer && <div className="mb-2 whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/40 p-2 text-sm text-slate-300 [overflow-wrap:anywhere]">{check.answer}</div>}
+          <Button variant="secondary" onClick={() => run({ status: 'open' })} disabled={saving}>Відкрити знову</Button>
+        </div>
+      )}
+
+      <div className="text-[11px] text-slate-500">
+        Створено {fmtDate(check.createdAt)}{check.createdBy ? ` · ${check.createdBy}` : ''}{check.source ? ` · ${check.source}` : ''}
+        {check.answeredAt && ` · відповідь ${fmtDate(check.answeredAt)}${check.answeredBy ? ` (${check.answeredBy})` : ''}`}
+        {check.closedAt && ` · закрито ${fmtDate(check.closedAt)}${check.closedBy ? ` (${check.closedBy})` : ''}`}
+      </div>
+    </Card>
+  );
+}
+
+function NewCheckForm({ onDone }) {
+  const [form, setForm] = useState({ title: '', page: '', pageUrl: '', details: '', priority: 'normal' });
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  async function save() {
+    setError(''); setSaving(true);
+    try { await api.createCrmCheck(form); onDone(); } catch (e) { setError(e.message); } finally { setSaving(false); }
+  }
+
+  return (
+    <Card className="mb-4 p-4">
+      <ErrorBanner message={error} />
+      <Field label="Що перевірити (коротко)"><Input value={form.title} onChange={set('title')} placeholder="Напр.: залишки A0188 не збігаються" /></Field>
+      <div className="grid gap-x-3 sm:grid-cols-3">
+        <Field label="Розділ"><Input value={form.page} onChange={set('page')} placeholder="Товари" /></Field>
+        <Field label="Посилання на розділ"><Input value={form.pageUrl} onChange={set('pageUrl')} placeholder="/products?search=A0188" /></Field>
+        <Field label="Важливість">
+          <Select value={form.priority} onChange={set('priority')}>
+            <option value="normal">Звичайне</option>
+            <option value="high">Важливо</option>
+          </Select>
+        </Field>
+      </div>
+      <Field label="Деталі"><Textarea rows={4} value={form.details} onChange={set('details')} placeholder="Що саме не так і що зробити" /></Field>
+      <Button onClick={save} disabled={saving || !form.title.trim()}>Додати</Button>
+    </Card>
   );
 }

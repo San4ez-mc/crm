@@ -33,6 +33,7 @@ const fopsRouter = require('./routes/fops');
 const tenantSecretsRouter = require('./routes/tenant-secrets');
 const funnelEventsRouter = require('./routes/funnel-events');
 const knowledgeRouter = require('./routes/knowledge');
+const crmChecksRouter = require('./routes/crm-checks');
 
 const app = express();
 const PORT = Number(process.env.PORT || 4700);
@@ -93,6 +94,7 @@ app.use('/api', resolveTenant,
   tenantSecretsRouter,
   funnelEventsRouter,
   knowledgeRouter,
+  crmChecksRouter,
 );
 
 // Продакшн: зібраний admin SPA (yarn build:admin → public/admin) роздається тим самим

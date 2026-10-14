@@ -13,7 +13,8 @@ export default function ProductsPage() {
   const [allProducts, setAllProducts] = useState([]); // без пагінації — для пікерів (допродажі/склад комплекту)
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
-  const [q, setQ] = useState('');
+  // ?search=A0188 — посилання з вкладки «Перевірити в CRM» (база знань) одразу фільтрує список.
+  const [q, setQ] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
   const [categoryId, setCategoryId] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [error, setError] = useState('');

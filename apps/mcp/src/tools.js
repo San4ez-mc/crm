@@ -74,6 +74,11 @@ const TOOLS = [
   { name: 'update_ad_variants', description: 'Звʼязати варіанти Advantage+ («…_Group_1» з рефералу розмов, кабінет instagram_messages) зі справжніми оголошеннями: товар і дотики замовлень переходять на оголошення (variantOfAdId). dryRun — лише показати.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, dryRun: { type: 'boolean' } }, required: ['tenantId'] } },
   { name: 'create_ad', description: 'Зареєструвати оголошення (з рекламного кабінету). postId — пост, який рекламується (Meta effective_object_story_id), для групування просувань.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, externalId: { type: 'string' }, name: { type: 'string' }, productId: { type: 'string' }, postId: { type: 'string' }, postUrl: { type: 'string' } }, required: ['tenantId'] } },
   { name: 'update_ad', description: 'Прив\'язати оголошення до товару / перейменувати.', inputSchema: { type: 'object', properties: { adId: { type: 'string' }, productId: { type: 'string' }, name: { type: 'string' } }, required: ['adId'] } },
+
+  // ── CrmCheck — «Перевірити в CRM» (вкладка бази знань, 2026-10-14) ───
+  { name: 'list_crm_checks', description: 'Тікети «Перевірити в CRM»: що менеджеру звірити/виправити в даних CRM (залишки, склад, назви, синоніми), з відповіддю менеджера. Порядок: відкриті → з відповіддю → закриті.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, status: { type: 'string', description: 'open | answered | closed, кілька через кому; порожньо = усі' } }, required: ['tenantId'] } },
+  { name: 'create_crm_check', description: 'Створити тікет «Перевірити в CRM» для менеджера магазину.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, title: { type: 'string', description: 'Коротко, що не так' }, page: { type: 'string', description: 'Розділ CRM людською мовою: «Товари», «Категорії», «База знань»' }, pageUrl: { type: 'string', description: 'Відносний шлях адмінки: /products?search=A0188, /sets?search=set1116, /categories, /knowledge?tab=shop' }, details: { type: 'string', description: 'Що саме перевірити/виправити і чому' }, sessionLinks: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, url: { type: 'string' } } }, description: 'Докази — розмови у Flows: [{label:"@nick — що сталось", url:"https://flows.fineko.space/sessions/<id>"}]' }, priority: { type: 'string', description: 'high | normal' }, createdBy: { type: 'string', description: 'bot | claude | email' }, source: { type: 'string', description: 'Звідки: «аудит Flows 14.10», id правки з Edits' } }, required: ['tenantId', 'title'] } },
+  { name: 'update_crm_check', description: 'Оновити тікет: answer (→ status answered), status closed (закрити) / open (відкрити знову), або поля тікета.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, checkId: { type: 'string' }, title: { type: 'string' }, page: { type: 'string' }, pageUrl: { type: 'string' }, details: { type: 'string' }, sessionLinks: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, url: { type: 'string' } } } }, priority: { type: 'string' }, status: { type: 'string', description: 'open | answered | closed' }, answer: { type: 'string' }, actor: { type: 'string', description: 'Хто відповів/закрив (за замовчуванням bot)' }, source: { type: 'string' } }, required: ['tenantId', 'checkId'] } },
 ];
 
 const READ_TOOL_NAMES = new Set(TOOLS.filter((t) => /^(list_|get_)/.test(t.name)).map((t) => t.name));
@@ -251,6 +256,13 @@ async function callTool(name, args = {}) {
       if (args.name !== undefined) data.name = args.name;
       return db.ad.update({ where: { id: args.adId }, data });
     }
+
+    case 'list_crm_checks':
+      return (await require('../../api/src/lib/crmChecks').listChecks(args.tenantId, { status: args.status })).items;
+    case 'create_crm_check':
+      return require('../../api/src/lib/crmChecks').createCheck(args.tenantId, args);
+    case 'update_crm_check':
+      return require('../../api/src/lib/crmChecks').updateCheck(args.tenantId, args.checkId, args);
 
     default:
       throw new NotFoundError('Tool', name);

@@ -140,6 +140,11 @@ export const api = {
   searchKnowledge: (params = {}) => get(`/knowledge/search?${new URLSearchParams(params)}`),
   importKnowledge: (data) => post('/knowledge/import', data),
 
+  // «Перевірити в CRM» — тікети для менеджера (вкладка бази знань)
+  listCrmChecks: (params = {}) => get(`/crm-checks?${new URLSearchParams(params)}`),
+  createCrmCheck: (data) => post('/crm-checks', data),
+  updateCrmCheck: (id, data) => patch(`/crm-checks/${id}`, data),
+
   // Налаштування
   getTenantSettings: () => get('/tenant'),
   updateTenantSettings: (data) => patch('/tenant', data),

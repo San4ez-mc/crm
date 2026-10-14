@@ -31,6 +31,8 @@ const RULES = [
   [(m, p) => m !== 'GET' && /^\/categories(\/|$)/.test(p), ['categories']],
   [(m, p) => m !== 'GET' && /^\/suppliers(\/|$)/.test(p), ['suppliers']],
   [(m, p) => m !== 'GET' && /^\/knowledge(\/|$)/.test(p), ['knowledge']],
+  // «Перевірити в CRM» — вкладка бази знань (внутрішні тікети, не потрібні сторінці замовлень): і читати, і змінювати
+  [(m, p) => /^\/crm-checks(\/|$)/.test(p), ['knowledge']],
   [(m, p) => m !== 'GET' && /^\/pipelines(\/|$)/.test(p), ['pipelines']],
 ];
 

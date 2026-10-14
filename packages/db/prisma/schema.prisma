@@ -46,6 +46,7 @@ model Tenant {
   knowledgeEntries KnowledgeEntry[]
   knowledgeProfile KnowledgeProfile?
   productChangeLog ProductChangeLog[]
+  crmChecks        CrmCheck[]
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -652,4 +653,34 @@ model KnowledgeProfile {
   paymentLine  String?
   termsLine    String?
   updatedAt    DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// ДОПОВНЕННЯ 2026-10-14 — «Перевірити в CRM» (вкладка бази знань).
+// Тікети для менеджера магазину: що в даних CRM треба звірити/виправити (залишки, склад,
+// назви, синоніми категорій) з доказами — посиланнями на розмови у Flows. Створює бот/Claude
+// (аудит розмов) або людина вручну; менеджер відповідає й закриває тікет.
+// ─────────────────────────────────────────────────────────────
+model CrmCheck {
+  id           String    @id @default(uuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title        String
+  page         String? // людська назва розділу CRM: «Товари», «Категорії», «База знань»
+  pageUrl      String? // відносний шлях адмінки, напр. /products?search=A0188
+  details      String? // що саме перевірити/виправити і чому
+  sessionLinks Json      @default("[]") // [{label,url}] — розмови у Flows як докази
+  priority     String    @default("normal") // high | normal
+  status       String    @default("open") // open | answered | closed
+  answer       String?
+  answeredAt   DateTime?
+  answeredBy   String?
+  closedAt     DateTime?
+  closedBy     String?
+  createdBy    String? // bot | claude | email користувача
+  source       String? // вільний текст: «аудит 14.10», id правки з Edits
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([tenantId, status])
 }
