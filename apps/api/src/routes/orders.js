@@ -2,6 +2,7 @@
 const express = require('express');
 const { db } = require('@crm/db');
 const { touchFields } = require('../lib/adAttribution');
+const { canonicalAdId } = require('../lib/adVariants');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
@@ -66,6 +67,9 @@ router.get('/orders', asyncHandler(async (req, res) => {
 // ── Створення (переважно з воронки) ──────────────────────────────────────
 router.post('/orders', asyncHandler(async (req, res) => {
   const b = req.body || {};
+  // Варіант Advantage+ («_Group_1») → справжнє оголошення (lib/adVariants.js), як і в атрибуції за Meta-id.
+  if (b.firstTouchAdId) b.firstTouchAdId = await canonicalAdId(req.tenant.id, b.firstTouchAdId);
+  if (b.lastTouchAdId) b.lastTouchAdId = await canonicalAdId(req.tenant.id, b.lastTouchAdId);
   if (!Array.isArray(b.items) || !b.items.length) throw new ValidationError('items[] обовʼязкові (хоча б одна позиція)');
 
   let buyerId = b.buyerId || null;
@@ -254,7 +258,10 @@ router.patch('/orders/:id/ttn-status', asyncHandler(async (req, res) => {
 router.patch('/orders/:id/attribution', asyncHandler(async (req, res) => {
   const existing = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
   if (!existing) throw new NotFoundError('Order', req.params.id);
-  const { firstTouchAdId, lastTouchAdId } = req.body || {};
+  let { firstTouchAdId, lastTouchAdId } = req.body || {};
+  // Ручний вибір варіанта Advantage+ («_Group_1») зараховуємо справжньому оголошенню (lib/adVariants.js).
+  if (firstTouchAdId) firstTouchAdId = await canonicalAdId(req.tenant.id, firstTouchAdId);
+  if (lastTouchAdId) lastTouchAdId = await canonicalAdId(req.tenant.id, lastTouchAdId);
   const order = await db.order.update({
     where: { id: existing.id },
     data: {

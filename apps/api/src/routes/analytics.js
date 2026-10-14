@@ -48,7 +48,8 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
   const tenant = await ensureFreshUsdRate(req.tenant);
   const usdRate = Number(tenant.usdExchangeRate || 0);
   const spendDateWhere = from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {};
-  const ads = await db.ad.findMany({ where: { tenantId: req.tenant.id }, include: { product: { select: { id: true, name: true } } } });
+  // Варіанти Advantage+ («_Group_1») не показуємо окремо — їхні дотики зараховано справжньому оголошенню (lib/adVariants.js).
+  const ads = await db.ad.findMany({ where: { tenantId: req.tenant.id, variantOfAdId: null }, include: { product: { select: { id: true, name: true } } } });
 
   // 2026-10-05: раніше — 6 запитів на КОЖНЕ оголошення одночасно (Promise.all по ~1700 рекламах ≈ 10 000 запитів при пулі
   // з 9 з'єднань): пул вичерпувався, сторінка «Аналітика» падала й тягнула за собою весь CRM (тайм-аути в інших запитах).

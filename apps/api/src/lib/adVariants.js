@@ -81,4 +81,11 @@ async function linkAllAdVariants(tenantId, { dryRun = false } = {}) {
   return res;
 }
 
-module.exports = { normAdName, isVariant, isReal, pickParent, linkAdVariantsFor, linkAllAdVariants, PSEUDO_ACCOUNT };
+/** Внутрішній Ad.id → id справжнього оголошення, якщо це варіант (ручний вибір у замовленні, передача id напряму). */
+async function canonicalAdId(tenantId, adId) {
+  if (!adId) return adId;
+  const ad = await db.ad.findFirst({ where: { id: String(adId), tenantId }, select: { variantOfAdId: true } });
+  return (ad && ad.variantOfAdId) || adId;
+}
+
+module.exports = { canonicalAdId, normAdName, isVariant, isReal, pickParent, linkAdVariantsFor, linkAllAdVariants, PSEUDO_ACCOUNT };

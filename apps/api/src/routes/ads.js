@@ -324,6 +324,8 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
   const dateWhere = periodDateWhere(from, to);
   const where = {
     tenantId: req.tenant.id,
+    // Варіанти Advantage+ («_Group_1») — не окремі оголошення: їхні розмови й продажі зараховано справжньому (lib/adVariants.js).
+    variantOfAdId: null,
     ...(search ? { OR: [{ name: { contains: String(search), mode: 'insensitive' } }, { externalId: { contains: String(search) } }] } : {}),
     // 2026-09-12 (аудит аналітики): раніше "Без товару"/"З привʼязаним товаром" фільтрували
     // лише вже завантажену сторінку на фронті (AdSpendPage.jsx) — total/пагінація рахувались
