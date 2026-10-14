@@ -331,9 +331,7 @@ function FopForm({ initial, onSave, onCancel }) {
       <Field label="Назва / ПІБ ФОП"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
       <Field label="IBAN"><Input value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} placeholder="UA…" /></Field>
       <Field label="Номер картки"><Input value={form.cardNumber} onChange={(e) => setForm({ ...form, cardNumber: e.target.value })} placeholder="для card-to-card, окрім IBAN — необовʼязково" /></Field>
-      <Field label="Коментар до картки"><Textarea rows={3} value={form.cardComment} onChange={(e) => setForm({ ...form, cardComment: e.target.value })} placeholder={'Бот пише його під номером картки замість назви ФОП, напр.:
-Отримувач: …
-Банк: …'} /></Field>
+      <Field label="Коментар до картки"><Textarea rows={3} value={form.cardComment} onChange={(e) => setForm({ ...form, cardComment: e.target.value })} placeholder={'Бот пише його під номером картки замість назви ФОП, напр.:\nОтримувач: …\nБанк: …'} /></Field>
       <Field label="ІПН"><Input value={form.taxId} onChange={(e) => setForm({ ...form, taxId: e.target.value })} /></Field>
       <Field label="Токен Monobank API"><Input value={form.monobankToken} onChange={(e) => setForm({ ...form, monobankToken: e.target.value })} placeholder="для звірки надходжень" /></Field>
       <div className="mt-4 flex justify-end gap-2">
