@@ -38,7 +38,7 @@ async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, u
     db.order.findMany({
       where: { tenantId, firstTouchAdId: one ? ids[0] : { not: null }, ...ORDER_PLACED_WHERE, ...(dateWhere ? { createdAt: dateWhere } : {}) },
       select: {
-        id: true, createdAt: true, isRefused: true, firstTouchAdId: true,
+        id: true, createdAt: true, isRefused: true, firstTouchAdId: true, funnelSessionId: true,
         returns: { select: { id: true } },
         items: { select: { productId: true, name: true, price: true, quantity: true, product: { select: { name: true } } } },
       },
@@ -85,6 +85,7 @@ function statsFromData(ad, spend, contacts, orders, expenseByProduct) {
     }
     orderRows.push({
       id: o.id,
+      funnelSessionId: o.funnelSessionId || null,
       createdAt: o.createdAt,
       itemsLabel: o.items.map((it) => it.product?.name || it.name).join(', ') || '—',
       status: o.isRefused ? 'refused' : (o.returns.length > 0 ? 'returned' : 'picked_up'),
