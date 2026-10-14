@@ -196,15 +196,18 @@ export default function AdSpendDetailPage() {
         <h3 className="p-4 pb-0 text-sm font-semibold">Замовлення, привʼязані до оголошення</h3>
         <table className="w-full text-sm">
           <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-            <tr><th className="px-4 py-3">Замовлення</th><th className="px-4 py-3">Фактичний кошик</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3 text-right">Виручка</th><th className="px-4 py-3 text-right">Маржа</th></tr>
+            <tr><th className="px-4 py-3">Покупець</th><th className="px-4 py-3">Фактичний кошик</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3 text-right">Виручка</th><th className="px-4 py-3 text-right">Маржа</th></tr>
           </thead>
           <tbody>
             {data.orders.map((o) => (
               <tr key={o.id} className="border-b border-slate-800/60 last:border-0">
-                {/* 2026-10-14 (власник): клік по номеру — одразу розмова у Flows; замовлення без розмови (оформив менеджер) — картка в CRM. */}
-                <td className="px-4 py-3">{o.funnelSessionId
-                  ? <a className="text-brand-light hover:underline" href={`https://flows.fineko.space/sessions/${o.funnelSessionId}`} target="_blank" rel="noreferrer" title="Відкрити розмову у Flows">#{o.id.slice(0, 6)} ↗</a>
-                  : <a className="text-brand-light hover:underline" href={`/orders?open=${o.id}`} title="Відкрити замовлення в CRM (розмови у Flows нема)">#{o.id.slice(0, 6)}</a>}</td>
+                {/* 2026-10-14 (власник): імʼя й нікнейм Instagram замість id; клік — розмова у Flows, без розмови (оформив менеджер) — картка в CRM. */}
+                <td className="px-4 py-3">{(() => {
+                  const label = (<span>{o.buyerName || (o.igUsername ? '' : '#' + o.id.slice(0, 6))}{o.igUsername && <span className={o.buyerName ? 'ml-1.5 text-xs text-slate-400' : ''}>@{o.igUsername}</span>}</span>);
+                  return o.funnelSessionId
+                    ? <a className="text-brand-light hover:underline" href={`https://flows.fineko.space/sessions/${o.funnelSessionId}`} target="_blank" rel="noreferrer" title="Відкрити розмову у Flows">{label} ↗</a>
+                    : <a className="text-brand-light hover:underline" href={`/orders?open=${o.id}`} title="Відкрити замовлення в CRM (розмови у Flows нема)">{label}</a>;
+                })()}</td>
                 <td className="px-4 py-3 text-slate-400">{o.itemsLabel}</td>
                 <td className="px-4 py-3"><Badge color={STATUS_COLOR[o.status]}>{STATUS_LABEL[o.status]}</Badge></td>
                 <td className="px-4 py-3 text-right">{money(o.revenue)}</td>

@@ -165,6 +165,26 @@ router.post('/orders', asyncHandler(async (req, res) => {
   res.status(201).json({ ok: true, data: order });
 }));
 
+// Замовлення клієнта для бота (2026-10-14, власник: «якщо замовлення є в СРМ — бот сам дивиться статус, нема — кличе менеджера»).
+// Замовлення оформлюють і бот, і менеджери вручну — шукаємо за розмовою воронки, Instagram-нікнеймом (картка й покупець) і телефоном.
+// Лише оформлені (є покупець), найсвіжіше. Нічого не знайдено — data:null.
+router.get('/orders/lookup-client', asyncHandler(async (req, res) => {
+  const { funnelSessionId, ig, phone } = req.query;
+  const igN = String(ig || '').replace(/^@/, '').trim();
+  const ph = String(phone || '').replace(/\D/g, '').slice(-9);
+  const or = [];
+  if (funnelSessionId) or.push({ funnelSessionId: String(funnelSessionId) });
+  if (igN) { or.push({ contactIg: { equals: igN, mode: 'insensitive' } }); or.push({ buyer: { is: { igUsername: { equals: igN, mode: 'insensitive' } } } }); }
+  if (ph.length === 9) or.push({ buyer: { is: { phone: { contains: ph } } } });
+  if (!or.length) return void res.json({ ok: true, data: null });
+  const o = await db.order.findFirst({
+    where: { tenantId: req.tenant.id, buyerId: { not: null }, OR: or },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, createdAt: true, ttn: true, ttnStatus: true, isRefused: true, funnelSessionId: true, stage: { select: { name: true } }, items: { select: { name: true, quantity: true, product: { select: { name: true, customerName: true } } } }, returns: { select: { id: true, type: true, status: true } } },
+  });
+  res.json({ ok: true, data: o || null });
+}));
+
 router.get('/orders/:id', asyncHandler(async (req, res) => {
   const order = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id }, include: ORDER_INCLUDE });
   if (!order) throw new NotFoundError('Order', req.params.id);
