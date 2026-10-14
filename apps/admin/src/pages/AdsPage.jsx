@@ -10,7 +10,9 @@ import ImageLightbox from '../components/common/ImageLightbox';
 export default function AdsPage() {
   const [items, setItems] = useState(null);
   const [products, setProducts] = useState([]);
-  const [search, setSearch] = useState('');
+  // ?search=<id або текст> з посилання (Flows: «реклама в розмові — у CRM ↗», 14.10) — одразу знайти оголошення, і серед неактивних теж.
+  const _qs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const [search, setSearch] = useState(_qs.get('search') || '');
   const [error, setError] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
@@ -23,7 +25,7 @@ export default function AdsPage() {
   // 2026-09-13 (власник: "на сторінці оголошень дійсно треба щоб попадали тільки активні
   // реклами, а не всі 1000" — рік+ старих паузнутих кампаній засмічував список). Дефолт = лише
   // активні (бекенд сам додає це, якщо status не "all"); перемикач — щоб глянути все за потреби.
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(!!_qs.get('search'));
 
   async function load(acctFilter, showAllFilter) {
     setError('');
