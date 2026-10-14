@@ -184,8 +184,11 @@ export default function OrdersPage() {
                       <div className="text-sm font-medium">{o.buyer?.fullName || o.buyer?.phone || o.contactName || (o.contactIg ? '@' + o.contactIg : 'Без покупця')}</div>
                       {(o.buyer?.igUsername || o.contactIg) && <div className="text-xs text-brand-light">@{o.buyer?.igUsername || o.contactIg}</div>}
                       <div className="mt-1 text-xs text-slate-500 line-clamp-1">{o.items.map((it) => it.name).join(', ')}</div>
-                      <div className="mt-1.5 flex items-center justify-between">
-                        <span className="text-sm">{money(orderTotal(o))}</span>
+                      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1">
+                        <span className="text-sm">
+                          {money(orderTotal(o))}
+                          {o.paidSum > 0 && <span className={`ml-1.5 text-[11px] ${o.paidSum >= orderTotal(o) ? 'text-emerald-400' : 'text-amber-300'}`} title="Оплачено (журнал платежів)">💳 {money(o.paidSum)}</span>}
+                        </span>
                         {o.ttnStatus && <Badge color="green">{o.ttnStatus}</Badge>}
                       </div>
                       {o.firstTouchAd?.name && <div className="mt-1 truncate text-[11px] text-slate-500" title={o.firstTouchAd.name}>📢 {o.firstTouchAd.name}</div>}
@@ -212,7 +215,10 @@ export default function OrdersPage() {
                   <td className="px-4 py-3 text-slate-400">{formatDate(o.createdAt)}</td>
                   <td className="px-4 py-3">{o.buyer?.fullName || o.buyer?.phone || '—'}</td>
                   <td className="px-4 py-3 text-slate-400">{o.items.map((it) => it.name).join(', ')}</td>
-                  <td className="px-4 py-3">{money(orderTotal(o))}</td>
+                  <td className="px-4 py-3">
+                    {money(orderTotal(o))}
+                    {o.paidSum > 0 && <div className={`text-[11px] ${o.paidSum >= orderTotal(o) ? 'text-emerald-400' : 'text-amber-300'}`} title="Оплачено (журнал платежів)">💳 {money(o.paidSum)}</div>}
+                  </td>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <Select className="!w-auto py-1" value={o.stageId || ''} onChange={(e) => moveOrderToStage(o.id, e.target.value)}>
                       {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}

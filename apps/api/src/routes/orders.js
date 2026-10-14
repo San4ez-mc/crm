@@ -21,6 +21,24 @@ const ORDER_INCLUDE = {
   lastTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true } },
 };
 
+// Оплати замовлення (2026-10-14, власник: «у картці замовлення має бути видно оплату»). Платежі пишуть бот і фонова
+// перезвірка Flows через POST /payments. Успішна = status 'success' або не вказано (POST ставить 'success' за замовчуванням).
+const PAYMENTS_INCLUDE = { select: { id: true, amount: true, method: true, status: true, createdAt: true }, orderBy: { createdAt: 'asc' } };
+const isPaidStatus = (status) => !status || status === 'success';
+const PAID_WHERE = { OR: [{ status: 'success' }, { status: null }] };
+
+/** Сума успішних оплат на кожне замовлення — один groupBy на всю сторінку списку (не запит на рядок, CLAUDE.md §9.5). */
+async function paidSumsByOrder(tenantId, orderIds) {
+  if (!orderIds.length) return new Map();
+  const rows = await db.payment.groupBy({ by: ['orderId'], where: { tenantId, orderId: { in: orderIds }, ...PAID_WHERE }, _sum: { amount: true } });
+  return new Map(rows.map((r) => [r.orderId, Number(r._sum.amount || 0)]));
+}
+
+function withPaidSum(order) {
+  const payments = Array.isArray(order.payments) ? order.payments : [];
+  return { ...order, paidSum: payments.filter((p) => isPaidStatus(p.status)).reduce((s, p) => s + Number(p.amount || 0), 0) };
+}
+
 async function defaultStageId(tenantId) {
   const pipeline = await db.pipeline.findFirst({ where: { tenantId }, orderBy: { createdAt: 'asc' }, include: { stages: { orderBy: { order: 'asc' }, take: 1 } } });
   return pipeline?.stages?.[0]?.id || null;
@@ -61,7 +79,8 @@ router.get('/orders', asyncHandler(async (req, res) => {
     db.order.findMany({ where, include: ORDER_INCLUDE, orderBy: { createdAt: 'desc' }, take: Number(take), skip: Number(skip) }),
     db.order.count({ where }),
   ]);
-  res.json({ ok: true, data: items, meta: { total, take: Number(take), skip: Number(skip) } });
+  const paid = await paidSumsByOrder(req.tenant.id, items.map((o) => o.id));
+  res.json({ ok: true, data: items.map((o) => ({ ...o, paidSum: paid.get(o.id) || 0 })), meta: { total, take: Number(take), skip: Number(skip) } });
 }));
 
 // ── Створення (переважно з воронки) ──────────────────────────────────────
@@ -186,9 +205,9 @@ router.get('/orders/lookup-client', asyncHandler(async (req, res) => {
 }));
 
 router.get('/orders/:id', asyncHandler(async (req, res) => {
-  const order = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id }, include: ORDER_INCLUDE });
+  const order = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id }, include: { ...ORDER_INCLUDE, payments: PAYMENTS_INCLUDE } });
   if (!order) throw new NotFoundError('Order', req.params.id);
-  res.json({ ok: true, data: order });
+  res.json({ ok: true, data: withPaidSum(order) });
 }));
 
 router.patch('/orders/:id', asyncHandler(async (req, res) => {

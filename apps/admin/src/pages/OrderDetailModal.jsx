@@ -1,5 +1,5 @@
 // §9.8 Замовлення — деталі (drawer/модалка з рядка списку).
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { Field, Input, Textarea, Select, Button, Badge, ErrorBanner, money, formatDateTime } from '../components/common/Common';
 import Modal from '../components/common/Modal';
@@ -65,6 +65,43 @@ function AttributionSection({ order, onSaved, onError }) {
   );
 }
 
+// Оплата (2026-10-14, власник: «у картці замовлення має бути видно оплату»): платежі з журналу (бот, фонова перезвірка
+// Flows) — GET /orders/:id віддає payments. Успішна = status 'success' або не вказано.
+const PAY_STATUS_LABEL = { success: 'успішно', pending: 'очікує', failed: 'не пройшла' };
+function PaymentSection({ order, payments }) {
+  const total = (order.items || []).reduce((s, it) => s + Number(it.price) * it.quantity, 0);
+  const list = payments || [];
+  const paid = list.filter((p) => !p.status || p.status === 'success').reduce((s, p) => s + Number(p.amount || 0), 0);
+  const badge = paid <= 0
+    ? <Badge color="red">не оплачено</Badge>
+    : paid >= total && total > 0 ? <Badge color="green">оплачено повністю</Badge> : <Badge color="amber">передоплата</Badge>;
+  return (
+    <section>
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase text-slate-500">Оплата</h4>
+        {payments === null ? <span className="text-xs text-slate-500">завантаження…</span> : badge}
+      </div>
+      {payments !== null && (
+        <>
+          <div className="text-slate-200">Оплачено <b>{money(paid)}</b> з {money(total)}</div>
+          {list.length > 0 ? (
+            <div className="mt-1.5 space-y-1">
+              {list.map((p) => (
+                <div key={p.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg bg-slate-800/50 px-3 py-1.5 text-xs">
+                  <span className="text-slate-400">{formatDateTime(p.createdAt)}</span>
+                  <span className="font-medium text-slate-200">{money(p.amount)}</span>
+                  <span className="text-slate-400">{p.method || '—'}</span>
+                  <Badge color={!p.status || p.status === 'success' ? 'green' : p.status === 'failed' ? 'red' : 'amber'}>{PAY_STATUS_LABEL[p.status || 'success'] || p.status}</Badge>
+                </div>
+              ))}
+            </div>
+          ) : <div className="mt-1 text-xs text-slate-500">Платежів у журналі немає</div>}
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function OrderDetailModal({ order: initialOrder, pipelines, onClose, onChanged, onOpenReturn, autoEdit = false }) {
   // Після збереження правок картка показує свіже замовлення (список оновлюється окремо через onChanged).
   const [order, setOrder] = useState(initialOrder);
@@ -72,6 +109,11 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
   const [managerComment, setManagerComment] = useState(order.managerComment || '');
   const [error, setError] = useState('');
   const stages = pipelines?.flatMap((p) => p.stages) || [];
+  // Платежі — окремим запитом картки (список замовлень їх не містить, лише paidSum).
+  const [payments, setPayments] = useState(null);
+  useEffect(() => {
+    api.getOrder(initialOrder.id).then((r) => setPayments(r.data?.payments || [])).catch(() => setPayments([]));
+  }, [initialOrder.id]);
 
   async function saveComment() {
     try { await api.updateOrder(order.id, { managerComment }); onChanged(); } catch (e) { setError(e.message); }
@@ -161,6 +203,8 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
             </button>
           </div>
         </section>
+
+        <PaymentSection order={order} payments={payments} />
 
         <section>
           <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Оплата / коментар менеджера</h4>

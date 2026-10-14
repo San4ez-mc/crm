@@ -8,10 +8,12 @@ const { ValidationError, NotFoundError } = require('@crm/errors');
 const router = express.Router();
 
 router.get('/payments', asyncHandler(async (req, res) => {
-  const { take = '100', skip = '0' } = req.query;
+  const { take = '100', skip = '0', orderId } = req.query;
+  // ?orderId= — платежі одного замовлення (2026-10-14); без параметра — увесь журнал магазину, як і раніше.
+  const where = { tenantId: req.tenant.id, ...(orderId ? { orderId: String(orderId) } : {}) };
   const [items, total] = await Promise.all([
-    db.payment.findMany({ where: { tenantId: req.tenant.id }, include: { order: { include: { buyer: true } } }, orderBy: { createdAt: 'desc' }, take: Number(take), skip: Number(skip) }),
-    db.payment.count({ where: { tenantId: req.tenant.id } }),
+    db.payment.findMany({ where, include: { order: { include: { buyer: true } } }, orderBy: { createdAt: 'desc' }, take: Number(take), skip: Number(skip) }),
+    db.payment.count({ where }),
   ]);
   res.json({ ok: true, data: items, meta: { total, take: Number(take), skip: Number(skip) } });
 }));
