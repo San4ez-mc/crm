@@ -89,11 +89,12 @@ router.get('/funnel-events/summary', asyncHandler(async (req, res) => {
 // не просунулись далі і не дійшли до фінального етапу воронки. Рахуємо в JS (не groupBy),
 // бо треба саме ОСТАННІЙ (максимальний stageOrder) етап на сесію — Prisma groupBy так не вміє.
 router.get('/funnel-events/stuck', asyncHandler(async (req, res) => {
-  const { funnelSlug, thresholdHours } = req.query;
+  const { funnelSlug, thresholdHours, from, to } = req.query;
   const threshold = Number(thresholdHours) || 48;
   const cutoff = new Date(Date.now() - threshold * 3600 * 1000);
   const rows = await db.funnelEvent.findMany({
-    where: { tenantId: req.tenant.id, ...(funnelSlug ? { funnelSlug: String(funnelSlug) } : {}) },
+    // from/to (2026-10-15, Edit de280788) — той самий період, що й у зведенні над цим блоком.
+    where: { tenantId: req.tenant.id, ...(funnelSlug ? { funnelSlug: String(funnelSlug) } : {}), ...(from || to ? { occurredAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) },
     select: { sessionId: true, stageName: true, stageOrder: true, occurredAt: true },
   });
   if (!rows.length) return void res.json({ ok: true, data: { stuckByStage: [], totalStuck: 0, thresholdHours: threshold } });

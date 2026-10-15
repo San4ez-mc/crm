@@ -5,7 +5,7 @@
 const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
-const { parseFrom, parseTo, kyivDayKey } = require('../lib/dateRange');
+const { parseFrom, parseTo, kyivDayKey, dayRange } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE } = require('../lib/margin');
 const { ensureFreshUsdRate, rowToUAH, adSpendUAHByProduct } = require('../lib/currency');
 const { ValidationError } = require('@crm/errors');
@@ -47,7 +47,8 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const tenant = await ensureFreshUsdRate(req.tenant);
   const usdRate = Number(tenant.usdExchangeRate || 0);
-  const spendDateWhere = from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {};
+  // Витрати — колонка-дата (день Ads Manager): межі — київські календарні дні, не моменти часу (dateRange.dayRange, Edit ca88ee28).
+  const spendDateWhere = from || to ? { date: dayRange(from, to) } : {};
   // Варіанти Advantage+ («_Group_1») не показуємо окремо — їхні дотики зараховано справжньому оголошенню (lib/adVariants.js).
   const ads = await db.ad.findMany({ where: { tenantId: req.tenant.id, variantOfAdId: null }, include: { product: { select: { id: true, name: true } } } });
 
@@ -228,7 +229,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
       where: { tenantId: tenant.id, ...periodWhere(from, to), ...ORDER_PLACED_WHERE },
       include: { items: true, buyer: { select: { id: true } }, returns: { select: { id: true } } },
     }),
-    db.adSpendDaily.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+    db.adSpendDaily.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { date: dayRange(from, to) } : {}) } }),
     // «Нові повідомлення» = нові розмови з воронки (картки). Раніше — таблиця AdClick, яку з 13.09 ніхто не заповнює (0 записів).
     db.order.findMany({ where: { tenantId: tenant.id, ...periodWhere(from, to), ...LEAD_WHERE }, select: { createdAt: true } }),
     db.return.findMany({ where: { tenantId: tenant.id, ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
@@ -359,7 +360,7 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
   const adIds = ads.map((a) => a.id);
 
   const [spendRows, leadRows] = await Promise.all([
-    db.adSpendDaily.findMany({ where: { adId: { in: adIds }, ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
+    db.adSpendDaily.findMany({ where: { adId: { in: adIds }, ...(from || to ? { date: dayRange(from, to) } : {}) } }),
     // Розмови про цей товар (картка воронки з цим товаром) — замість порожньої AdClick.
     db.order.findMany({ where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...periodWhere(from, to), ...LEAD_WHERE }, select: { createdAt: true } }),
   ]);

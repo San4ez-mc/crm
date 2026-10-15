@@ -7,56 +7,88 @@ import OrderEditor from './OrderEditor';
 
 // Реклама замовлення (Edits 3605aed1/2f4d68fd, 2026-10-06): видно для будь-якого замовлення (і створеного ботом), можна змінити вручну.
 // Перший дотик — реклама, з якої людина вперше прийшла в розмову (саме їй звіти зараховують замовлення); останній — остання реклама
-// перед замовленням. Бот ставить обидва автоматично з розмови.
+// перед замовленням. Бот ставить обидва автоматично з розмови (лише за справжнім id реклами від Meta — не вгадує).
+// 2026-10-15 (Edits a54a9497/dfea1e28, Олексій: «не потрібно двічі обирати оголошення»): одна кнопка — вибране оголошення ставиться
+// і першим, і останнім дотиком. Два рядки показуємо, лише коли бот бачив дві різні реклами. Підказки — активні оголошення товарів
+// замовлення (коли Meta не передала, з якої реклами клієнт, — вибрати в один клік), біля кожного — посилання на сам пост, бо в
+// Олексія кілька оголошень з однаковою назвою (Edits 9ad83120/09ba3c2c).
 function AdLine({ ad }) {
-  if (!ad) return <span className="text-slate-500">— органіка / невідомо</span>;
+  if (!ad) return <span className="text-slate-500">— не вказано (органіка або Meta не передала рекламу)</span>;
   return (
-    <span className="inline-flex items-center gap-2">
+    <span className="inline-flex flex-wrap items-center gap-2">
       {ad.thumbnailUrl && <img src={ad.thumbnailUrl} alt="" className="h-8 w-8 rounded object-cover" />}
       <span>{ad.name || ad.externalId}{ad.campaignName && ad.campaignName !== ad.name ? <span className="text-slate-500"> · {ad.campaignName}</span> : null}</span>
+      {ad.effectiveStatus && ad.effectiveStatus !== 'ACTIVE' && <Badge color="amber">на паузі</Badge>}
+      {ad.postUrl && <a href={ad.postUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs text-brand-light hover:underline">пост ↗</a>}
     </span>
   );
 }
 
 function AttributionSection({ order, onSaved, onError }) {
-  const [editing, setEditing] = useState(null); // 'firstTouchAdId' | 'lastTouchAdId'
+  const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [found, setFound] = useState([]);
+  const [suggested, setSuggested] = useState(null);
+  const productIds = [...new Set((order.items || []).filter((it) => !it.isUpsell).map((it) => it.productId || it.product?.id).filter(Boolean))];
+  useEffect(() => {
+    if (!open || suggested !== null) return;
+    Promise.all(productIds.map((productId) => api.listAds({ productId, take: '30' }).then((r) => r.data || r || []).catch(() => [])))
+      .then((lists) => {
+        const seen = new Set();
+        setSuggested(lists.flat().filter((a) => a.effectiveStatus === 'ACTIVE' && !a.variantOfAdId && !seen.has(a.id) && seen.add(a.id)));
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   async function search(text) {
     setQ(text);
     if (text.trim().length < 2) { setFound([]); return; }
-    try { const r = await api.listAds({ search: text.trim(), status: 'all', take: '20' }); setFound(r.data || r || []); } catch (e) { onError(e.message); }
+    try { const r = await api.listAds({ search: text.trim(), status: 'all', take: '20' }); setFound((r.data || r || []).filter((a) => !a.variantOfAdId)); } catch (e) { onError(e.message); }
   }
-  async function choose(adId) {
+  async function choose(ad) {
     try {
-      const r = await api.setOrderAttribution(order.id, { [editing]: adId });
-      const ad = adId ? found.find((a) => a.id === adId) || null : null;
-      onSaved({ ...(r.data || {}), [editing === 'firstTouchAdId' ? 'firstTouchAd' : 'lastTouchAd']: ad });
-      setEditing(null); setQ(''); setFound([]);
+      const adId = ad ? ad.id : null;
+      const r = await api.setOrderAttribution(order.id, { firstTouchAdId: adId, lastTouchAdId: adId });
+      onSaved({ ...(r.data || {}), firstTouchAd: ad, lastTouchAd: ad });
+      setOpen(false); setQ(''); setFound([]);
     } catch (e) { onError(e.message); }
   }
-  const row = (label, key, ad) => (
-    <div className="flex items-center justify-between gap-2">
-      <div><span className="text-slate-500">{label}: </span><AdLine ad={ad} /></div>
-      <button onClick={() => { setEditing(editing === key ? null : key); setQ(''); setFound([]); }} className="shrink-0 text-xs text-brand-light hover:underline">{editing === key ? 'Скасувати' : 'Змінити'}</button>
-    </div>
+  const first = order.firstTouchAd || null;
+  const last = order.lastTouchAd || null;
+  const differ = first && last && first.id !== last.id;
+  const pick = (a) => (
+    <button key={a.id} onClick={() => choose(a)} className="block w-full rounded px-2 py-1 text-left hover:bg-slate-800">
+      <AdLine ad={a} />
+    </button>
   );
   return (
     <section>
-      <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Реклама (атрибуція)</h4>
-      <div className="space-y-1.5 text-slate-300">
-        {row('Перший дотик (йому зараховується замовлення)', 'firstTouchAdId', order.firstTouchAd)}
-        {row('Останній дотик', 'lastTouchAdId', order.lastTouchAd)}
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase text-slate-500">Реклама (атрибуція)</h4>
+        <button onClick={() => { setOpen(!open); setQ(''); setFound([]); }} className="shrink-0 text-xs text-brand-light hover:underline">{open ? 'Скасувати' : (first || last) ? 'Змінити' : 'Вказати оголошення'}</button>
       </div>
-      {editing && (
+      <div className="space-y-1.5 text-slate-300">
+        {differ ? (
+          <>
+            <div><span className="text-slate-500">Перший дотик (йому зараховується замовлення): </span><AdLine ad={first} /></div>
+            <div><span className="text-slate-500">Останній дотик: </span><AdLine ad={last} /></div>
+          </>
+        ) : (
+          <div><span className="text-slate-500">Оголошення: </span><AdLine ad={first || last} /></div>
+        )}
+      </div>
+      {open && (
         <div className="mt-2 rounded border border-slate-800 p-2">
-          <Input autoFocus placeholder="Назва оголошення, кампанії або Meta-id…" value={q} onChange={(e) => search(e.target.value)} />
+          {productIds.length > 0 && (
+            <div className="mb-2">
+              <div className="mb-1 text-[11px] uppercase text-slate-500">Активні оголошення товарів цього замовлення</div>
+              {suggested === null ? <div className="px-2 text-xs text-slate-500">завантаження…</div>
+                : suggested.length ? <div className="max-h-56 space-y-1 overflow-y-auto">{suggested.map(pick)}</div>
+                : <div className="px-2 text-xs text-slate-500">активних оголошень для цих товарів немає — знайдіть нижче</div>}
+            </div>
+          )}
+          <Input placeholder="Або знайдіть: назва оголошення, кампанії або Meta-id…" value={q} onChange={(e) => search(e.target.value)} />
           <div className="mt-1 max-h-56 space-y-1 overflow-y-auto">
-            {found.map((a) => (
-              <button key={a.id} onClick={() => choose(a.id)} className="block w-full rounded px-2 py-1 text-left hover:bg-slate-800">
-                <AdLine ad={a} /> <span className="text-[11px] text-slate-500">{a.effectiveStatus || ''}</span>
-              </button>
-            ))}
+            {found.map(pick)}
             <button onClick={() => choose(null)} className="block w-full rounded px-2 py-1 text-left text-slate-500 hover:bg-slate-800">— прибрати (органіка)</button>
           </div>
         </div>
@@ -137,8 +169,14 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
       <div className="space-y-5 text-sm">
         <section>
           <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Покупець</h4>
-          <div>{order.buyer?.fullName || '—'} · {order.buyer?.phone}</div>
-          {order.buyer?.igUsername && <a className="text-brand-light" href={`https://instagram.com/${order.buyer.igUsername}`} target="_blank" rel="noreferrer">@{order.buyer.igUsername}</a>}
+          {/* 2026-10-15 (Edit 2cb4dd27): поки клієнт не замовив (покупця ще нема) — імʼя й нікнейм з Instagram і розмова у Flows, а не «— ·». */}
+          {order.buyer
+            ? <div>{order.buyer.fullName || '—'}{order.buyer.phone ? ` · ${order.buyer.phone}` : ''}</div>
+            : <div>{order.contactName || <span className="text-slate-500">ще не замовив</span>}</div>}
+          <div className="flex flex-wrap items-center gap-x-3">
+            {(order.buyer?.igUsername || order.contactIg) && <a className="text-brand-light" href={`https://instagram.com/${order.buyer?.igUsername || order.contactIg}`} target="_blank" rel="noreferrer">@{order.buyer?.igUsername || order.contactIg}</a>}
+            {order.funnelSessionId && <a className="text-xs text-brand-light hover:underline" href={`https://flows.fineko.space/sessions/${order.funnelSessionId}`} target="_blank" rel="noreferrer">розмова у Flows ↗</a>}
+          </div>
           {order.buyer?.knownMeasurements && Object.keys(order.buyer.knownMeasurements).length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {Object.entries(order.buyer.knownMeasurements).map(([k, v]) => (

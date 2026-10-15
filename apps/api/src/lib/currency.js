@@ -8,6 +8,7 @@
 // офіційний курс): https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=USD&json
 const { db } = require('@crm/db');
 const logger = require('@crm/logger');
+const { dayRange } = require('./dateRange');
 
 const NBU_URL = 'https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=USD&json';
 const STALE_MS = 12 * 3600 * 1000; // курс НБУ оновлюється раз на добу — 12 год цілком достатньо
@@ -64,7 +65,7 @@ async function sumAdSpendUAH(where, usdRate) {
 // пул зʼєднань Prisma і кладуть увесь CRM (2026-10-05, сторінка «Аналітика»).
 async function adSpendUAHByProduct(tenantId, dateWhere, usdRate) {
   const [rows, ads] = await Promise.all([
-    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ad: { tenantId, productId: { not: null } }, ...(dateWhere ? { date: dateWhere } : {}) }, _sum: { amount: true } }),
+    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ad: { tenantId, productId: { not: null } }, ...(dateWhere ? { date: dayRange(dateWhere) } : {}) }, _sum: { amount: true } }),
     db.ad.findMany({ where: { tenantId, productId: { not: null } }, select: { id: true, productId: true } }),
   ]);
   const productOfAd = new Map(ads.map((a) => [a.id, a.productId]));

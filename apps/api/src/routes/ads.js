@@ -5,10 +5,10 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
-const { parseFrom, parseTo, kyivDayKey } = require('../lib/dateRange');
+const { parseFrom, parseTo, kyivDayKey, dayRange } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem, ORDER_PLACED_WHERE, REAL_SALE_ORDER_WHERE, LEAD_WHERE } = require('../lib/margin');
 const { findOrCreateAdByExternalId } = require('../lib/adAttribution');
-const { linkAdVariantsFor, linkAllAdVariants } = require('../lib/adVariants');
+const { linkAdVariantsFor, linkAllAdVariants, relinkVariantsByExternalId } = require('../lib/adVariants');
 const { ensureFreshUsdRate, rowToUAH } = require('../lib/currency');
 
 const router = express.Router();
@@ -30,7 +30,7 @@ async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, u
   const [spendRows, clickRows, orders] = await Promise.all([
     // Meta пише суму у $ — конвертуємо в грн, щоб margin/spend (ROI) не змішували валюти
     // (2026-09-07, фідбек власника).
-    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ...(one ? { adId: ids[0] } : { ad: { tenantId } }), ...(dateWhere ? { date: dateWhere } : {}) }, _sum: { amount: true } }),
+    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ...(one ? { adId: ids[0] } : { ad: { tenantId } }), ...(dateWhere ? { date: dayRange(dateWhere) } : {}) }, _sum: { amount: true } }),
     // Контакти = розмови, що почались із цієї реклами (картки воронки, lib/margin LEAD_WHERE); раніше — порожня AdClick.
     db.order.groupBy({ by: ['firstTouchAdId'], where: { tenantId, firstTouchAdId: one ? ids[0] : { not: null }, ...LEAD_WHERE, ...(dateWhere ? { createdAt: dateWhere } : {}) }, _count: { _all: true } })
       .then((rows) => rows.map((r) => ({ adId: r.firstTouchAdId, _count: r._count }))),
@@ -269,8 +269,11 @@ router.post('/ads', asyncHandler(async (req, res) => {
 }));
 
 // Варіанти Advantage+ («_Group_1») → справжні оголошення, повний прохід (бекфіл; далі звʼязує POST /ads і атрибуція самі).
+// relinkExternalIds — перевірити вже привʼязані варіанти: якщо їхнє оголошення не крутиться, а однойменне живе є — перепривʼязати (2026-10-15).
 router.post('/ads/link-variants', asyncHandler(async (req, res) => {
   const dryRun = !!(req.body && req.body.dryRun);
+  const relink = req.body && Array.isArray(req.body.relinkExternalIds) ? req.body.relinkExternalIds.slice(0, 50) : null;
+  if (relink) return void res.json({ ok: true, data: await relinkVariantsByExternalId(req.tenant.id, relink, { dryRun }) });
   res.json({ ok: true, data: await linkAllAdVariants(req.tenant.id, { dryRun }) });
 }));
 
@@ -292,7 +295,7 @@ router.get('/ad-spend', asyncHandler(async (req, res) => {
   const { from, to, productId, take = '200', skip = '0' } = req.query;
   const where = {
     ad: { tenantId: req.tenant.id, ...(productId ? { productId: String(productId) } : {}) },
-    ...(from || to ? { date: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}),
+    ...(from || to ? { date: dayRange(from, to) } : {}),
   };
   const [items, total] = await Promise.all([
     db.adSpendDaily.findMany({ where, include: { ad: { include: { product: { select: { id: true, name: true } } } } }, orderBy: { date: 'desc' }, take: Number(take), skip: Number(skip) }),
@@ -407,7 +410,7 @@ router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
   // Тренд по днях — та сама межа періоду, спред по днях (спенд з AdSpendDaily, маржа з
   // замовлень, створених того дня, по тій самій "фактичній" логіці — не відмова, без Return).
   const [spendRows, orders] = await Promise.all([
-    db.adSpendDaily.findMany({ where: { adId: ad.id, ...(dateWhere ? { date: dateWhere } : {}) }, select: { date: true, amount: true, currency: true } }),
+    db.adSpendDaily.findMany({ where: { adId: ad.id, ...(dateWhere ? { date: dayRange(dateWhere) } : {}) }, select: { date: true, amount: true, currency: true } }),
     db.order.findMany({
       where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...(dateWhere ? { createdAt: dateWhere } : {}), ...REAL_SALE_ORDER_WHERE },
       select: { createdAt: true, items: { select: { productId: true, price: true, quantity: true } } },

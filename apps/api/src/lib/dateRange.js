@@ -56,4 +56,17 @@ function parseTo(value) {
   return new Date(str);
 }
 
-module.exports = { parseFrom, parseTo, kyivDayKey };
+// Межі періоду для колонок-ДАТ (`@db.Date`, напр. AdSpendDaily.date — «день у Ads Manager», без часу).
+// 2026-10-15 (Edit ca88ee28, Олексій: «7 числа показуються витрати за 6-те»): parseFrom('2026-10-07') = 06.10 21:00 UTC —
+// для колонки-дати Prisma зрізає це до 2026-10-06, і період «з 7-го» захоплював витрати 6-го. Тут межі — самі київські
+// календарні дні (опівніч UTC цього дня), без часу. Приймає і рядки from/to, і вже розібраний {gte, lte} з parseFrom/parseTo.
+function dayStart(str) { return new Date(`${str}T00:00:00.000Z`); }
+function asDayKey(v) { if (v instanceof Date) return kyivDayKey(v); const s = String(v); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : kyivDayKey(new Date(s)); }
+function dayRange(fromOrRange, to) {
+  let from = fromOrRange;
+  if (fromOrRange && typeof fromOrRange === 'object' && !(fromOrRange instanceof Date)) { from = fromOrRange.gte; to = fromOrRange.lte; }
+  if (!from && !to) return null;
+  return { ...(from ? { gte: dayStart(asDayKey(from)) } : {}), ...(to ? { lte: dayStart(asDayKey(to)) } : {}) };
+}
+
+module.exports = { parseFrom, parseTo, kyivDayKey, dayRange };

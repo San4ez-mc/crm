@@ -17,8 +17,8 @@ const ORDER_INCLUDE = {
   // пріоритетніше за загальне фото товару.
   items: { include: { product: { select: { id: true, name: true, sku: true, thumbnailUrl: true, images: true } }, offer: { select: { id: true, sku: true, images: true } } } },
   returns: true,
-  firstTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true } },
-  lastTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true } },
+  firstTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true, postUrl: true, effectiveStatus: true } },
+  lastTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true, postUrl: true, effectiveStatus: true } },
 };
 
 // Оплати замовлення (2026-10-14, власник: «у картці замовлення має бути видно оплату»). Платежі пишуть бот і фонова

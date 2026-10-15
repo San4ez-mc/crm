@@ -9,7 +9,7 @@
 //   lastTouch  — остання реклама перед замовленням (оновлюється щоразу, коли людина приходить з іншої реклами).
 // Звіти за замовчуванням зараховують замовлення першому дотику; «Реклама → конверсія» показує обидва.
 const { db } = require('@crm/db');
-const { linkAdVariantsFor } = require('./adVariants');
+const { linkAdVariantsFor, ensureLiveParent } = require('./adVariants');
 
 async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {}) {
   let ad = await db.ad.findFirst({ where: { tenantId, externalId } });
@@ -42,8 +42,12 @@ async function touchFields(tenantId, { firstTouch, lastTouch } = {}, existing = 
     let ad = null;
     if (t.adId) ad = await db.ad.findFirst({ where: { id: String(t.adId), tenantId } });
     else if (t.externalId) ad = await findOrCreateAdByExternalId(tenantId, String(t.externalId), t.name || null);
-    // Варіант Advantage+ («_Group_1») — дотик зараховуємо справжньому оголошенню (lib/adVariants.js).
-    if (ad && ad.variantOfAdId) ad = (await db.ad.findFirst({ where: { id: ad.variantOfAdId, tenantId } })) || ad;
+    // Варіант Advantage+ («_Group_1») — дотик зараховуємо справжньому оголошенню (lib/adVariants.js). На живому дотику
+    // перевіряємо, що це оголошення тоді крутилось (2026-10-15: однойменні оголошення — варіант сидів на паузнутому).
+    if (ad && ad.variantOfAdId) {
+      const parentId = await ensureLiveParent(ad, t.at).catch(() => ad.variantOfAdId);
+      ad = (await db.ad.findFirst({ where: { id: parentId || ad.variantOfAdId, tenantId } })) || ad;
+    }
     return ad;
   };
   if (firstTouch && !(existing && existing.firstTouchAdId)) {

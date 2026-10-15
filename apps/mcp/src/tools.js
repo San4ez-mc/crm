@@ -71,7 +71,7 @@ const TOOLS = [
 
   // ── Ad §4.9 — підключення рекламних кабінетів/оголошень ─────────────
   { name: 'list_ads', description: 'Оголошення tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
-  { name: 'update_ad_variants', description: 'Звʼязати варіанти Advantage+ («…_Group_1» з рефералу розмов, кабінет instagram_messages) зі справжніми оголошеннями: товар і дотики замовлень переходять на оголошення (variantOfAdId). dryRun — лише показати.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, dryRun: { type: 'boolean' } }, required: ['tenantId'] } },
+  { name: 'update_ad_variants', description: 'Звʼязати варіанти Advantage+ («…_Group_1» з рефералу розмов, кабінет instagram_messages) зі справжніми оголошеннями: товар і дотики замовлень переходять на оголошення (variantOfAdId). relinkExternalIds — перевірити вже привʼязані варіанти: якщо їхнє оголошення не крутиться (немає витрат), а однойменне живе є — перепривʼязати. dryRun — лише показати.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, dryRun: { type: 'boolean' }, relinkExternalIds: { type: 'array', items: { type: 'string' } } }, required: ['tenantId'] } },
   { name: 'create_ad', description: 'Зареєструвати оголошення (з рекламного кабінету). postId — пост, який рекламується (Meta effective_object_story_id), для групування просувань.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, externalId: { type: 'string' }, name: { type: 'string' }, productId: { type: 'string' }, postId: { type: 'string' }, postUrl: { type: 'string' } }, required: ['tenantId'] } },
   { name: 'update_ad', description: 'Прив\'язати оголошення до товару / перейменувати.', inputSchema: { type: 'object', properties: { adId: { type: 'string' }, productId: { type: 'string' }, name: { type: 'string' } }, required: ['adId'] } },
 
@@ -245,6 +245,7 @@ async function callTool(name, args = {}) {
     }
 
     case 'update_ad_variants':
+      if (Array.isArray(args.relinkExternalIds) && args.relinkExternalIds.length) return require('../../api/src/lib/adVariants').relinkVariantsByExternalId(args.tenantId, args.relinkExternalIds.slice(0, 50), { dryRun: !!args.dryRun });
       return require('../../api/src/lib/adVariants').linkAllAdVariants(args.tenantId, { dryRun: !!args.dryRun });
     case 'list_ads':
       return db.ad.findMany({ where: { tenantId: args.tenantId }, include: { product: true } });
