@@ -287,6 +287,8 @@ router.patch('/ads/:id', asyncHandler(async (req, res) => {
     data: { ...(productId !== undefined ? { productId: productId || null, productLinkSource: productId ? 'manual' : null, productLinkNote: null } : {}), ...(name !== undefined ? { name } : {}) },
     include: { product: { select: { id: true, name: true } } },
   });
+  // Назву оновили (порожній запис «Реклама <id>» отримав назву з Meta) — варіант Advantage+ шукає «батька» з тією ж назвою (16.10).
+  if (name !== undefined && name !== existing.name) await linkAdVariantsFor(ad).catch(() => null);
   res.json({ ok: true, data: ad });
 }));
 
