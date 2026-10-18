@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { PageHeader, Input, Card, EmptyState, ErrorBanner, Field, Label, Button, Pagination, money, formatPhone, formatDate } from '../components/common/Common';
 import Modal from '../components/common/Modal';
+import { normalizeInstagram, igInputValue } from '../lib/instagram';
 
 const PAGE_SIZE = 50;
 
@@ -30,7 +31,7 @@ export default function BuyersPage() {
     <div>
       <PageHeader title="Покупці" />
       <ErrorBanner message={error} />
-      <div className="mb-4"><Input className="max-w-xs" placeholder="Пошук за імʼям/телефоном…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      <div className="mb-4"><Input className="max-w-xs" placeholder="Пошук: імʼя, телефон, Instagram (посилання або @нік)…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
 
       {items === null ? null : items.length === 0 ? (
         <EmptyState title="Покупців ще немає" />
@@ -116,12 +117,15 @@ function BuyerDetailModal({ id, onClose, onSaved }) {
   const totalSpent = buyer.orders.reduce((s, o) => s + o.items.reduce((a, it) => a + Number(it.price) * it.quantity, 0), 0);
 
   async function save() {
+    // Instagram — лише нікнейм (посилання/@нік → нік), сервер перевіряє те саме (2026-10-18).
+    const ig = form.igUsername.trim() ? normalizeInstagram(form.igUsername) : '';
+    if (form.igUsername.trim() && !ig) { setError('Не вдалося розпізнати Instagram — вставте посилання на профіль або нікнейм'); return; }
     setSaving(true); setError('');
     try {
       await api.updateBuyer(id, {
         fullName: form.fullName || null,
         phone: form.phone,
-        igUsername: form.igUsername || null,
+        igUsername: ig || null,
         knownMeasurements: Object.keys(form.knownMeasurements).length ? form.knownMeasurements : null,
         knownShipping: (form.shippingFullName || form.shippingPhone || form.shippingCity || form.shippingWarehouse)
           ? { fullName: form.shippingFullName, phone: form.shippingPhone, city: form.shippingCity, warehouse: form.shippingWarehouse }
@@ -144,7 +148,7 @@ function BuyerDetailModal({ id, onClose, onSaved }) {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Field label="Імʼя"><Input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></Field>
           <Field label="Телефон"><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
-          <Field label="Instagram"><Input value={form.igUsername} onChange={(e) => setForm({ ...form, igUsername: e.target.value })} placeholder="username без @" /></Field>
+          <Field label="Instagram"><Input value={form.igUsername} onChange={(e) => setForm({ ...form, igUsername: igInputValue(e.target.value) })} onBlur={() => setForm((f) => ({ ...f, igUsername: normalizeInstagram(f.igUsername) || f.igUsername }))} placeholder="нікнейм або посилання на профіль" /></Field>
         </div>
         <div className="mt-2 text-xs text-slate-500">Сума покупок: {money(totalSpent)} · Повернень: {buyer.orders.flatMap((o) => o.returns).length}</div>
       </section>

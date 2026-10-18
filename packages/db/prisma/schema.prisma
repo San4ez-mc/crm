@@ -141,6 +141,7 @@ model Supplier {
 
   products         Product[]
   knowledgeEntries KnowledgeEntry[]
+  orderItems       OrderItem[]
 
   @@index([tenantId])
 }
@@ -421,6 +422,12 @@ model Order {
   contactIg       String? // @username з Instagram
   managerEditedAt   DateTime? // коли менеджер востаннє змінив позиції або доставку в CRM (Flows показує це в перевірці перед «Оформити постачальнику»)
   lastClientAt    DateTime? // остання подія воронки — крон переводить у «Не відписали протягом доби»
+  // Спосіб оплати (2026-10-18, Олексій: «немає вкладки повна передплата»): 'partial' — часткова передплата,
+  // 'full' — повна передплата, 'cod' — накладений платіж без передплати; null — не вказано (старі замовлення, картки воронки).
+  // prepaymentAmount — скільки клієнт платить наперед (full = сума замовлення, cod = 0); решта при отриманні = сума − передплата.
+  // Фактичні оплати — окремо в Payment (журнал), тут — домовленість із клієнтом.
+  paymentType      String?
+  prepaymentAmount Decimal?  @db.Decimal(12, 2)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -451,9 +458,14 @@ model OrderItem {
   // Склад комплекту (2026-10-02): позиція-комплект лишається одним рядком (виручка/собівартість по комплекту),
   // а тут — що САМЕ піде постачальнику: [{productId, sku, name, color, size, qty}]. Редагує менеджер у картці замовлення.
   components Json?
+  // Постачальник цієї позиції (2026-10-18, Олексій: «нема вкладки хто постачальник»): за замовчуванням — постачальник
+  // товару з каталогу, менеджер може змінити в картці замовлення. null — не вказано (старі замовлення).
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([productId])
+  @@index([supplierId])
 }
 
 // ─────────────────────────────────────────────────────────────

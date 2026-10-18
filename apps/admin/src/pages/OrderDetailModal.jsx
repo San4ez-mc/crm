@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { Field, Input, Textarea, Select, Button, Badge, ErrorBanner, money, formatDateTime } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 import OrderEditor from './OrderEditor';
+import { PAYMENT_TYPE_LABEL } from '../components/orders/OrderFields';
 
 // Реклама замовлення (Edits 3605aed1/2f4d68fd, 2026-10-06): видно для будь-якого замовлення (і створеного ботом), можна змінити вручну.
 // Перший дотик — реклама, з якої людина вперше прийшла в розмову (саме їй звіти зараховують замовлення); останній — остання реклама
@@ -100,6 +101,18 @@ function AttributionSection({ order, onSaved, onError }) {
 // Оплата (2026-10-14, власник: «у картці замовлення має бути видно оплату»): платежі з журналу (бот, фонова перезвірка
 // Flows) — GET /orders/:id віддає payments. Успішна = status 'success' або не вказано.
 const PAY_STATUS_LABEL = { success: 'успішно', pending: 'очікує', failed: 'не пройшла' };
+// 2026-10-18: спосіб оплати, про який домовились із клієнтом (Order.paymentType/prepaymentAmount), — окремо від журналу.
+function PaymentTerms({ order, total }) {
+  if (!order.paymentType) return <div className="text-xs text-slate-500">Спосіб оплати не вказано — оберіть у «✏️ Редагувати замовлення»</div>;
+  const prepay = order.paymentType === 'cod' ? 0 : order.paymentType === 'full' ? total : Number(order.prepaymentAmount || 0);
+  return (
+    <div className="text-slate-200">
+      <b>{PAYMENT_TYPE_LABEL[order.paymentType] || order.paymentType}</b>
+      {order.paymentType !== 'cod' && <> · передплата {money(prepay)}</>}
+      {' · '}решта при отриманні <b>{money(Math.max(0, total - prepay))}</b>
+    </div>
+  );
+}
 function PaymentSection({ order, payments }) {
   const total = (order.items || []).reduce((s, it) => s + Number(it.price) * it.quantity, 0);
   const list = payments || [];
@@ -113,9 +126,10 @@ function PaymentSection({ order, payments }) {
         <h4 className="text-xs font-semibold uppercase text-slate-500">Оплата</h4>
         {payments === null ? <span className="text-xs text-slate-500">завантаження…</span> : badge}
       </div>
+      <PaymentTerms order={order} total={total} />
       {payments !== null && (
         <>
-          <div className="text-slate-200">Оплачено <b>{money(paid)}</b> з {money(total)}</div>
+          <div className="mt-1 text-slate-200">Оплачено <b>{money(paid)}</b> з {money(total)}</div>
           {list.length > 0 ? (
             <div className="mt-1.5 space-y-1">
               {list.map((p) => (
@@ -159,6 +173,23 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
   async function toggleRefused() {
     try { await api.updateOrder(order.id, { isRefused: !order.isRefused }); onChanged(); } catch (e) { setError(e.message); }
   }
+  // 2026-10-18 (Олексій: «видалити/скасувати»): скасування — стадія «Скасовано», замовлення лишається в історії й аналітиці;
+  // видалення — лише помилково створене замовлення без платежів, ТТН і повернень (сервер перевіряє те саме).
+  async function cancelOrder() {
+    if (!confirm('Скасувати замовлення? Воно перейде в стадію «Скасовано» і лишиться в історії.')) return;
+    try { const r = await api.cancelOrder(order.id); setOrder({ ...order, ...r.data }); onChanged(); } catch (e) { setError(e.message); }
+  }
+  const deleteBlockers = [
+    payments && payments.length ? 'є платежі' : '',
+    order.ttn?.length ? 'є ТТН' : '',
+    order.returns?.length ? 'є повернення' : '',
+  ].filter(Boolean);
+  async function deleteOrder() {
+    if (!confirm('Видалити замовлення назавжди? Це для замовлень, створених помилково, — відновити не вийде.')) return;
+    try { await api.deleteOrder(order.id); onChanged(); onClose(); } catch (e) { setError(e.message); }
+  }
+  const currentStage = stages.find((s) => s.id === order.stageId);
+  const isCancelled = /скасов|cancel/i.test(currentStage?.name || '');
 
   return (
     <Modal isOpen title={`Замовлення від ${formatDateTime(order.createdAt)}`} onClose={onClose} wide>
@@ -168,7 +199,10 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
       ) : (
       <div className="space-y-5 text-sm">
         <section>
-          <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Покупець</h4>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold uppercase text-slate-500">Покупець</h4>
+            <button onClick={() => setEditing(true)} className="text-xs text-brand-light hover:underline">✏️ Змінити дані клієнта</button>
+          </div>
           {/* 2026-10-15 (Edit 2cb4dd27): поки клієнт не замовив (покупця ще нема) — імʼя й нікнейм з Instagram і розмова у Flows, а не «— ·». */}
           {order.buyer
             ? <div>{order.buyer.fullName || '—'}{order.buyer.phone ? ` · ${order.buyer.phone}` : ''}</div>
@@ -191,7 +225,7 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
             <h4 className="text-xs font-semibold uppercase text-slate-500">Товари</h4>
             <div className="flex items-center gap-2">
               {order.managerEditedAt && <Badge color="teal">Змінено менеджером {formatDateTime(order.managerEditedAt)}</Badge>}
-              <button onClick={() => setEditing(true)} className="text-xs text-brand-light hover:underline">✏️ Редагувати склад і доставку</button>
+              <button onClick={() => setEditing(true)} className="text-xs text-brand-light hover:underline">✏️ Редагувати замовлення</button>
             </div>
           </div>
           <div className="space-y-1">
@@ -209,6 +243,7 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
                       {Array.isArray(it.properties) && it.properties.length > 0 && (
                         <span className="ml-2 text-xs text-slate-400">({it.properties.map((p) => `${p.name}: ${p.value}`).join(', ')})</span>
                       )}
+                      {it.supplier?.name && <span className="mt-0.5 block text-xs text-slate-500">Постачальник: {it.supplier.name}</span>}
                       {Array.isArray(it.components) && it.components.length > 0 && (
                         <span className="mt-0.5 block text-xs text-slate-400">
                           {it.components.map((c) => [c.name, c.color, c.size, c.qty > 1 ? `×${c.qty}` : ''].filter(Boolean).join(' · ')).join('; ')}
@@ -258,8 +293,14 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
           </Select>
         </section>
 
-        <div className="flex justify-between border-t border-slate-800 pt-4">
-          <Button variant="secondary" onClick={() => onOpenReturn(order)}>Оформити повернення/обмін</Button>
+        <div className="flex flex-wrap justify-between gap-2 border-t border-slate-800 pt-4">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => onOpenReturn(order)}>Оформити повернення/обмін</Button>
+            {!isCancelled && <Button variant="secondary" onClick={cancelOrder}>Скасувати замовлення</Button>}
+            {payments !== null && (deleteBlockers.length
+              ? <span className="self-center text-xs text-slate-500" title="Видаляти можна лише помилково створені замовлення">Видалити не можна: {deleteBlockers.join(', ')}</span>
+              : <button onClick={deleteOrder} className="px-2 text-sm text-red-400 hover:text-red-300">Видалити</button>)}
+          </div>
           <Button variant="secondary" onClick={onClose}>Закрити</Button>
         </div>
       </div>
