@@ -3,6 +3,9 @@
 //   fitChart:  {"S":{"height":[160,175],"weight":[55,65]}, …}   (з адмінки приходить і масивом рядків {size,hMin,hMax,wMin,wMax})
 //   sizeRules: [{size,wMin,wMax,hMin,hMax,note}]                (перше правило, що збіглося, перекриває сітку)
 const { ValidationError } = require('@crm/errors');
+const { Prisma } = require('@prisma/client');
+// Порожня сітка в БД — Prisma.DbNull: голий null Prisma для Json?-поля не приймає (запис падав би при очищенні сітки).
+const EMPTY = Prisma.DbNull;
 
 function normSize(s) {
     // кирилиця, якою пишуть розміри («ХХЛ», «М», «С»), → латиниця; 2XL/3XL → XXL/XXXL (як у боті)
@@ -11,10 +14,10 @@ function normSize(s) {
 }
 const num = (x) => (x === '' || x === null || x === undefined || !Number.isFinite(Number(x)) ? null : Number(x));
 
-/** null — порожньо (успадковується з категорії / загальної). */
+/** EMPTY (Prisma.DbNull) — порожньо (успадковується з категорії / магазину). */
 function normalizeFitChart(input) {
     if (input === undefined) return undefined;
-    if (input === null || input === '') return null;
+    if (input === null || input === '') return EMPTY;
     let rows = [];
     if (Array.isArray(input)) rows = input;
     else if (typeof input === 'object') rows = Object.entries(input).map(([size, r]) => ({ size, hMin: (r.height || [])[0], hMax: (r.height || [])[1], wMin: (r.weight || [])[0], wMax: (r.weight || [])[1] }));
@@ -27,7 +30,7 @@ function normalizeFitChart(input) {
         if ((hMin !== null && hMax !== null && hMin > hMax) || (wMin !== null && wMax !== null && wMin > wMax)) throw new ValidationError('fitChart: у розміру ' + size + ' «від» більше за «до»');
         out[size] = { ...(hMin !== null || hMax !== null ? { height: [hMin ?? 0, hMax ?? 300] } : {}), ...(wMin !== null || wMax !== null ? { weight: [wMin ?? 0, wMax ?? 400] } : {}) };
     }
-    return Object.keys(out).length ? out : null;
+    return Object.keys(out).length ? out : EMPTY;
 }
 
 function normalizeSizeRules(input) {

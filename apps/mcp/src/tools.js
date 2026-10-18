@@ -65,6 +65,7 @@ const TOOLS = [
   // ── Tenants ──────────────────────────────────────────────────────────
   { name: 'list_tenants', description: 'Список усіх магазинів (tenants) СРМ.', inputSchema: { type: 'object', properties: {} } },
   { name: 'get_tenant', description: 'Деталі одного tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
+  { name: 'update_tenant_sizes', description: 'Загальна сітка підбору розміру магазину (зріст/вага) і межі від експерта — для категорій і товарів без власних (бот: товар → категорія → магазин).', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, fitChart: { type: 'object', description: '{"S":{"height":[160,175],"weight":[55,65]},…}; null — очистити' }, sizeRules: { type: 'array', items: { type: 'object', properties: { size: { type: 'string' }, wMin: { type: 'number' }, wMax: { type: 'number' }, hMin: { type: 'number' }, hMax: { type: 'number' }, note: { type: 'string' } } }, description: 'Межі: перше правило, що збіглося, перекриває сітку' } }, required: ['tenantId'] } },
   { name: 'new_tenant', description: 'Створити новий магазин (tenant).', inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
 
   // ── Category §4.5 ────────────────────────────────────────────────────
@@ -135,6 +136,8 @@ async function callTool(name, args = {}) {
       if (!tenant) throw new NotFoundError('Tenant', args.tenantId);
       return tenant;
     }
+    case 'update_tenant_sizes':
+      return db.tenant.update({ where: { id: args.tenantId }, data: { ...(args.fitChart !== undefined ? { fitChart: normalizeFitChart(args.fitChart) } : {}), ...(args.sizeRules !== undefined ? { sizeRules: normalizeSizeRules(args.sizeRules) } : {}) }, select: { id: true, name: true, fitChart: true, sizeRules: true } });
     case 'new_tenant':
       if (!args.name) throw new ValidationError('name обовʼязкове');
       return db.tenant.create({ data: { name: args.name } });
@@ -147,7 +150,7 @@ async function callTool(name, args = {}) {
     case 'update_category':
       return db.category.update({
         where: { id: args.categoryId },
-        data: { ...(args.fitChart !== undefined ? { fitChart: normalizeFitChart(args.fitChart) } : {}), ...(args.sizeRules !== undefined ? { sizeRules: normalizeSizeRules(args.sizeRules) } : {}), ...(args.sizeChartImage !== undefined ? { sizeChartImage: args.sizeChartImage || null } : {}), ...(args.sizeChartData !== undefined ? { sizeChartData: args.sizeChartData || null } : {}), ...(args.name !== undefined ? { name: args.name } : {}), ...(args.description !== undefined ? { description: args.description } : {}), ...(args.aiInstructions !== undefined ? { aiInstructions: args.aiInstructions } : {}), ...(args.requiredParams !== undefined ? { requiredParams: Array.isArray(args.requiredParams) ? args.requiredParams : [] } : {}), ...(args.synonyms !== undefined ? { synonyms: Array.isArray(args.synonyms) ? args.synonyms : [] } : {}) },
+        data: { ...(args.fitChart !== undefined ? { fitChart: normalizeFitChart(args.fitChart) } : {}), ...(args.sizeRules !== undefined ? { sizeRules: normalizeSizeRules(args.sizeRules) } : {}), ...(args.sizeChartImage !== undefined ? { sizeChartImage: args.sizeChartImage || null } : {}), ...(args.sizeChartData !== undefined ? { sizeChartData: args.sizeChartData || require('@prisma/client').Prisma.DbNull } : {}), ...(args.name !== undefined ? { name: args.name } : {}), ...(args.description !== undefined ? { description: args.description } : {}), ...(args.aiInstructions !== undefined ? { aiInstructions: args.aiInstructions } : {}), ...(args.requiredParams !== undefined ? { requiredParams: Array.isArray(args.requiredParams) ? args.requiredParams : [] } : {}), ...(args.synonyms !== undefined ? { synonyms: Array.isArray(args.synonyms) ? args.synonyms : [] } : {}) },
       });
     case 'delete_category': {
       const count = await db.product.count({ where: { categoryId: args.categoryId } });

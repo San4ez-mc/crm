@@ -1,8 +1,10 @@
 // §9.16 Налаштування — Загальні: назва магазину, API-ключ (показати/перегенерувати),
-// + фінансові вхідні для щоденної аналітики (курс, постійні витрати, ЗП).
+// + фінансові вхідні для щоденної аналітики (курс, постійні витрати, ЗП)
+// + розміри за замовчуванням (2026-10-18): загальна сітка магазину й межі для категорій/товарів без власних.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { PageHeader, Card, Field, Input, Button, ErrorBanner, formatDateTime } from '../components/common/Common';
+import SizeFitEditor, { fitChartToRows } from '../components/common/SizeFitEditor';
 
 export default function SettingsGeneralPage() {
   const [tenant, setTenant] = useState(null);
@@ -13,6 +15,9 @@ export default function SettingsGeneralPage() {
   const [finance, setFinance] = useState({ usdExchangeRate: '', dailyFixedCosts: '', dailyPayrollCosts: '' });
   const [financeSaved, setFinanceSaved] = useState(false);
   const [refreshingRate, setRefreshingRate] = useState(false);
+  const [fitRows, setFitRows] = useState([]);
+  const [sizeRules, setSizeRules] = useState([]);
+  const [sizesSaved, setSizesSaved] = useState(false);
 
   async function load() {
     try {
@@ -23,6 +28,7 @@ export default function SettingsGeneralPage() {
         dailyFixedCosts: data.dailyFixedCosts ?? '',
         dailyPayrollCosts: data.dailyPayrollCosts ?? '',
       });
+      setFitRows(fitChartToRows(data.fitChart)); setSizeRules(Array.isArray(data.sizeRules) ? data.sizeRules : []);
     } catch (e) { setError(e.message); }
   }
   useEffect(() => { load(); }, []);
@@ -49,6 +55,12 @@ export default function SettingsGeneralPage() {
       });
       setFinanceSaved(true);
     } catch (e) { setError(e.message); }
+  }
+
+  async function saveSizes() {
+    setError(''); setSizesSaved(false);
+    try { await api.updateTenantSettings({ fitChart: fitRows.length ? fitRows : null, sizeRules }); setSizesSaved(true); load(); }
+    catch (e) { setError(e.message); }
   }
 
   async function regenerate() {
@@ -106,6 +118,19 @@ export default function SettingsGeneralPage() {
           </div>
         </Card>
       </div>
+
+      <Card className="p-5">
+        <h3 className="mb-1 text-sm font-semibold">Розміри за замовчуванням</h3>
+        <p className="mb-4 text-xs text-slate-500">
+          Загальна сітка магазину: бот бере її для товарів, у яких ні в товарі, ні в категорії немає своєї сітки чи меж.
+          Порядок: товар → категорія → ця сітка. Свою сітку задавайте в категорії чи товарі лише там, де вона справді інша.
+        </p>
+        <SizeFitEditor fitRows={fitRows} onFitRows={setFitRows} rules={sizeRules} onRules={setSizeRules} inheritNote="Порожньо — бот не підбере розмір за зростом і вагою, доки сітку не задано тут, у категорії чи товарі." rulesInheritNote="" />
+        <div className="mt-4 flex items-center gap-2">
+          <Button onClick={saveSizes}>Зберегти розміри</Button>
+          {sizesSaved && <span className="text-xs text-emerald-400">Збережено</span>}
+        </div>
+      </Card>
     </div>
   );
 }

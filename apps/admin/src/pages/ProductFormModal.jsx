@@ -298,7 +298,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
             <SingleFileDrop value={form.sizeChartImage} onChange={(url) => setForm({ ...form, sizeChartImage: url })} />
           </Field>
           <div className="mt-3 rounded-lg border border-slate-800 p-3">
-            <SizeFitEditor fitRows={form.fitRows} onFitRows={(v) => setForm({ ...form, fitRows: v })} rules={form.sizeRules} onRules={(v) => setForm({ ...form, sizeRules: v })} inheritNote="Порожньо — береться з категорії товару." />
+            <SizeFitEditor fitRows={form.fitRows} onFitRows={(v) => setForm({ ...form, fitRows: v })} rules={form.sizeRules} onRules={(v) => setForm({ ...form, sizeRules: v })} inheritNote="Порожньо — береться з категорії товару, а якщо й там порожньо — загальна сітка магазину." />
           </div>
 
           <div className="mt-4">

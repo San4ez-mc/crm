@@ -18,9 +18,9 @@ function Num({ value, onChange, placeholder }) {
 
 /**
  * fitRows — рядки сітки [{size,hMin,hMax,wMin,wMax}]; rules — [{size,wMin,wMax,hMin,hMax,note}].
- * inheritNote — підказка, звідки береться, коли порожньо.
+ * inheritNote / rulesInheritNote — підказка, звідки береться сітка / межі, коли порожньо.
  */
-export default function SizeFitEditor({ fitRows = [], onFitRows, rules = [], onRules, inheritNote }) {
+export default function SizeFitEditor({ fitRows = [], onFitRows, rules = [], onRules, inheritNote, rulesInheritNote }) {
   const setFit = (i, k, v) => onFitRows(fitRows.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)));
   const setRule = (i, k, v) => onRules(rules.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)));
   const head = 'text-xs uppercase text-slate-500';
@@ -51,7 +51,7 @@ export default function SizeFitEditor({ fitRows = [], onFitRows, rules = [], onR
 
       <div>
         <div className="mb-1 text-sm font-medium text-slate-300">Межі розмірів (уточнення від експерта)</div>
-        <div className="mb-2 text-xs text-slate-500">Перекривають сітку там, де вона помиляється. Перше правило, що підходить, виграє. Напр.: «S, вага 50–66, зріст до 178» — невисокому M висітиме. {rules.length ? '' : (inheritNote ? 'Порожньо — беруться межі категорії.' : '')}</div>
+        <div className="mb-2 text-xs text-slate-500">Перекривають сітку там, де вона помиляється. Перше правило, що підходить, виграє. Напр.: «S, вага 50–66, зріст до 178» — невисокому M висітиме. {rules.length ? '' : (rulesInheritNote ?? (inheritNote ? 'Порожньо — беруться межі категорії.' : ''))}</div>
         {rules.length > 0 && (
           <div className={'grid grid-cols-[70px_repeat(4,minmax(0,1fr))_minmax(0,2fr)_auto] gap-2 ' + head}>
             <span>Розмір</span><span>Вага від</span><span>Вага до</span><span>Зріст від</span><span>Зріст до</span><span>Примітка</span><span />

@@ -1,6 +1,7 @@
 // §4.5 Category — CRUD, tenant-scoped.
 const express = require('express');
 const { db } = require('@crm/db');
+const { Prisma } = require('@prisma/client');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError, ConflictError } = require('@crm/errors');
 const { normalizeFitChart, normalizeSizeRules } = require('../lib/sizeFit');
@@ -50,7 +51,7 @@ router.patch('/categories/:id', asyncHandler(async (req, res) => {
       ...(fitChart !== undefined ? { fitChart } : {}),
       ...(sizeRules !== undefined ? { sizeRules } : {}),
       ...(sizeChartImage !== undefined ? { sizeChartImage: sizeChartImage || null } : {}),
-      ...(sizeChartData !== undefined ? { sizeChartData: sizeChartData || null } : {}),
+      ...(sizeChartData !== undefined ? { sizeChartData: sizeChartData || Prisma.DbNull } : {}), // голий null Prisma для Json? не приймає
     },
   });
   res.json({ ok: true, data: category });

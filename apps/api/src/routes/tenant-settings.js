@@ -6,6 +6,7 @@ const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError } = require('@crm/errors');
 const { ensureFreshUsdRate, fetchUsdToUahFromNbu } = require('../lib/currency');
+const { normalizeFitChart, normalizeSizeRules } = require('../lib/sizeFit');
 
 const router = express.Router();
 
@@ -18,12 +19,19 @@ router.get('/tenant', asyncHandler(async (req, res) => {
       id: t.id, name: t.name, apiKey: t.apiKey, ssoOrgId: t.ssoOrgId, novaPoshtaApiKey: t.novaPoshtaApiKey,
       usdExchangeRate: t.usdExchangeRate, usdExchangeRateUpdatedAt: t.usdExchangeRateUpdatedAt,
       dailyFixedCosts: t.dailyFixedCosts, dailyPayrollCosts: t.dailyPayrollCosts,
+      fitChart: t.fitChart || null, sizeRules: Array.isArray(t.sizeRules) ? t.sizeRules : [],
     },
   });
 }));
 
+// Загальна сітка розмірів магазину — для бота (Flows productMatch): лише два поля, без побічних дій GET /tenant (курс НБУ).
+router.get('/tenant/size-fit', asyncHandler(async (req, res) => {
+  const t = await db.tenant.findUnique({ where: { id: req.tenant.id }, select: { fitChart: true, sizeRules: true } });
+  res.json({ ok: true, data: { fitChart: (t && t.fitChart) || null, sizeRules: t && Array.isArray(t.sizeRules) ? t.sizeRules : [] } });
+}));
+
 router.patch('/tenant', asyncHandler(async (req, res) => {
-  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts } = req.body || {};
+  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts, fitChart, sizeRules } = req.body || {};
   if (name !== undefined && !String(name).trim()) throw new ValidationError('name не може бути порожнім');
   const tenant = await db.tenant.update({
     where: { id: req.tenant.id },
@@ -35,6 +43,8 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
       ...(usdExchangeRate !== undefined ? { usdExchangeRate, usdExchangeRateUpdatedAt: new Date() } : {}),
       ...(dailyFixedCosts !== undefined ? { dailyFixedCosts } : {}),
       ...(dailyPayrollCosts !== undefined ? { dailyPayrollCosts } : {}),
+      ...(fitChart !== undefined ? { fitChart: normalizeFitChart(fitChart) } : {}),
+      ...(sizeRules !== undefined ? { sizeRules: normalizeSizeRules(sizeRules) } : {}),
     },
   });
   res.json({
@@ -43,6 +53,7 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
       id: tenant.id, name: tenant.name, novaPoshtaApiKey: tenant.novaPoshtaApiKey,
       usdExchangeRate: tenant.usdExchangeRate, usdExchangeRateUpdatedAt: tenant.usdExchangeRateUpdatedAt,
       dailyFixedCosts: tenant.dailyFixedCosts, dailyPayrollCosts: tenant.dailyPayrollCosts,
+      fitChart: tenant.fitChart || null, sizeRules: Array.isArray(tenant.sizeRules) ? tenant.sizeRules : [],
     },
   });
 }));

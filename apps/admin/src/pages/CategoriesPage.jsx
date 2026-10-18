@@ -48,7 +48,7 @@ export default function CategoriesPage() {
                 <tr key={c.id} className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30">
                   <td className="px-4 py-3">{c.name}</td>
                   <td className="px-4 py-3 text-slate-400">{c.productsCount}</td>
-                  <td className="px-4 py-3 text-xs text-slate-400">{c.fitChart && Object.keys(c.fitChart).length ? 'своя сітка' : 'загальна сітка'}{Array.isArray(c.sizeRules) && c.sizeRules.length ? ', меж: ' + c.sizeRules.length : ''}</td>
+                  <td className="px-4 py-3 text-xs text-slate-400">{c.fitChart && Object.keys(c.fitChart).length ? 'своя сітка' : 'сітка магазину'}{Array.isArray(c.sizeRules) && c.sizeRules.length ? ', меж: ' + c.sizeRules.length : ''}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1.5">
                       <IconButton onClick={() => setEditing(c)}>✏️</IconButton>
@@ -96,7 +96,7 @@ function CategoryForm({ initial, onSave, onCancel }) {
       <div className="mt-4 rounded-lg border border-slate-800 p-3">
         <div className="mb-2 text-sm font-semibold text-slate-200">Розміри для товарів цієї категорії</div>
         <div className="mb-3 text-xs text-slate-500">Діє для всіх товарів категорії, у яких немає власної сітки чи меж (у товарі можна задати свої).</div>
-        <SizeFitEditor fitRows={form.fitRows} onFitRows={(v) => setForm({ ...form, fitRows: v })} rules={form.sizeRules} onRules={(v) => setForm({ ...form, sizeRules: v })} inheritNote="Порожньо — береться загальна сітка магазину." />
+        <SizeFitEditor fitRows={form.fitRows} onFitRows={(v) => setForm({ ...form, fitRows: v })} rules={form.sizeRules} onRules={(v) => setForm({ ...form, sizeRules: v })} inheritNote="Порожньо — береться загальна сітка магазину (Налаштування → Загальні)." rulesInheritNote="Порожньо — беруться межі магазину (Налаштування → Загальні)." />
         <Field label="Картинка розмірної сітки (для товарів без своєї)">
           <SingleFileDrop value={form.sizeChartImage} onChange={(url) => setForm({ ...form, sizeChartImage: url })} />
         </Field>
