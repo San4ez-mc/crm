@@ -4,6 +4,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError, ConflictError } = require('@crm/errors');
+const { normalizeFitChart, normalizeSizeRules } = require('../lib/sizeFit');
 const { buildChanges, logProductChange } = require('../lib/changeLog');
 
 const router = express.Router();
@@ -29,6 +30,8 @@ const PRODUCT_DIFF_FIELDS = [
   { key: 'adMatchTokens', label: 'Токени реклами', kind: 'touch' },
   { key: 'companionProductIds', label: 'Допродажі', kind: 'touch' },
   { key: 'sizeChartData', label: 'Розмірна сітка', kind: 'touch' },
+  { key: 'fitChart', label: 'Сітка підбору (зріст/вага)', kind: 'touch' },
+  { key: 'sizeRules', label: 'Межі розмірів', kind: 'touch' },
   { key: 'sizes', label: 'Розміри товару', kind: 'touch' },
 ];
 
@@ -135,6 +138,9 @@ router.post('/products', asyncHandler(async (req, res) => {
       images: Array.isArray(b.images) ? b.images : [],
       aiNotes: b.aiNotes || null,
       sizeChartData: b.sizeChartData ?? undefined,
+      // Розміри товару (2026-10-18) — порожньо = з категорії
+      fitChart: normalizeFitChart(b.fitChart) || undefined,
+      sizeRules: normalizeSizeRules(b.sizeRules) || [],
       bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [],
       isSet: !!b.isSet,
       alwaysAvailable: b.alwaysAvailable !== undefined ? !!b.alwaysAvailable : true,
@@ -179,6 +185,8 @@ router.patch('/products/:id', asyncHandler(async (req, res) => {
       ...(b.images !== undefined ? { images: Array.isArray(b.images) ? b.images : [] } : {}),
       ...(b.aiNotes !== undefined ? { aiNotes: b.aiNotes } : {}),
       ...(b.sizeChartData !== undefined ? { sizeChartData: b.sizeChartData } : {}),
+      ...(b.fitChart !== undefined ? { fitChart: normalizeFitChart(b.fitChart) } : {}),
+      ...(b.sizeRules !== undefined ? { sizeRules: normalizeSizeRules(b.sizeRules) } : {}),
       ...(b.bulkPricing !== undefined ? { bulkPricing: Array.isArray(b.bulkPricing) ? b.bulkPricing : [] } : {}),
       ...(b.isSet !== undefined ? { isSet: !!b.isSet } : {}),
       ...(b.alwaysAvailable !== undefined ? { alwaysAvailable: !!b.alwaysAvailable } : {}),

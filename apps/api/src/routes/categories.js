@@ -3,6 +3,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError, ConflictError } = require('@crm/errors');
+const { normalizeFitChart, normalizeSizeRules } = require('../lib/sizeFit');
 
 const router = express.Router();
 
@@ -16,10 +17,12 @@ router.get('/categories', asyncHandler(async (req, res) => {
 }));
 
 router.post('/categories', asyncHandler(async (req, res) => {
-  const { name, description, aiInstructions, requiredParams, synonyms } = req.body || {};
+  const { name, description, aiInstructions, requiredParams, synonyms, sizeChartImage, sizeChartData } = req.body || {};
+  const fitChart = normalizeFitChart((req.body || {}).fitChart); const sizeRules = normalizeSizeRules((req.body || {}).sizeRules);
   if (!name || !String(name).trim()) throw new ValidationError('name обовʼязкове');
   const category = await db.category.create({
-    data: { tenantId: req.tenant.id, name: String(name).trim(), description: description || null, aiInstructions: aiInstructions || null, requiredParams: Array.isArray(requiredParams) ? requiredParams : [], synonyms: Array.isArray(synonyms) ? synonyms : [] },
+    data: { tenantId: req.tenant.id, name: String(name).trim(), description: description || null, aiInstructions: aiInstructions || null, requiredParams: Array.isArray(requiredParams) ? requiredParams : [], synonyms: Array.isArray(synonyms) ? synonyms : [],
+      fitChart: fitChart || undefined, sizeRules: sizeRules || [], sizeChartImage: sizeChartImage || null, sizeChartData: sizeChartData || undefined },
   });
   res.status(201).json({ ok: true, data: category });
 }));
@@ -33,7 +36,9 @@ router.get('/categories/:id', asyncHandler(async (req, res) => {
 router.patch('/categories/:id', asyncHandler(async (req, res) => {
   const existing = await db.category.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
   if (!existing) throw new NotFoundError('Category', req.params.id);
-  const { name, description, aiInstructions, requiredParams, synonyms } = req.body || {};
+  const { name, description, aiInstructions, requiredParams, synonyms, sizeChartImage, sizeChartData } = req.body || {};
+  // Розміри (2026-10-18): сітка зріст/вага, межі експерта, картинка/таблиця замірів — для товарів категорії без власних.
+  const fitChart = normalizeFitChart((req.body || {}).fitChart); const sizeRules = normalizeSizeRules((req.body || {}).sizeRules);
   const category = await db.category.update({
     where: { id: existing.id },
     data: {
@@ -42,6 +47,10 @@ router.patch('/categories/:id', asyncHandler(async (req, res) => {
       ...(aiInstructions !== undefined ? { aiInstructions } : {}),
       ...(requiredParams !== undefined ? { requiredParams: Array.isArray(requiredParams) ? requiredParams : [] } : {}),
       ...(synonyms !== undefined ? { synonyms: Array.isArray(synonyms) ? synonyms : [] } : {}),
+      ...(fitChart !== undefined ? { fitChart } : {}),
+      ...(sizeRules !== undefined ? { sizeRules } : {}),
+      ...(sizeChartImage !== undefined ? { sizeChartImage: sizeChartImage || null } : {}),
+      ...(sizeChartData !== undefined ? { sizeChartData: sizeChartData || null } : {}),
     },
   });
   res.json({ ok: true, data: category });

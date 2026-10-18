@@ -92,6 +92,14 @@ model Category {
   // категорія "Взуття" → synonyms ["лофери","кросівки","туфлі","черевики","кеди"]; категорія
   // "Куртки" → synonyms ["вітровка"]). Воронка стемить name сама, тут — лише додаткові слова.
   synonyms       Json     @default("[]")
+  // 2026-10-18 (власник: розміри — дані в CRM, однаково в категоріях і товарах; товар без своїх — бере з категорії, далі загальні
+  // з воронки). fitChart — сітка підбору за зростом/вагою {"S":{"height":[160,175],"weight":[55,65]},…}; sizeRules — межі від
+  // експерта [{size,wMin,wMax,hMin,hMax,note}] (перше, що збіглося, перекриває сітку); sizeChartImage/sizeChartData — картинка
+  // й таблиця замірів виробу для товарів категорії без власних.
+  fitChart       Json?
+  sizeRules      Json     @default("[]")
+  sizeChartImage String?
+  sizeChartData  Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -208,6 +216,8 @@ model Product {
   images              String[] @default([]) // загальні фото товару (KeyCRM attachments_data), не привʼязані до конкретного offer-кольору
   aiNotes             String? // "Додаткова інформація для ШІ" (KeyCRM CT_1011) — нотатки для бота, окремо від presentationText (текст для клієнта)
   sizeChartData       Json? // структурована розмірна сітка (KeyCRM CT_1012: {title,unit,sizes[],measurements}) — доповнює sizeChartImage (той самий чарт, але як картинка)
+  fitChart            Json? // 2026-10-18: сітка підбору за зростом/вагою для ЦЬОГО товару (як Category.fitChart); порожньо — з категорії
+  sizeRules           Json     @default("[]") // 2026-10-18: межі розмірів для ЦЬОГО товару (як Category.sizeRules); порожньо — з категорії
   // ДОПОВНЕННЯ 2026-08-31 (фідбек власника): ціна за кількість — та сама для ВСІХ
   // варіантів кольору товару (KeyCRM CT_1007 "Ціна за 2 шт" тощо). [{quantity,price}].
   bulkPricing         Json     @default("[]")

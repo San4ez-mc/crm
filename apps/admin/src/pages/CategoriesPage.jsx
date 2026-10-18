@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { PageHeader, Button, IconButton, Field, Input, Textarea, Card, EmptyState, ErrorBanner } from '../components/common/Common';
 import Modal from '../components/common/Modal';
+import SizeFitEditor, { fitChartToRows } from '../components/common/SizeFitEditor';
+import { SingleFileDrop } from '../components/common/FileDropInput';
 
 export default function CategoriesPage() {
   const [items, setItems] = useState(null);
@@ -39,13 +41,14 @@ export default function CategoriesPage() {
         <Card>
           <table className="w-full text-sm">
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-              <tr><th className="px-4 py-3">Назва</th><th className="px-4 py-3">Товарів</th><th className="px-4 py-3"></th></tr>
+              <tr><th className="px-4 py-3">Назва</th><th className="px-4 py-3">Товарів</th><th className="px-4 py-3">Розміри</th><th className="px-4 py-3"></th></tr>
             </thead>
             <tbody>
               {items.map((c) => (
                 <tr key={c.id} className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30">
                   <td className="px-4 py-3">{c.name}</td>
                   <td className="px-4 py-3 text-slate-400">{c.productsCount}</td>
+                  <td className="px-4 py-3 text-xs text-slate-400">{c.fitChart && Object.keys(c.fitChart).length ? 'своя сітка' : 'загальна сітка'}{Array.isArray(c.sizeRules) && c.sizeRules.length ? ', меж: ' + c.sizeRules.length : ''}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1.5">
                       <IconButton onClick={() => setEditing(c)}>✏️</IconButton>
@@ -70,9 +73,11 @@ function CategoryForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState({
     id: initial.id, name: initial.name || '', description: initial.description || '', aiInstructions: initial.aiInstructions || '',
     requiredParams: initial.requiredParams || [], synonyms: initial.synonyms || [],
+    // Розміри (2026-10-18) — для товарів категорії, у яких немає власних
+    fitRows: fitChartToRows(initial.fitChart), sizeRules: Array.isArray(initial.sizeRules) ? initial.sizeRules : [], sizeChartImage: initial.sizeChartImage || '',
   });
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
+    <form onSubmit={(e) => { e.preventDefault(); const { fitRows, ...rest } = form; onSave({ ...rest, fitChart: fitRows.length ? fitRows : null }); }}>
       <Field label="Назва"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
       <Field label="Опис"><Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
       <Field label="Синоніми (слова клієнта, за якими воронка розпізнає цю категорію в тексті)">
@@ -88,6 +93,14 @@ function CategoryForm({ initial, onSave, onCancel }) {
       <Field label="Інформація для ШІ (вільний текст, додатково до параметрів вище)">
         <Textarea rows={3} placeholder="Напр. нюанси розмірної сітки, застереження для бота" value={form.aiInstructions} onChange={(e) => setForm({ ...form, aiInstructions: e.target.value })} />
       </Field>
+      <div className="mt-4 rounded-lg border border-slate-800 p-3">
+        <div className="mb-2 text-sm font-semibold text-slate-200">Розміри для товарів цієї категорії</div>
+        <div className="mb-3 text-xs text-slate-500">Діє для всіх товарів категорії, у яких немає власної сітки чи меж (у товарі можна задати свої).</div>
+        <SizeFitEditor fitRows={form.fitRows} onFitRows={(v) => setForm({ ...form, fitRows: v })} rules={form.sizeRules} onRules={(v) => setForm({ ...form, sizeRules: v })} inheritNote="Порожньо — береться загальна сітка магазину." />
+        <Field label="Картинка розмірної сітки (для товарів без своєї)">
+          <SingleFileDrop value={form.sizeChartImage} onChange={(url) => setForm({ ...form, sizeChartImage: url })} />
+        </Field>
+      </div>
       <div className="mt-4 flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel}>Скасувати</Button>
         <Button type="submit">Зберегти</Button>

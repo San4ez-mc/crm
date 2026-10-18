@@ -7,6 +7,7 @@ import Modal from '../components/common/Modal';
 import { SupplierForm } from './SuppliersPage';
 import { ProductAnswersSection } from './KnowledgeBasePage';
 import { SingleFileDrop, MultiImageDrop } from '../components/common/FileDropInput';
+import SizeFitEditor, { fitChartToRows } from '../components/common/SizeFitEditor';
 
 function TagsInput({ value, onChange, placeholder }) {
   const [draft, setDraft] = useState('');
@@ -72,6 +73,8 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     alwaysAvailable: product?.alwaysAvailable !== undefined ? product.alwaysAvailable : true,
     outOfStock: !!product?.outOfStock,
     sizes: product?.sizes?.length ? product.sizes : (product?.sizeChartData?.sizes || []),
+    // Розміри товару (2026-10-18) — порожньо = з категорії
+    fitRows: fitChartToRows(product?.fitChart), sizeRules: Array.isArray(product?.sizeRules) ? product.sizeRules : [],
   });
   const [offers, setOffers] = useState(product?.offers || []);
   const [setComponents, setSetComponentsState] = useState((product?.setComponents || []).map((c) => c.productId));
@@ -124,10 +127,10 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     setSaveState({ status: 'saving', at: null });
     try {
       if (!form.name.trim() || !form.sku.trim() || !form.price) throw new Error('Назва, артикул і ціна обовʼязкові');
-      const { bulkPricing, isSet, ...rest } = form;
-      const payload = { ...rest, bulkPricing, isSet, price: Number(form.price), categoryId: form.categoryId || null, supplierId: form.supplierId || null };
+      const { bulkPricing, isSet, fitRows, ...rest } = form;
+      const payload = { ...rest, bulkPricing, isSet, price: Number(form.price), categoryId: form.categoryId || null, supplierId: form.supplierId || null, fitChart: fitRows.length ? fitRows : null };
       // 2026-09-29 (власник): у комплекту немає власних розмірів/сітки/ціни за кількість/постачальника/допродажів — усе це береться з товарів-складових.
-      if (isSet || forceSet) Object.assign(payload, { sizes: [], sizeChartImage: null, bulkPricing: [], supplierId: null, supplierArticle: '', companionProductIds: [] });
+      if (isSet || forceSet) Object.assign(payload, { sizes: [], sizeChartImage: null, bulkPricing: [], supplierId: null, supplierArticle: '', companionProductIds: [], fitChart: null, sizeRules: [] });
       const saved = isEdit ? (await api.updateProduct(product.id, payload)).data : (await api.createProduct(payload)).data;
       setSavedProductId(saved.id);
       if (isEdit && (isSet || forceSet)) {
@@ -294,6 +297,9 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
           <Field label="Розмірна сітка">
             <SingleFileDrop value={form.sizeChartImage} onChange={(url) => setForm({ ...form, sizeChartImage: url })} />
           </Field>
+          <div className="mt-3 rounded-lg border border-slate-800 p-3">
+            <SizeFitEditor fitRows={form.fitRows} onFitRows={(v) => setForm({ ...form, fitRows: v })} rules={form.sizeRules} onRules={(v) => setForm({ ...form, sizeRules: v })} inheritNote="Порожньо — береться з категорії товару." />
+          </div>
 
           <div className="mt-4">
             <div className="mb-2 flex items-center justify-between">
