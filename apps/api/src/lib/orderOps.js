@@ -79,6 +79,9 @@ const STAGE_MATCHERS = {
   cancelled: [(n) => /скасов|cancel/.test(n), (n) => /^відмов/.test(n)],
   shipped: [(n) => /відправлен/.test(n) && !/не\s+відправ/.test(n), (n) => /^в\s+дорозі|^shipped/.test(n)],
 };
+// Стадії ПІСЛЯ відправлення за змістом (а не за порядком: у goverla «оформлене в постачальника» стоїть у списку після
+// «Відправлено», хоча йде до нього) — ТТН замовлення з них не повертає назад у «Відправлено».
+const AFTER_SHIPPED = (n) => /забрав|отрима|поверн|обмін|заверш|викона|доставлен|скасов|^відмов|cancel|complete|deliver|return/.test(n);
 async function findStage(tenantId, kind, preferPipelineId = null) {
   const pipelines = await db.pipeline.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' }, include: { stages: { orderBy: { order: 'asc' } } } });
   const ordered = preferPipelineId ? [...pipelines.filter((p) => p.id === preferPipelineId), ...pipelines.filter((p) => p.id !== preferPipelineId)] : pipelines;
@@ -92,8 +95,8 @@ async function findStage(tenantId, kind, preferPipelineId = null) {
 }
 
 /**
- * Нова ТТН → стадія «Відправлено», якщо замовлення ще до неї не дійшло (стадія раніше у тій самій воронці або без стадії).
- * Не рухаємо назад (вже «Завершено»/«Отримано») і не чіпаємо скасовані. Повертає {stageId} або {}.
+ * Нова ТТН → стадія «Відправлено», якщо замовлення ще до неї не дійшло (будь-яка стадія до відправлення або без стадії).
+ * Не рухаємо назад (вже «Забрав»/«Отримано»/«Повернення») і не чіпаємо скасовані — за змістом назви, не за порядком. Повертає {stageId} або {}.
  */
 async function shippedStagePatch(tenantId, order, oldTtn, newTtn) {
   const added = newTtn.filter((t) => !(oldTtn || []).includes(t));
@@ -104,7 +107,7 @@ async function shippedStagePatch(tenantId, order, oldTtn, newTtn) {
   if (current) {
     const cancelled = await findStage(tenantId, 'cancelled', current.pipelineId);
     if (cancelled && cancelled.id === current.id) return {};
-    if (current.pipelineId === shipped.pipelineId && current.order >= shipped.order) return {};
+    if (AFTER_SHIPPED(String(current.name || '').trim().toLowerCase())) return {};
   }
   return { stageId: shipped.id };
 }
