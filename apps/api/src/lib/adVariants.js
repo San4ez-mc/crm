@@ -184,4 +184,10 @@ async function canonicalAdId(tenantId, adId) {
   return (ad && ad.variantOfAdId) || adId;
 }
 
-module.exports = { canonicalAdId, normAdName, isVariant, isReal, pickParent, liveAdIds, linkAdVariantsFor, linkAllAdVariants, ensureLiveParent, relinkVariantsByExternalId, PSEUDO_ACCOUNT };
+/** Товар оголошення змінили — його варіанти Advantage+ без власного (або з автоматично успадкованим) товару отримують той самий (18.10).
+ *  Одне місце для REST (PATCH /ads/:id) і MCP (update_ad). */
+async function propagateProductToVariants(tenantId, adId, productId) {
+  return db.ad.updateMany({ where: { tenantId, variantOfAdId: adId, OR: [{ productId: null }, { productLinkSource: 'auto_variant' }] }, data: { productId: productId || null, productLinkSource: productId ? 'auto_variant' : null, productLinkNote: productId ? 'товар справжнього оголошення' : null } });
+}
+
+module.exports = { propagateProductToVariants, canonicalAdId, normAdName, isVariant, isReal, pickParent, liveAdIds, linkAdVariantsFor, linkAllAdVariants, ensureLiveParent, relinkVariantsByExternalId, PSEUDO_ACCOUNT };

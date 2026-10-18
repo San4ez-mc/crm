@@ -396,7 +396,10 @@ async function callTool(name, args = {}) {
       const data = {};
       if (args.productId !== undefined) { data.productId = args.productId || null; data.productLinkSource = args.productId ? 'manual' : null; data.productLinkNote = null; }
       if (args.name !== undefined) data.name = args.name;
-      return db.ad.update({ where: { id: args.adId }, data });
+      const before = await db.ad.findUnique({ where: { id: args.adId }, select: { tenantId: true, productId: true } });
+      const upd = await db.ad.update({ where: { id: args.adId }, data });
+      if (before && args.productId !== undefined && (args.productId || null) !== before.productId) await require('../../api/src/lib/adVariants').propagateProductToVariants(before.tenantId, args.adId, args.productId).catch(() => null);
+      return upd;
     }
 
     case 'list_crm_checks':

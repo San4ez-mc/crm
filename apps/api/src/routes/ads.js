@@ -8,7 +8,7 @@ const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo, kyivDayKey, dayRange } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem, ORDER_PLACED_WHERE, REAL_SALE_ORDER_WHERE, LEAD_WHERE } = require('../lib/margin');
 const { findOrCreateAdByExternalId } = require('../lib/adAttribution');
-const { linkAdVariantsFor, linkAllAdVariants, relinkVariantsByExternalId } = require('../lib/adVariants');
+const { linkAdVariantsFor, linkAllAdVariants, relinkVariantsByExternalId, propagateProductToVariants } = require('../lib/adVariants');
 const { ensureFreshUsdRate, rowToUAH } = require('../lib/currency');
 
 const router = express.Router();
@@ -179,6 +179,14 @@ router.get('/ads', asyncHandler(async (req, res) => {
     take: Number(take),
     skip: Number(skip),
   });
+  // Варіант Advantage+ без власного товару — товар його «батька» (18.10, nadinar_ad: варіант привʼязали до батька ДО того, як
+  // батькові поставили товар, і воронка показала список комплектів замість set1120). Лише у відповіді, запис не чіпаємо.
+  const __noProd = ads.filter((a) => !a.productId && a.variantOfAdId);
+  if (__noProd.length) {
+    const parents = await db.ad.findMany({ where: { id: { in: [...new Set(__noProd.map((a) => a.variantOfAdId))] } }, select: { id: true, productId: true, product: { select: { id: true, name: true } } } });
+    const byId = new Map(parents.map((p) => [p.id, p]));
+    for (const a of __noProd) { const p = byId.get(a.variantOfAdId); if (p && p.productId) { a.productId = p.productId; a.product = p.product; a.productViaParent = true; } }
+  }
   // by adId+currency (не лише adId) — Meta пише $, конвертуємо в грн перед підсумком per-ad.
   const [totalsByAdCurrency, otherTotals] = await Promise.all([
     db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { adId: { in: ads.map((a) => a.id) } }, _sum: { amount: true } }),
@@ -287,6 +295,10 @@ router.patch('/ads/:id', asyncHandler(async (req, res) => {
     data: { ...(productId !== undefined ? { productId: productId || null, productLinkSource: productId ? 'manual' : null, productLinkNote: null } : {}), ...(name !== undefined ? { name } : {}) },
     include: { product: { select: { id: true, name: true } } },
   });
+  // Товар оголошення змінили — його варіанти Advantage+ без власного (або з автоматично успадкованим) товару отримують той самий (18.10).
+  if (productId !== undefined && (productId || null) !== existing.productId) {
+    await propagateProductToVariants(req.tenant.id, existing.id, productId).catch(() => null);
+  }
   // Назву оновили (порожній запис «Реклама <id>» отримав назву з Meta) — варіант Advantage+ шукає «батька» з тією ж назвою (16.10).
   if (name !== undefined && name !== existing.name) await linkAdVariantsFor(ad).catch(() => null);
   res.json({ ok: true, data: ad });
