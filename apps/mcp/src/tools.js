@@ -27,6 +27,39 @@ function withOfferAvailability(product) {
   return { ...product, offers, displayName: product.customerName || product.name };
 }
 
+// Замовлення для MCP (2026-10-18) — той самий набір полів, що бачить менеджер у картці.
+const MCP_ORDER_INCLUDE = {
+  buyer: true,
+  stage: { select: { id: true, name: true, pipelineId: true } },
+  items: { include: { supplier: { select: { id: true, name: true } }, product: { select: { id: true, sku: true, name: true, supplierId: true } } } },
+  payments: { select: { id: true, amount: true, method: true, status: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
+};
+function orderView(o) {
+  if (!o) return o;
+  const total = (o.items || []).reduce((s, it) => s + Number(it.price) * it.quantity, 0);
+  const prepay = o.prepaymentAmount != null ? Number(o.prepaymentAmount) : null;
+  return { ...o, total, codAmount: prepay != null ? Math.max(0, total - prepay) : null };
+}
+async function mcpOrderItems(tenantId, items) {
+  const ids = [...new Set(items.filter((it) => it && it.productId && (it.name === undefined || it.price === undefined)).map((it) => String(it.productId)))];
+  const byId = ids.length ? new Map((await db.product.findMany({ where: { tenantId, id: { in: ids } }, select: { id: true, name: true, price: true } })).map((p) => [p.id, p])) : new Map();
+  return items.map((it, i) => {
+    const p = it && it.productId ? byId.get(String(it.productId)) : null;
+    const name = String((it && it.name) || (p && p.name) || '').trim();
+    const price = Number(it && it.price !== undefined ? it.price : p && p.price);
+    const quantity = parseInt(it && it.quantity, 10) || 1;
+    if (!name) throw new ValidationError(`Позиція ${i + 1}: немає назви (вкажіть name або productId)`);
+    if (!Number.isFinite(price) || price < 0) throw new ValidationError(`Позиція ${i + 1}: неправильна ціна`);
+    return { ...it, name: name.slice(0, 500), price, quantity: Math.max(1, quantity) };
+  });
+}
+async function mcpTenantStage(tenantId, stageId) {
+  if (!stageId) return null;
+  const st = await db.stage.findFirst({ where: { id: String(stageId), pipeline: { tenantId } } });
+  if (!st) throw new ValidationError('Стадію не знайдено в цьому магазині', { stageId });
+  return st.id;
+}
+
 const TOOLS = [
   // ── Tenants ──────────────────────────────────────────────────────────
   { name: 'list_tenants', description: 'Список усіх магазинів (tenants) СРМ.', inputSchema: { type: 'object', properties: {} } },
@@ -68,6 +101,14 @@ const TOOLS = [
   { name: 'create_stage', description: 'Додати стадію в кінець воронки.', inputSchema: { type: 'object', properties: { pipelineId: { type: 'string' }, name: { type: 'string' } }, required: ['pipelineId', 'name'] } },
   { name: 'update_stage', description: 'Перейменувати/переставити стадію.', inputSchema: { type: 'object', properties: { stageId: { type: 'string' }, name: { type: 'string' }, order: { type: 'number' } }, required: ['stageId'] } },
   { name: 'delete_stage', description: 'Видалити стадію (лише якщо немає замовлень на ній).', inputSchema: { type: 'object', properties: { stageId: { type: 'string' } }, required: ['stageId'] } },
+
+  // ── Order §4.8 — ручна робота із замовленням (2026-10-18) ───────────
+  // Рантайм воронки (оформлення ботом) лишається на REST; тут — те, що робить менеджер у картці замовлення.
+  { name: 'list_orders', description: 'Замовлення tenant (найновіші). q — посилання на Instagram або @нік (шукає за нікнеймом), телефон, імʼя або ТТН.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, q: { type: 'string' }, stageId: { type: 'string' }, take: { type: 'number', description: 'до 100, за замовчуванням 30' } }, required: ['tenantId'] } },
+  { name: 'get_order', description: 'Замовлення з позиціями (постачальник кожної), покупцем, стадією, способом оплати й журналом платежів.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, orderId: { type: 'string' } }, required: ['tenantId', 'orderId'] } },
+  { name: 'create_order', description: 'Створити замовлення вручну (як «Нове замовлення» в CRM). Instagram нормалізується до нікнейма. Постачальник позиції за замовчуванням — з товару.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, buyer: { type: 'object', properties: { phone: { type: 'string' }, fullName: { type: 'string' }, igUsername: { type: 'string', description: 'нікнейм, @нік або посилання на профіль' } } }, items: { type: 'array', items: { type: 'object', properties: { productId: { type: 'string' }, name: { type: 'string', description: 'якщо не задано — назва товару' }, price: { type: 'number', description: 'якщо не задано — ціна товару' }, quantity: { type: 'number' }, properties: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } } }, description: '[{name:"Колір",value:"чорний"},{name:"Розмір",value:"M"}]' }, supplierId: { type: 'string', description: 'постачальник цієї позиції; не задано — з товару' } } } }, stageId: { type: 'string' }, shipping: { type: 'object', description: '{city, branch|warehouse, recipientFullName, recipientPhone}' }, managerComment: { type: 'string' }, paymentType: { type: 'string', description: 'partial — часткова передплата, full — повна передплата, cod — накладений платіж без передплати' }, prepaymentAmount: { type: 'number', description: 'для partial (за замовчуванням 200 грн); full = сума замовлення, cod = 0' }, ttn: { type: 'array', items: { type: 'string' } } }, required: ['tenantId', 'items'] } },
+  { name: 'update_order', description: 'Оновити замовлення: стадія, коментар, доставка, ТТН (замінює список; нова ТТН переводить у «Відправлено», якщо стадію не задано), спосіб оплати/передплата, дані покупця, позиції (повна заміна, з постачальником), cancel:true — скасувати (стадія «Скасовано», лишається в історії).', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, orderId: { type: 'string' }, stageId: { type: 'string' }, managerComment: { type: 'string' }, shipping: { type: 'object' }, ttn: { type: 'array', items: { type: 'string' } }, paymentType: { type: 'string', description: 'partial | full | cod' }, prepaymentAmount: { type: 'number' }, buyer: { type: 'object', properties: { phone: { type: 'string' }, fullName: { type: 'string' }, igUsername: { type: 'string' } } }, items: { type: 'array', items: { type: 'object', properties: { productId: { type: 'string' }, offerId: { type: 'string' }, name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' }, properties: { type: 'array' }, components: { type: 'array' }, isUpsell: { type: 'boolean' }, supplierId: { type: 'string' } } } }, cancel: { type: 'boolean' } }, required: ['tenantId', 'orderId'] } },
+  { name: 'delete_order', description: 'Видалити помилково створене замовлення — лише без платежів, ТТН і повернень (інакше помилка: таке замовлення скасовують через update_order cancel:true).', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, orderId: { type: 'string' } }, required: ['tenantId', 'orderId'] } },
 
   // ── Ad §4.9 — підключення рекламних кабінетів/оголошень ─────────────
   { name: 'list_ads', description: 'Оголошення tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
@@ -243,6 +284,100 @@ async function callTool(name, args = {}) {
       await db.stage.delete({ where: { id: args.stageId } });
       return { id: args.stageId, deleted: true };
     }
+
+    case 'list_orders': {
+      const { igSearchTerm } = require('../../api/src/lib/instagram');
+      const qs = String(args.q || '').trim();
+      const ig = igSearchTerm(qs);
+      const or = !qs ? null : ig
+        ? [{ contactIg: { equals: ig, mode: 'insensitive' } }, { buyer: { is: { igUsername: { equals: ig, mode: 'insensitive' } } } }]
+        : [{ ttn: { has: qs } }, { buyer: { is: { OR: [{ phone: { contains: qs.replace(/[^\d+]/g, '') || qs } }, { fullName: { contains: qs, mode: 'insensitive' } }, { igUsername: { contains: qs.replace(/^@/, ''), mode: 'insensitive' } }] } } }, { contactIg: { contains: qs.replace(/^@/, ''), mode: 'insensitive' } }, { contactName: { contains: qs, mode: 'insensitive' } }];
+      const rows = await db.order.findMany({
+        where: { tenantId: args.tenantId, ...(args.stageId ? { stageId: args.stageId } : {}), ...(or ? { OR: or } : {}) },
+        include: MCP_ORDER_INCLUDE, orderBy: { createdAt: 'desc' }, take: Math.min(100, Number(args.take) || 30),
+      });
+      return rows.map(orderView);
+    }
+    case 'get_order': {
+      const o = await db.order.findFirst({ where: { id: args.orderId, tenantId: args.tenantId }, include: MCP_ORDER_INCLUDE });
+      if (!o) throw new NotFoundError('Order', args.orderId);
+      return orderView(o);
+    }
+    case 'create_order': {
+      const ops = require('../../api/src/lib/orderOps');
+      const { igOrNull } = require('../../api/src/lib/instagram');
+      if (!Array.isArray(args.items) || !args.items.length) throw new ValidationError('items[] обовʼязкові (хоча б одна позиція)');
+      const items = await mcpOrderItems(args.tenantId, args.items);
+      const suppliers = await ops.resolveItemSuppliers(args.tenantId, items);
+      const pay = ops.paymentFields(args, ops.itemsTotal(items));
+      const ig = args.buyer ? igOrNull(args.buyer.igUsername) : null;
+      let buyerId = null;
+      if (args.buyer && args.buyer.phone) {
+        const phone = String(args.buyer.phone).replace(/[^\d+]/g, '');
+        const buyer = await db.buyer.upsert({
+          where: { tenantId_phone: { tenantId: args.tenantId, phone } },
+          update: {},
+          create: { tenantId: args.tenantId, phone, fullName: args.buyer.fullName || null, igUsername: ig },
+        });
+        const fill = { ...(!buyer.fullName && args.buyer.fullName ? { fullName: String(args.buyer.fullName) } : {}), ...(!buyer.igUsername && ig ? { igUsername: ig } : {}) };
+        if (Object.keys(fill).length) await db.buyer.update({ where: { id: buyer.id }, data: fill });
+        buyerId = buyer.id;
+      }
+      let stageId = await mcpTenantStage(args.tenantId, args.stageId);
+      if (!stageId) {
+        const pl = await db.pipeline.findFirst({ where: { tenantId: args.tenantId }, orderBy: { createdAt: 'asc' }, include: { stages: { orderBy: { order: 'asc' }, take: 1 } } });
+        stageId = pl?.stages?.[0]?.id || null;
+      }
+      const o = await db.order.create({
+        data: {
+          tenantId: args.tenantId, buyerId, stageId,
+          sourceName: 'Вручну (MCP)',
+          managerComment: args.managerComment || null,
+          shipping: args.shipping || null,
+          ttn: args.ttn !== undefined ? ops.parseTtnList(args.ttn) : [],
+          ...(ig ? { contactIg: ig } : {}),
+          ...pay,
+          items: { create: items.map((it, i) => ({ productId: it.productId || null, offerId: it.offerId || null, name: it.name, price: it.price, quantity: it.quantity, properties: Array.isArray(it.properties) ? it.properties : undefined, isUpsell: !!it.isUpsell, supplierId: suppliers[i] })) },
+        },
+        include: MCP_ORDER_INCLUDE,
+      });
+      return orderView(o);
+    }
+    case 'update_order': {
+      const ops = require('../../api/src/lib/orderOps');
+      const existing = await db.order.findFirst({ where: { id: args.orderId, tenantId: args.tenantId }, include: { items: { select: { productId: true, supplierId: true, price: true, quantity: true } }, buyer: true } });
+      if (!existing) throw new NotFoundError('Order', args.orderId);
+      let newItems = null;
+      if (args.items !== undefined) {
+        if (!Array.isArray(args.items) || !args.items.length) throw new ValidationError('Потрібна хоча б одна позиція');
+        const items = await mcpOrderItems(args.tenantId, args.items);
+        const suppliers = await ops.resolveItemSuppliers(args.tenantId, items, existing.items);
+        newItems = items.map((it, i) => ({ orderId: existing.id, productId: it.productId || null, offerId: it.offerId || null, name: it.name, price: it.price, quantity: it.quantity, properties: Array.isArray(it.properties) && it.properties.length ? it.properties : undefined, components: Array.isArray(it.components) && it.components.length ? it.components : undefined, isUpsell: !!it.isUpsell, supplierId: suppliers[i] }));
+      }
+      const total = ops.itemsTotal(newItems || existing.items);
+      // «Повна передплата» йде за сумою: змінився склад без явного способу оплати — перераховуємо.
+      const pay = ops.paymentFields(args.paymentType === undefined && args.prepaymentAmount === undefined && newItems && existing.paymentType === 'full' ? { paymentType: 'full' } : args, total, existing);
+      const stageId = args.stageId !== undefined ? await mcpTenantStage(args.tenantId, args.stageId) : undefined;
+      const ttnList = args.ttn !== undefined ? ops.parseTtnList(args.ttn) : null;
+      const stagePatch = ttnList && stageId === undefined && !args.cancel ? await ops.shippedStagePatch(args.tenantId, existing, existing.ttn, ttnList) : {};
+      const buyerPatch = args.buyer !== undefined ? await ops.applyBuyerEdit(args.tenantId, existing, args.buyer) : {};
+      const data = {
+        ...pay, ...stagePatch, ...buyerPatch,
+        ...(stageId !== undefined ? { stageId } : {}),
+        ...(args.managerComment !== undefined ? { managerComment: args.managerComment } : {}),
+        ...(args.shipping !== undefined ? { shipping: args.shipping, managerEditedAt: new Date() } : {}),
+        ...(ttnList ? { ttn: ttnList } : {}),
+        ...(newItems ? { managerEditedAt: new Date() } : {}),
+      };
+      await db.$transaction([
+        ...(newItems ? [db.orderItem.deleteMany({ where: { orderId: existing.id } }), db.orderItem.createMany({ data: newItems })] : []),
+        db.order.update({ where: { id: existing.id }, data }),
+      ]);
+      if (args.cancel) await ops.cancelOrder(args.tenantId, existing.id);
+      return orderView(await db.order.findFirst({ where: { id: existing.id }, include: MCP_ORDER_INCLUDE }));
+    }
+    case 'delete_order':
+      return require('../../api/src/lib/orderOps').deleteOrder(args.tenantId, args.orderId);
 
     case 'update_ad_variants':
       if (Array.isArray(args.relinkExternalIds) && args.relinkExternalIds.length) return require('../../api/src/lib/adVariants').relinkVariantsByExternalId(args.tenantId, args.relinkExternalIds.slice(0, 50), { dryRun: !!args.dryRun });

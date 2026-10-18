@@ -135,7 +135,7 @@ export default function OrdersPage() {
           щоб на wrap завжди падала ЦІЛА група, а не розривалась посередині. */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Input className="w-64" placeholder="Пошук за покупцем/телефоном/ТТН…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input className="w-64" placeholder="Пошук: імʼя, телефон, ТТН, Instagram (посилання або @нік)…" title="Можна вставити посилання на профіль Instagram — шукає за нікнеймом" value={q} onChange={(e) => setQ(e.target.value)} />
           <Select className="w-56" value={adId} onChange={(e) => setAdId(e.target.value)}>
             <option value="">Усі оголошення</option>
             {ads.map((a) => <option key={a.id} value={a.id}>{a.name || a.externalId || a.id.slice(0, 8)}</option>)}

@@ -2,9 +2,13 @@
 // «✏️ Редагувати замовлення» під сповіщенням у Telegram, правит тут, а «📦 Оформити постачальнику» (Flows)
 // бере позиції й доставку саме з CRM. Комплект лишається ОДНИМ рядком (виручка/собівартість по комплекту),
 // а його склад (колір/розмір кожної речі) — у components цього рядка.
+// 2026-10-18 (правки Олексія): тут же редагуються дані клієнта (імʼя, телефон, Instagram — оновлюють покупця), спосіб оплати
+// з передплатою, постачальник кожної позиції і накладна (ТТН).
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { Input, Select, Button, Badge, ErrorBanner, money } from '../components/common/Common';
+import { Field, Input, Select, Button, Badge, ErrorBanner, money } from '../components/common/Common';
+import { PaymentFields, SupplierSelect, paymentFromOrder, paymentPayload, paymentError } from '../components/orders/OrderFields';
+import { normalizeInstagram, igInputValue } from '../lib/instagram';
 
 const COLOR_RE = /кол|цвет|color/i;
 const SIZE_RE = /розм|разм|size/i;
@@ -38,6 +42,8 @@ function fromOrderItem(it) {
     color: propValue(it.properties, COLOR_RE),
     size: propValue(it.properties, SIZE_RE),
     isUpsell: !!it.isUpsell,
+    // Старі позиції без постачальника — підставляємо постачальника товару з каталогу.
+    supplierId: it.supplierId || it.product?.supplierId || '',
     otherProps: (Array.isArray(it.properties) ? it.properties : []).filter((p) => !COLOR_RE.test(p?.name || '') && !SIZE_RE.test(p?.name || '')),
     components: Array.isArray(it.components) ? it.components.map((c) => ({ ...c })) : null,
   };
@@ -84,9 +90,19 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
     city: sh.city || '',
     branch: sh.branch || sh.warehouse || '',
   });
+  const initialBuyer = {
+    fullName: order.buyer?.fullName || order.contactName || '',
+    phone: order.buyer?.phone || '',
+    igUsername: order.buyer?.igUsername || order.contactIg || '',
+  };
+  const [buyer, setBuyer] = useState(initialBuyer);
+  const [payment, setPayment] = useState(() => paymentFromOrder(order));
+  const [ttn, setTtn] = useState((order.ttn || []).join(', '));
+  const [suppliers, setSuppliers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => { api.listSuppliers().then((r) => setSuppliers(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { api.listProducts({ take: '1000' }).then((r) => setProducts(r.data || [])).catch((e) => setError('Не вдалося завантажити каталог: ' + e.message)); }, []);
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
@@ -111,10 +127,10 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
     const p = byId.get(productId);
     if (!p) return;
     const colors = colorsOf(p);
-    update(key, { productId, offerId: '', name: p.name, price: Number(p.price) || 0, color: colors.length === 1 ? colors[0] : '', size: '', components: p.isSet ? componentsFromSet(p, byId) : null });
+    update(key, { productId, offerId: '', name: p.name, price: Number(p.price) || 0, color: colors.length === 1 ? colors[0] : '', size: '', supplierId: p.supplierId || '', components: p.isSet ? componentsFromSet(p, byId) : null });
   }
   function addItem() {
-    setItems((prev) => [...prev, { key: Math.random().toString(36).slice(2), productId: '', offerId: '', name: '', price: 0, quantity: 1, color: '', size: '', isUpsell: false, otherProps: [], components: null }]);
+    setItems((prev) => [...prev, { key: Math.random().toString(36).slice(2), productId: '', offerId: '', name: '', price: 0, quantity: 1, color: '', size: '', isUpsell: false, supplierId: '', otherProps: [], components: null }]);
   }
 
   const total = items.reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
@@ -124,6 +140,13 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
     if (!items.length) { setError('У замовленні має лишитись хоча б одна позиція'); return; }
     if (items.some((it) => !it.name.trim())) { setError('Оберіть товар у кожному рядку'); return; }
     if (!shipping.city.trim() || !shipping.branch.trim()) { setError('Вкажіть місто й відділення Нової Пошти'); return; }
+    const ig = buyer.igUsername.trim() ? normalizeInstagram(buyer.igUsername) : '';
+    if (buyer.igUsername.trim() && !ig) { setError('Не вдалося розпізнати Instagram — вставте посилання на профіль або нікнейм'); return; }
+    if (order.buyer && !buyer.phone.trim()) { setError('Телефон покупця не може бути порожнім'); return; }
+    const payErr = paymentError(payment, total);
+    if (payErr) { setError(payErr); return; }
+    // Покупця оновлюємо, лише якщо менеджер щось змінив (той самий покупець — в усіх його замовленнях).
+    const buyerChanged = buyer.fullName.trim() !== initialBuyer.fullName || buyer.phone.trim() !== initialBuyer.phone || ig !== normalizeInstagram(initialBuyer.igUsername);
     setSaving(true);
     try {
       const payload = items.map((it) => {
@@ -142,10 +165,16 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
             ...it.otherProps,
           ],
           components: it.components && it.components.length ? it.components : undefined,
+          supplierId: it.supplierId || null,
         };
       });
       await api.replaceOrderItems(order.id, payload);
-      const r = await api.updateOrder(order.id, { shipping: { ...sh, shippingService: sh.shippingService || 'Нова Пошта', ...shipping, warehouse: shipping.branch } });
+      const r = await api.updateOrder(order.id, {
+        shipping: { ...sh, shippingService: sh.shippingService || 'Нова Пошта', ...shipping, warehouse: shipping.branch },
+        ...paymentPayload(payment),
+        ttn,
+        ...(buyerChanged ? { buyer: { fullName: buyer.fullName.trim(), igUsername: ig, ...(buyer.phone.trim() ? { phone: buyer.phone.trim() } : {}) } } : {}),
+      });
       onSaved(r.data);
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
@@ -154,6 +183,16 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
   return (
     <div className="space-y-4 text-sm">
       <ErrorBanner message={error} />
+      <section>
+        <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Покупець</h4>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+          <Field label="Імʼя"><Input value={buyer.fullName} onChange={(e) => setBuyer({ ...buyer, fullName: e.target.value })} /></Field>
+          <Field label={order.buyer ? 'Телефон *' : 'Телефон'}><Input value={buyer.phone} onChange={(e) => setBuyer({ ...buyer, phone: e.target.value })} placeholder="+380..." /></Field>
+          <Field label="Instagram"><Input value={buyer.igUsername} onChange={(e) => setBuyer({ ...buyer, igUsername: igInputValue(e.target.value) })} onBlur={() => setBuyer((b) => ({ ...b, igUsername: normalizeInstagram(b.igUsername) || b.igUsername }))} placeholder="нікнейм або посилання на профіль" /></Field>
+        </div>
+        {order.buyer && <p className="text-xs text-slate-500">Зміни імені, телефону й Instagram зберігаються в картці покупця (для всіх його замовлень).</p>}
+      </section>
+
       <section>
         <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Товари</h4>
         <div className="space-y-2">
@@ -173,7 +212,13 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
                   <Input type="number" min="0" title="Ціна за 1 шт." value={it.price} onChange={(e) => update(it.key, { price: e.target.value })} />
                   <button type="button" title="Прибрати позицію" onClick={() => setItems((prev) => prev.filter((x) => x.key !== it.key))} className="px-2 text-slate-500 hover:text-red-400">✕</button>
                 </div>
-                {it.isUpsell && <div className="mt-1"><Badge color="teal">Допродаж</Badge></div>}
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-slate-500">Постачальник:</span>
+                  <div className="min-w-[12rem] flex-1 md:max-w-xs">
+                    <SupplierSelect suppliers={suppliers} value={it.supplierId} catalogSupplierId={p?.supplierId} onChange={(supplierId) => update(it.key, { supplierId })} />
+                  </div>
+                  {it.isUpsell && <Badge color="teal">Допродаж</Badge>}
+                </div>
                 {it.components && it.components.length > 0 && (
                   <div className="mt-2 space-y-1.5 border-l-2 border-slate-700 pl-3">
                     {it.components.map((c, i) => (
@@ -206,7 +251,18 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
         </div>
       </section>
 
-      <p className="text-xs text-slate-500">Оплату (передоплату) тут не змінюємо — якщо змінилась сума, напишіть клієнту окремо. Постачальнику піде саме те, що збережено тут.</p>
+      <section>
+        <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Накладна (ТТН)</h4>
+        <Input placeholder="Номер ТТН (кілька — через кому)" value={ttn} onChange={(e) => setTtn(e.target.value)} />
+        <p className="mt-1 text-xs text-slate-500">Замінює збережені номери. Нова ТТН переводить замовлення в «Відправлено», якщо воно ще туди не дійшло.</p>
+      </section>
+
+      <section>
+        <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Оплата</h4>
+        <PaymentFields value={payment} onChange={setPayment} total={total} allowEmpty={!order.paymentType} />
+      </section>
+
+      <p className="text-xs text-slate-500">Якщо змінилась сума — напишіть клієнту окремо. Постачальнику піде саме те, що збережено тут.</p>
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onCancel}>Скасувати</Button>
         <Button onClick={save} disabled={saving}>{saving ? 'Зберігаю…' : 'Зберегти зміни'}</Button>

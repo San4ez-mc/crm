@@ -6,6 +6,8 @@ const { canonicalAdId } = require('../lib/adVariants');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
+const { igOrNull, igSearchTerm, normalizeInstagram } = require('../lib/instagram');
+const { itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList, shippedStagePatch, applyBuyerEdit, cancelOrder, deleteOrder } = require('../lib/orderOps');
 
 const router = express.Router();
 
@@ -15,7 +17,8 @@ const ORDER_INCLUDE = {
   // thumbnailUrl/images — щоб картка замовлення могла показати фото замовлених товарів
   // (2026-09-08, фідбек власника); offer.images — фото КОНКРЕТНОГО кольору/розміру, якщо є,
   // пріоритетніше за загальне фото товару.
-  items: { include: { product: { select: { id: true, name: true, sku: true, thumbnailUrl: true, images: true } }, offer: { select: { id: true, sku: true, images: true } } } },
+  // supplier — постачальник позиції (2026-10-18), product.supplierId — щоб форма могла показати постачальника з каталогу.
+  items: { include: { product: { select: { id: true, name: true, sku: true, thumbnailUrl: true, images: true, supplierId: true } }, offer: { select: { id: true, sku: true, images: true } }, supplier: { select: { id: true, name: true } } } },
   returns: true,
   firstTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true, postUrl: true, effectiveStatus: true } },
   lastTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true, postUrl: true, effectiveStatus: true } },
@@ -50,10 +53,27 @@ router.get('/orders', asyncHandler(async (req, res) => {
   // q і adId — обидва OR-блоки, тому комбінуємо через AND (інакше другий спред перезаписав би
   // перший ключ "OR" в об'єкті where — знайдено під час додавання фільтра по рекламі 2026-09-04).
   const andClauses = [];
-  if (q) andClauses.push({ OR: [
-    { ttn: { has: String(q) } },
-    { buyer: { is: { OR: [{ phone: { contains: String(q) } }, { fullName: { contains: String(q), mode: 'insensitive' } }] } } },
-  ] });
+  if (q) {
+    // 2026-10-18 (Олексій: «не шукає клієнта по посиланню»): посилання на Instagram або @нік → шукаємо за нікнеймом
+    // (покупець і картка розмови); інакше — як раніше ТТН/телефон/імʼя, плюс нікнейм і імʼя з Instagram на картці.
+    const qs = String(q).trim();
+    const ig = igSearchTerm(qs);
+    const digits = qs.replace(/\D/g, '');
+    andClauses.push({ OR: ig ? [
+      { contactIg: { equals: ig, mode: 'insensitive' } },
+      { buyer: { is: { igUsername: { equals: ig, mode: 'insensitive' } } } },
+    ] : [
+      { ttn: { has: qs } },
+      { buyer: { is: { OR: [
+        { phone: { contains: qs } },
+        ...(digits.length >= 3 && digits !== qs ? [{ phone: { contains: digits } }] : []),
+        { fullName: { contains: qs, mode: 'insensitive' } },
+        { igUsername: { contains: qs.replace(/^@/, ''), mode: 'insensitive' } },
+      ] } } },
+      { contactIg: { contains: qs.replace(/^@/, ''), mode: 'insensitive' } },
+      { contactName: { contains: qs, mode: 'insensitive' } },
+    ] });
+  }
   if (adId) andClauses.push({ OR: [{ firstTouchAdId: String(adId) }, { lastTouchAdId: String(adId) }] });
   // 2026-09-12 (КРИТИЧНО, живий баг знайдено одразу після деплою): firstTouchAt історично НІКОЛИ не
   // заповнювався воронкою (усі існуючі замовлення мають firstTouchAt=null) — фільтр по НЬОМУ напряму
@@ -91,16 +111,34 @@ router.post('/orders', asyncHandler(async (req, res) => {
   if (b.lastTouchAdId) b.lastTouchAdId = await canonicalAdId(req.tenant.id, b.lastTouchAdId);
   if (!Array.isArray(b.items) || !b.items.length) throw new ValidationError('items[] обовʼязкові (хоча б одна позиція)');
 
+  // Instagram — лише нікнейм (посилання/@нік нормалізуються, lib/instagram.js), 2026-10-18.
+  const buyerIg = b.buyer ? igOrNull(b.buyer.igUsername) : null;
   let buyerId = b.buyerId || null;
   if (!buyerId && b.buyer?.phone) {
     const normalized = String(b.buyer.phone).replace(/[^\d+]/g, '');
     const buyer = await db.buyer.upsert({
       where: { tenantId_phone: { tenantId: req.tenant.id, phone: normalized } },
       update: {},
-      create: { tenantId: req.tenant.id, phone: normalized, fullName: b.buyer.fullName || null, igUsername: b.buyer.igUsername || null },
+      create: { tenantId: req.tenant.id, phone: normalized, fullName: b.buyer.fullName || null, igUsername: buyerIg },
     });
+    // Відомий покупець без імені/Instagram — доповнюємо з цього замовлення (не перезаписуємо вже збережене).
+    const fill = { ...(!buyer.fullName && b.buyer.fullName ? { fullName: String(b.buyer.fullName) } : {}), ...(!buyer.igUsername && buyerIg ? { igUsername: buyerIg } : {}) };
+    if (Object.keys(fill).length) await db.buyer.update({ where: { id: buyer.id }, data: fill }).catch(() => {});
     buyerId = buyer.id;
   }
+  // Позиції: постачальник кожної (явно або з каталогу) і сума — для полів оплати.
+  const itemSuppliers = await resolveItemSuppliers(req.tenant.id, b.items);
+  const payFields = paymentFields(b, itemsTotal(b.items));
+  const itemsCreate = b.items.map((it, i) => ({
+    productId: it.productId || null,
+    offerId: it.offerId || null,
+    name: it.name,
+    price: it.price,
+    quantity: Number(it.quantity) || 1,
+    properties: it.properties || null,
+    isUpsell: !!it.isUpsell,
+    supplierId: itemSuppliers[i],
+  }));
 
   // Реквізити доставки з цього замовлення запам'ятовуємо на покупцеві (Buyer.knownShipping) —
   // щоб наступного разу воронка могла запропонувати вже відомі дані замість повторного
@@ -134,6 +172,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
         where: { id: card.id },
         data: {
           buyerId, stageId,
+          ...payFields,
           sourceName: b.sourceName || card.sourceName || null,
           managerComment: b.managerComment || null,
           shipping: b.shipping || null,
@@ -142,7 +181,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
           ...(b.lastTouchAdId ? { lastTouchAdId: b.lastTouchAdId, lastTouchAt: b.lastTouchAt ? new Date(b.lastTouchAt) : new Date() } : {}),
           ...cardTouch,
           lastClientAt: new Date(),
-          items: { create: b.items.map((it) => ({ productId: it.productId || null, offerId: it.offerId || null, name: it.name, price: it.price, quantity: Number(it.quantity) || 1, properties: it.properties || null, isUpsell: !!it.isUpsell })) },
+          items: { create: itemsCreate },
         },
         include: ORDER_INCLUDE,
       });
@@ -159,7 +198,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
       sourceName: b.sourceName || null,
       managerComment: b.managerComment || null,
       shipping: b.shipping || null,
-      ttn: Array.isArray(b.ttn) ? b.ttn : [],
+      ttn: b.ttn !== undefined ? parseTtnList(b.ttn) : [],
       funnelSessionId: b.funnelSessionId ? String(b.funnelSessionId) : null,
       lastClientAt: b.funnelSessionId ? new Date() : null,
       firstTouchAdId: b.firstTouchAdId || null,
@@ -167,17 +206,11 @@ router.post('/orders', asyncHandler(async (req, res) => {
       lastTouchAdId: b.lastTouchAdId || null,
       lastTouchAt: b.lastTouchAt ? new Date(b.lastTouchAt) : (b.lastTouchAdId ? new Date() : null),
       ...newTouch, // дотики за Meta-id (Flows) — після явних firstTouchAdId/lastTouchAdId, щоб null не перекрив знайдене
-      items: {
-        create: b.items.map((it) => ({
-          productId: it.productId || null,
-          offerId: it.offerId || null,
-          name: it.name,
-          price: it.price,
-          quantity: Number(it.quantity) || 1,
-          properties: it.properties || null,
-          isUpsell: !!it.isUpsell,
-        })),
-      },
+      ...payFields,
+      // Нікнейм на самій картці — щоб бот (lookup-client) і пошук знаходили й ручні замовлення.
+      ...(b.contactIg || buyerIg ? { contactIg: igOrNull(b.contactIg) || buyerIg } : {}),
+      ...(b.contactName ? { contactName: String(b.contactName) } : {}),
+      items: { create: itemsCreate },
     },
     include: ORDER_INCLUDE,
   });
@@ -189,7 +222,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
 // Лише оформлені (є покупець), найсвіжіше. Нічого не знайдено — data:null.
 router.get('/orders/lookup-client', asyncHandler(async (req, res) => {
   const { funnelSessionId, ig, phone } = req.query;
-  const igN = String(ig || '').replace(/^@/, '').trim();
+  const igN = normalizeInstagram(ig) || String(ig || '').replace(/^@/, '').trim();
   const ph = String(phone || '').replace(/\D/g, '').slice(-9);
   const or = [];
   if (funnelSessionId) or.push({ funnelSessionId: String(funnelSessionId) });
@@ -211,24 +244,47 @@ router.get('/orders/:id', asyncHandler(async (req, res) => {
 }));
 
 router.patch('/orders/:id', asyncHandler(async (req, res) => {
-  const existing = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+  const existing = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id }, include: { items: { select: { price: true, quantity: true } }, buyer: true } });
   if (!existing) throw new NotFoundError('Order', req.params.id);
   const b = req.body || {};
+  // Оплата (2026-10-18): спосіб + передплата; «повна» = сума позицій замовлення.
+  const payFields = paymentFields(b, itemsTotal(existing.items), existing);
+  // ТТН: рядок або масив, замінює список. Нова ТТН → «Відправлено», якщо замовлення туди ще не дійшло і стадію не задано явно.
+  const ttnList = b.ttn !== undefined ? parseTtnList(b.ttn) : null;
+  const stagePatch = ttnList && b.stageId === undefined ? await shippedStagePatch(req.tenant.id, existing, existing.ttn, ttnList) : {};
+  const buyerPatch = b.buyer !== undefined ? await applyBuyerEdit(req.tenant.id, existing, b.buyer) : {};
   const order = await db.order.update({
     where: { id: existing.id },
     data: {
+      ...payFields,
+      ...stagePatch,
+      ...buyerPatch,
+      ...(b.contactName !== undefined ? { contactName: b.contactName ? String(b.contactName) : null } : {}),
+      ...(b.contactIg !== undefined ? { contactIg: igOrNull(b.contactIg) } : {}),
       ...(b.stageId !== undefined ? { stageId: b.stageId } : {}),
       ...(b.managerComment !== undefined ? { managerComment: b.managerComment } : {}),
       ...(b.shipping !== undefined ? { shipping: b.shipping } : {}),
       // Доставку змінив менеджер (не воронка) — Flows покаже це в перевірці перед «Оформити постачальнику».
       ...(b.shipping !== undefined && b.source !== 'funnel' ? { managerEditedAt: new Date() } : {}),
-      ...(b.ttn !== undefined ? { ttn: Array.isArray(b.ttn) ? b.ttn : [] } : {}),
+      ...(ttnList ? { ttn: ttnList } : {}),
       ...(b.sourceName !== undefined ? { sourceName: b.sourceName } : {}),
       ...(b.isRefused !== undefined ? { isRefused: !!b.isRefused } : {}),
     },
     include: ORDER_INCLUDE,
   });
-  res.json({ ok: true, data: order });
+  res.json({ ok: true, data: order, ...(stagePatch.stageId ? { movedToStage: order.stage?.name || null } : {}) });
+}));
+
+// Скасувати замовлення (2026-10-18): стадія «Скасовано», замовлення лишається в історії й аналітиці.
+router.post('/orders/:id/cancel', asyncHandler(async (req, res) => {
+  const r = await cancelOrder(req.tenant.id, req.params.id);
+  const order = await db.order.findFirst({ where: { id: r.order.id }, include: ORDER_INCLUDE });
+  res.json({ ok: true, data: order, stage: { id: r.stage.id, name: r.stage.name }, unchanged: !!r.unchanged });
+}));
+
+// Видалити помилково створене замовлення (2026-10-18) — лише без платежів, ТТН і повернень (інакше ValidationError → скасувати).
+router.delete('/orders/:id', asyncHandler(async (req, res) => {
+  res.json({ ok: true, data: await deleteOrder(req.tenant.id, req.params.id) });
 }));
 
 // Заміна позицій замовлення (2026-10-02): менеджер правит склад у картці замовлення («Редагувати» з Telegram), а Flows
@@ -245,10 +301,12 @@ function cleanComponent(c) {
   };
 }
 router.put('/orders/:id/items', asyncHandler(async (req, res) => {
-  const existing = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+  const existing = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id }, include: { items: { select: { productId: true, supplierId: true } } } });
   if (!existing) throw new NotFoundError('Order', req.params.id);
   const b = req.body || {};
   if (!Array.isArray(b.items) || !b.items.length) throw new ValidationError('Потрібна хоча б одна позиція');
+  // Постачальник позиції (2026-10-18): явно з форми; не передано (запис від воронки) → як було, інакше з каталогу.
+  const suppliers = await resolveItemSuppliers(req.tenant.id, b.items, existing.items);
   const items = b.items.map((it, i) => {
     const name = String((it && it.name) || '').trim();
     const price = Number(it && it.price);
@@ -268,12 +326,18 @@ router.put('/orders/:id/items', asyncHandler(async (req, res) => {
       properties: props.length ? props : undefined,
       components: comps.length ? comps : undefined,
       isUpsell: !!it.isUpsell,
+      supplierId: suppliers[i],
     };
   });
+  // «Повна передплата» йде за сумою замовлення — змінився склад, змінилась і передплата.
+  const orderData = {
+    ...(b.source === 'funnel' ? {} : { managerEditedAt: new Date() }),
+    ...(existing.paymentType === 'full' ? { prepaymentAmount: Math.round(itemsTotal(items) * 100) / 100 } : {}),
+  };
   await db.$transaction([
     db.orderItem.deleteMany({ where: { orderId: existing.id } }),
     db.orderItem.createMany({ data: items }),
-    ...(b.source === 'funnel' ? [] : [db.order.update({ where: { id: existing.id }, data: { managerEditedAt: new Date() } })]),
+    ...(Object.keys(orderData).length ? [db.order.update({ where: { id: existing.id }, data: orderData })] : []),
   ]);
   const order = await db.order.findFirst({ where: { id: existing.id }, include: ORDER_INCLUDE });
   res.json({ ok: true, data: order });
