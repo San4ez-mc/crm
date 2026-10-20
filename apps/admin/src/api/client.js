@@ -96,6 +96,7 @@ export const api = {
   setOrderAttribution: (id, data) => patch(`/orders/${id}/attribution`, data),
   replaceOrderItems: (id, items) => put(`/orders/${id}/items`, { items }),
   cancelOrder: (id) => post(`/orders/${id}/cancel`),
+  refreshOrderTtn: (id) => post(`/orders/${id}/ttn-refresh`),
   deleteOrder: (id) => del(`/orders/${id}`),
 
   listReturns: () => get('/returns'),

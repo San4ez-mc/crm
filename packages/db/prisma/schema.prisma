@@ -409,7 +409,9 @@ model Order {
   shipping       Json? // {city, warehouse, ...}
   ttn            String[]  @default([]) // може бути кілька номерів ТТН
   ttnStatus      String?
-  isRefused      Boolean   @default(false) // "Відмова" — клієнт не забрав/не оплатив на НП (§ дод. 2026-08-31).
+  ttnStatusAt    DateTime? // коли CRM востаннє спитала Нову пошту (lib/novaPoshta.js)
+  ttnEta         DateTime? // очікувана дата доставки за НП (ScheduledDeliveryDate)
+  isRefused     Boolean   @default(false) // "Відмова" — клієнт не забрав/не оплатив на НП (§ дод. 2026-08-31).
   // Фінансові наслідки відмови (хто платить за зворотну доставку тощо) ще не узгоджені —
   // тут лише факт відмови для підрахунку %, без прихованої логіки розподілу витрат.
   firstTouchAdId String?

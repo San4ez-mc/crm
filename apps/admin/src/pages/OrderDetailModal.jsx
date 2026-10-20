@@ -168,7 +168,11 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
     try { await api.updateOrder(order.id, { stageId }); onChanged(); } catch (e) { setError(e.message); }
   }
   async function refreshTtn() {
-    alert('Форс-запит до API Нової Пошти виконує окрема Flows-автоматизація — тут лише відображення останнього відомого статусу.');
+    try {
+      const r = await api.refreshOrderTtn(order.id);
+      if (r?.data?.skipped) setError(r.data.skipped);
+      onChanged();
+    } catch (e) { setError(e.message); }
   }
   async function toggleRefused() {
     try { await api.updateOrder(order.id, { isRefused: !order.isRefused }); onChanged(); } catch (e) { setError(e.message); }
@@ -267,6 +271,8 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
           <div className="mt-1 flex flex-wrap items-center gap-2">
             {order.ttn?.length ? order.ttn.map((t) => <Badge key={t}>{t}</Badge>) : <span className="text-slate-500">ТТН немає</span>}
             {order.ttnStatus && <Badge color="green">{order.ttnStatus}</Badge>}
+            {order.ttnEta && <span className="text-xs text-slate-400">доставка за НП: {new Date(order.ttnEta).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}</span>}
+            {order.ttnStatusAt && <span className="text-xs text-slate-500">перевірено {new Date(order.ttnStatusAt).toLocaleString('uk-UA', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
             <button onClick={refreshTtn} className="text-xs text-brand-light hover:underline">Оновити зараз</button>
           </div>
           <div className="mt-2 flex items-center gap-2">

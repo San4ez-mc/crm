@@ -8,6 +8,8 @@ const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
 const { igOrNull, igSearchTerm, normalizeInstagram } = require('../lib/instagram');
 const { itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList, shippedStagePatch, applyBuyerEdit, cancelOrder, deleteOrder } = require('../lib/orderOps');
+const { syncTtnStatuses } = require('../lib/novaPoshta');
+const logger = require('@crm/logger');
 
 const router = express.Router();
 
@@ -229,12 +231,33 @@ router.get('/orders/lookup-client', asyncHandler(async (req, res) => {
   if (igN) { or.push({ contactIg: { equals: igN, mode: 'insensitive' } }); or.push({ buyer: { is: { igUsername: { equals: igN, mode: 'insensitive' } } } }); }
   if (ph.length === 9) or.push({ buyer: { is: { phone: { contains: ph } } } });
   if (!or.length) return void res.json({ ok: true, data: null });
-  const o = await db.order.findFirst({
+  const find = () => db.order.findFirst({
     where: { tenantId: req.tenant.id, buyerId: { not: null }, OR: or },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, createdAt: true, ttn: true, ttnStatus: true, isRefused: true, funnelSessionId: true, stage: { select: { name: true } }, items: { select: { name: true, quantity: true, product: { select: { name: true, customerName: true } } } }, returns: { select: { id: true, type: true, status: true } } },
+    select: { id: true, createdAt: true, ttn: true, ttnStatus: true, ttnStatusAt: true, ttnEta: true, isRefused: true, funnelSessionId: true, stage: { select: { name: true } }, items: { select: { name: true, quantity: true, product: { select: { name: true, customerName: true } } } }, returns: { select: { id: true, type: true, status: true } } },
   });
+  let o = await find();
+  // Клієнт питає про замовлення — статус НП свіжий на момент відповіді (2026-10-20): старший за 10 хв → CRM питає НП сама.
+  // Стадію тут не рухаємо (це робить щогодинний /orders/ttn-sync зі сповіщенням менеджерам); НП не відповіла — віддаємо, що є.
+  if (o && o.ttn.length && (!o.ttnStatusAt || Date.now() - new Date(o.ttnStatusAt).getTime() > 10 * 60 * 1000)) {
+    try { const r = await syncTtnStatuses(req.tenant.id, { orderIds: [o.id], moveStages: false, timeoutMs: 3000 }); if (r.updated) o = await find(); }
+    catch (e) { logger.warn('lookup-client: НП не відповіла', { orderId: o.id, error: e.message }); }
+  }
   res.json({ ok: true, data: o || null });
+}));
+
+// Статуси Нової пошти всіх оформлених замовлень з ТТН (2026-10-20): CRM питає НП сама, пише статус, дату доставки й стадію.
+// Викликає щогодинний крон Flows (np-ttn-status-goverla) — він лише шле менеджерам підсумок із `moved`.
+router.post('/orders/ttn-sync', asyncHandler(async (req, res) => {
+  const r = await syncTtnStatuses(req.tenant.id, { maxAgeMs: Number((req.body || {}).maxAgeMs) || 0 });
+  res.json({ ok: true, data: r });
+}));
+// Кнопка «Оновити зараз» у картці замовлення.
+router.post('/orders/:id/ttn-refresh', asyncHandler(async (req, res) => {
+  const existing = await db.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id }, select: { id: true, ttn: true } });
+  if (!existing) throw new NotFoundError('Order', req.params.id);
+  if (!existing.ttn.length) throw new ValidationError('У замовлення немає ТТН');
+  res.json({ ok: true, data: await syncTtnStatuses(req.tenant.id, { orderIds: [existing.id] }) });
 }));
 
 router.get('/orders/:id', asyncHandler(async (req, res) => {
