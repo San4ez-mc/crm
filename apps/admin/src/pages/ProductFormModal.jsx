@@ -88,6 +88,7 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
   const [saveState, setSaveState] = useState({ status: 'idle', at: null }); // idle | saving | saved | error
   const [showNewSupplier, setShowNewSupplier] = useState(false);
   const [savedProductId, setSavedProductId] = useState(product?.id || null);
+  const [availAutoOff, setAvailAutoOff] = useState(false);
   // "Хто і коли вносив зміни" (2026-09-08) — картка робить кілька незалежних збережень
   // (товар/ціна постачальника/варіанти), тож стрічку історії треба перечитувати після КОЖНОГО.
   const [changeLogRefresh, setChangeLogRefresh] = useState(0);
@@ -158,6 +159,18 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
     const next = field === 'availableSizes' ? { ...offer, availableSizes: value, sizesCustomized: true } : { ...offer, [field]: value };
     setOffers(offers.map((o) => (o.id === offer.id ? next : o)));
     try { await api.updateOffer(offer.id, { [field]: value }); touchChangeLog(); } catch (e) { setError(e.message); }
+  }
+
+  // 2026-10-21 (власник): «Доступно завжди» і доступні розміри не мають суперечити. Змінили розміри кольору, поки галочка
+  // увімкнена, — отже розміри треба враховувати: знімаємо галочку одразу й зберігаємо (розміри зберігаються теж одразу).
+  async function turnOffAlwaysAvailable() {
+    if (!form.alwaysAvailable) return;
+    setForm((f) => ({ ...f, alwaysAvailable: false })); setAvailAutoOff(true);
+    if (savedProductId) { try { await api.updateProduct(savedProductId, { alwaysAvailable: false }); touchChangeLog(); } catch (e) { setError(e.message); } }
+  }
+  async function changeOfferSizes(offer, v) {
+    await turnOffAlwaysAvailable();
+    await updateOfferField(offer, 'availableSizes', v);
   }
 
   async function removeOffer(id) {
@@ -307,10 +320,11 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
               <Button type="button" variant="secondary" onClick={addOffer}>+ Варіант</Button>
             </div>
             <label className="mb-3 flex items-start gap-2 rounded-lg border border-slate-700 bg-slate-800/40 p-2 text-sm text-slate-300">
-              <input type="checkbox" className="mt-0.5" checked={form.alwaysAvailable} onChange={(e) => setForm({ ...form, alwaysAvailable: e.target.checked })} />
+              <input type="checkbox" className="mt-0.5" checked={form.alwaysAvailable} onChange={(e) => { setForm({ ...form, alwaysAvailable: e.target.checked }); setAvailAutoOff(false); }} />
               <span>
                 Доступно завжди
-                <div className="text-xs text-slate-500">Увімкнено (за замовчуванням) — доступні розміри нижче не враховуються, товар завжди пропонується клієнту повністю. Вимкнете — тоді бот дивиться, які розміри позначені доступними в обраному кольорі.</div>
+                <div className="text-xs text-slate-500">Увімкнено — доступні розміри нижче не враховуються, товар завжди пропонується клієнту повністю. Змінили доступні розміри в будь-якому кольорі — галочка знімається сама, і бот далі дивиться на позначені розміри.</div>
+                {availAutoOff && <div className="mt-1 text-xs text-amber-400">Галочку знято автоматично: ви змінили доступні розміри — тепер бот їх враховує.</div>}
               </span>
             </label>
             {!savedProductId && <p className="text-xs text-slate-500">Спершу збережіть товар, щоб додавати варіанти.</p>}
@@ -335,12 +349,14 @@ export default function ProductFormModal({ product, categories, suppliers, allPr
                     {form.sizes.length === 0 ? (
                       <p className="text-xs text-slate-500">Спершу додайте розміри товару вище.</p>
                     ) : (
-                      <AvailableSizesToggle
-                        productSizes={form.sizes}
-                        value={offer.availableSizes || []}
-                        customized={!!offer.sizesCustomized}
-                        onChange={(v) => updateOfferField(offer, 'availableSizes', v)}
-                      />
+                      <div className={form.alwaysAvailable ? 'opacity-50' : ''} title={form.alwaysAvailable ? 'Зараз не враховуються: увімкнено «Доступно завжди». Змініть розмір — галочка зніметься сама.' : undefined}>
+                        <AvailableSizesToggle
+                          productSizes={form.sizes}
+                          value={offer.availableSizes || []}
+                          customized={!!offer.sizesCustomized}
+                          onChange={(v) => changeOfferSizes(offer, v)}
+                        />
+                      </div>
                     )}
                   </Field>
                   <Field label="Фото цього варіанту">

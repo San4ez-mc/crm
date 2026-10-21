@@ -66,6 +66,7 @@ const TOOLS = [
   { name: 'list_tenants', description: 'Список усіх магазинів (tenants) СРМ.', inputSchema: { type: 'object', properties: {} } },
   { name: 'get_tenant', description: 'Деталі одного tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
   { name: 'update_tenant_sizes', description: 'Загальна сітка підбору розміру магазину (зріст/вага) і межі від експерта — для категорій і товарів без власних (бот: товар → категорія → магазин).', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, fitChart: { type: 'object', description: '{"S":{"height":[160,175],"weight":[55,65]},…}; null — очистити' }, sizeRules: { type: 'array', items: { type: 'object', properties: { size: { type: 'string' }, wMin: { type: 'number' }, wMax: { type: 'number' }, hMin: { type: 'number' }, hMax: { type: 'number' }, note: { type: 'string' } } }, description: 'Межі: перше правило, що збіглося, перекриває сітку' } }, required: ['tenantId'] } },
+  { name: 'update_tenant_shop_profile', description: 'Умови й тип магазину для бота (те саме, що «Налаштування → Загальні → Магазин для бота»): shopDescription — хто ми для ШІ («Instagram-магазин чоловічого одягу»); prepaymentAmount — передоплата за часткової оплати, грн; shippingTerms — терміни відправки словами.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, shopDescription: { type: 'string' }, prepaymentAmount: { type: 'number' }, shippingTerms: { type: 'string' } }, required: ['tenantId'] } },
   { name: 'new_tenant', description: 'Створити новий магазин (tenant).', inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
 
   // ── Category §4.5 ────────────────────────────────────────────────────
@@ -139,6 +140,10 @@ async function callTool(name, args = {}) {
     }
     case 'update_tenant_sizes':
       return db.tenant.update({ where: { id: args.tenantId }, data: { ...(args.fitChart !== undefined ? { fitChart: normalizeFitChart(args.fitChart) } : {}), ...(args.sizeRules !== undefined ? { sizeRules: normalizeSizeRules(args.sizeRules) } : {}) }, select: { id: true, name: true, fitChart: true, sizeRules: true } });
+    case 'update_tenant_shop_profile': {
+      if (args.prepaymentAmount !== undefined && args.prepaymentAmount !== null && !(Number(args.prepaymentAmount) > 0)) throw new ValidationError('Передоплата має бути більшою за 0');
+      return db.tenant.update({ where: { id: args.tenantId }, data: { ...(args.shopDescription !== undefined ? { shopDescription: String(args.shopDescription || '').trim() || null } : {}), ...(args.prepaymentAmount !== undefined ? { prepaymentAmount: args.prepaymentAmount === null ? null : Number(args.prepaymentAmount) } : {}), ...(args.shippingTerms !== undefined ? { shippingTerms: String(args.shippingTerms || '').trim() || null } : {}) }, select: { id: true, name: true, shopDescription: true, prepaymentAmount: true, shippingTerms: true } });
+    }
     case 'new_tenant':
       if (!args.name) throw new ValidationError('name обовʼязкове');
       return db.tenant.create({ data: { name: args.name } });
@@ -316,7 +321,7 @@ async function callTool(name, args = {}) {
       if (!Array.isArray(args.items) || !args.items.length) throw new ValidationError('items[] обовʼязкові (хоча б одна позиція)');
       const items = await mcpOrderItems(args.tenantId, args.items);
       const suppliers = await ops.resolveItemSuppliers(args.tenantId, items);
-      const pay = ops.paymentFields(args, ops.itemsTotal(items));
+      const pay = ops.paymentFields(args, ops.itemsTotal(items), null, (await db.tenant.findUnique({ where: { id: args.tenantId }, select: { prepaymentAmount: true } }))?.prepaymentAmount);
       const ig = args.buyer ? igOrNull(args.buyer.igUsername) : null;
       let buyerId = null;
       if (args.buyer && args.buyer.phone) {
@@ -363,7 +368,7 @@ async function callTool(name, args = {}) {
       }
       const total = ops.itemsTotal(newItems || existing.items);
       // «Повна передплата» йде за сумою: змінився склад без явного способу оплати — перераховуємо.
-      const pay = ops.paymentFields(args.paymentType === undefined && args.prepaymentAmount === undefined && newItems && existing.paymentType === 'full' ? { paymentType: 'full' } : args, total, existing);
+      const pay = ops.paymentFields(args.paymentType === undefined && args.prepaymentAmount === undefined && newItems && existing.paymentType === 'full' ? { paymentType: 'full' } : args, total, existing, (await db.tenant.findUnique({ where: { id: args.tenantId }, select: { prepaymentAmount: true } }))?.prepaymentAmount);
       const stageId = args.stageId !== undefined ? await mcpTenantStage(args.tenantId, args.stageId) : undefined;
       const ttnList = args.ttn !== undefined ? ops.parseTtnList(args.ttn) : null;
       const stagePatch = ttnList && stageId === undefined && !args.cancel ? await ops.shippedStagePatch(args.tenantId, existing, existing.ttn, ttnList) : {};

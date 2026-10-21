@@ -20,8 +20,15 @@ router.get('/tenant', asyncHandler(async (req, res) => {
       usdExchangeRate: t.usdExchangeRate, usdExchangeRateUpdatedAt: t.usdExchangeRateUpdatedAt,
       dailyFixedCosts: t.dailyFixedCosts, dailyPayrollCosts: t.dailyPayrollCosts,
       fitChart: t.fitChart || null, sizeRules: Array.isArray(t.sizeRules) ? t.sizeRules : [],
+      shopDescription: t.shopDescription || '', prepaymentAmount: t.prepaymentAmount, shippingTerms: t.shippingTerms || '',
     },
   });
+}));
+
+// Умови й тип магазину — для бота (Flows): що він каже клієнту про передоплату й відправку, ким себе вважає в промптах.
+router.get('/tenant/shop-profile', asyncHandler(async (req, res) => {
+  const t = await db.tenant.findUnique({ where: { id: req.tenant.id }, select: { name: true, shopDescription: true, prepaymentAmount: true, shippingTerms: true } });
+  res.json({ ok: true, data: { name: t.name, shopDescription: t.shopDescription || '', prepaymentAmount: t.prepaymentAmount != null ? Number(t.prepaymentAmount) : null, shippingTerms: t.shippingTerms || '' } });
 }));
 
 // Загальна сітка розмірів магазину — для бота (Flows productMatch): лише два поля, без побічних дій GET /tenant (курс НБУ).
@@ -31,7 +38,8 @@ router.get('/tenant/size-fit', asyncHandler(async (req, res) => {
 }));
 
 router.patch('/tenant', asyncHandler(async (req, res) => {
-  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts, fitChart, sizeRules } = req.body || {};
+  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts, fitChart, sizeRules, shopDescription, prepaymentAmount, shippingTerms } = req.body || {};
+  if (prepaymentAmount !== undefined && prepaymentAmount !== null && prepaymentAmount !== '' && !(Number(prepaymentAmount) > 0)) throw new ValidationError('Передоплата має бути більшою за 0');
   if (name !== undefined && !String(name).trim()) throw new ValidationError('name не може бути порожнім');
   const tenant = await db.tenant.update({
     where: { id: req.tenant.id },
@@ -45,6 +53,9 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
       ...(dailyPayrollCosts !== undefined ? { dailyPayrollCosts } : {}),
       ...(fitChart !== undefined ? { fitChart: normalizeFitChart(fitChart) } : {}),
       ...(sizeRules !== undefined ? { sizeRules: normalizeSizeRules(sizeRules) } : {}),
+      ...(shopDescription !== undefined ? { shopDescription: String(shopDescription || '').trim() || null } : {}),
+      ...(prepaymentAmount !== undefined ? { prepaymentAmount: prepaymentAmount === null || prepaymentAmount === '' ? null : Number(prepaymentAmount) } : {}),
+      ...(shippingTerms !== undefined ? { shippingTerms: String(shippingTerms || '').trim() || null } : {}),
     },
   });
   res.json({
@@ -54,6 +65,7 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
       usdExchangeRate: tenant.usdExchangeRate, usdExchangeRateUpdatedAt: tenant.usdExchangeRateUpdatedAt,
       dailyFixedCosts: tenant.dailyFixedCosts, dailyPayrollCosts: tenant.dailyPayrollCosts,
       fitChart: tenant.fitChart || null, sizeRules: Array.isArray(tenant.sizeRules) ? tenant.sizeRules : [],
+      shopDescription: tenant.shopDescription || '', prepaymentAmount: tenant.prepaymentAmount, shippingTerms: tenant.shippingTerms || '',
     },
   });
 }));

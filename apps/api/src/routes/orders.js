@@ -130,7 +130,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
   }
   // Позиції: постачальник кожної (явно або з каталогу) і сума — для полів оплати.
   const itemSuppliers = await resolveItemSuppliers(req.tenant.id, b.items);
-  const payFields = paymentFields(b, itemsTotal(b.items));
+  const payFields = paymentFields(b, itemsTotal(b.items), null, req.tenant.prepaymentAmount);
   const itemsCreate = b.items.map((it, i) => ({
     productId: it.productId || null,
     offerId: it.offerId || null,
@@ -271,7 +271,7 @@ router.patch('/orders/:id', asyncHandler(async (req, res) => {
   if (!existing) throw new NotFoundError('Order', req.params.id);
   const b = req.body || {};
   // Оплата (2026-10-18): спосіб + передплата; «повна» = сума позицій замовлення.
-  const payFields = paymentFields(b, itemsTotal(existing.items), existing);
+  const payFields = paymentFields(b, itemsTotal(existing.items), existing, req.tenant.prepaymentAmount);
   // ТТН: рядок або масив, замінює список. Нова ТТН → «Відправлено», якщо замовлення туди ще не дійшло і стадію не задано явно.
   const ttnList = b.ttn !== undefined ? parseTtnList(b.ttn) : null;
   const stagePatch = ttnList && b.stageId === undefined ? await shippedStagePatch(req.tenant.id, existing, existing.ttn, ttnList) : {};

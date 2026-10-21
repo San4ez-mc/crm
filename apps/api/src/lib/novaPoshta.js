@@ -5,8 +5,9 @@
 // 100 номерів, статус + очікувана дата доставки в замовлення, стадія — лише вперед.
 //
 // Коди НП (TrackingDocument.getStatusDocuments, перевірено живими ТТН 12.09): 1 — створена, не передана; 2 — видалена;
-// 3 — не знайдена; 4/41/5/6/101/104/112 — у дорозі; 7/8 — у відділенні/поштоматі; 9/10/11 (або RecipientDateTime) — отримана;
-// 102/103/106/108 — відмова/повернення (стадію не чіпаємо — це рішення менеджера).
+// 3 — не знайдена; 4/41/5/6/101/104/112 — у дорозі; 7/8 — у відділенні/поштоматі; 9/10/11/106 (або RecipientDateTime) — отримана
+// (106 — «одержано і створено ЄН зворотної доставки», тобто посилку забрали); 102/103/108 — відмова одержувача: стадію не чіпаємо
+// (рішення менеджера), але ставимо позначку «Відмова» (isRefused) — власник 21.10: «так, ставити автоматично».
 const { db } = require('@crm/db');
 const logger = require('@crm/logger');
 const { findStage } = require('./orderOps');
@@ -38,10 +39,11 @@ async function npStatuses(apiKey, ttns, timeoutMs = 8000) {
 }
 
 /** Що означає статус НП для стадії: picked | arrived | moving | null (створена/видалена/не знайдена/відмова — стадію не рухаємо). */
+const REFUSED_CODES = ['102', '103', '108'];
 function npOutcome(d) {
   const code = String(d && d.StatusCode || '');
-  if (['102', '103', '106', '108'].includes(code)) return null;
-  if ((d.RecipientDateTime && String(d.RecipientDateTime).trim()) || ['9', '10', '11'].includes(code)) return 'picked';
+  if (REFUSED_CODES.includes(code)) return null;
+  if ((d.RecipientDateTime && String(d.RecipientDateTime).trim()) || ['9', '10', '11', '106'].includes(code)) return 'picked';
   if (['7', '8'].includes(code)) return 'arrived';
   if (['4', '41', '5', '6', '101', '104', '112'].includes(code)) return 'moving';
   return null;
@@ -72,7 +74,7 @@ async function outcomeStages(tenantId) {
 /**
  * Оновити статуси ТТН замовлень магазину з Нової пошти.
  * opts.orderIds — лише ці замовлення; opts.maxAgeMs — пропускати, якщо статус свіжіший; opts.moveStages (за замовч. true).
- * Повертає {checked, updated, moved:[{orderId, ttn, to, name}], skipped?}.
+ * Повертає {checked, updated, refused?, moved:[{orderId, ttn, to, name}], skipped?}.
  */
 async function syncTtnStatuses(tenantId, opts = {}) {
   const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { novaPoshtaApiKey: true } });
@@ -81,7 +83,7 @@ async function syncTtnStatuses(tenantId, opts = {}) {
   const where = { tenantId, buyerId: { not: null }, ttn: { isEmpty: false }, createdAt: { gt: new Date(Date.now() - LOOKBACK_DAYS * 864e5) } };
   if (Array.isArray(opts.orderIds)) where.id = { in: opts.orderIds };
   if (opts.maxAgeMs) where.OR = [{ ttnStatusAt: null }, { ttnStatusAt: { lt: new Date(Date.now() - opts.maxAgeMs) } }];
-  const orders = await db.order.findMany({ where, select: { id: true, ttn: true, ttnStatus: true, stageId: true, stage: { select: { name: true } }, contactName: true, buyer: { select: { fullName: true } } } });
+  const orders = await db.order.findMany({ where, select: { id: true, ttn: true, ttnStatus: true, isRefused: true, stageId: true, stage: { select: { name: true } }, contactName: true, buyer: { select: { fullName: true } } } });
   if (!orders.length) return { checked: 0, updated: 0, moved: [] };
   const lastTtn = (o) => String(o.ttn[o.ttn.length - 1]);
   const docs = await npStatuses(apiKey, [...new Set(orders.map(lastTtn))], opts.timeoutMs);
@@ -93,6 +95,8 @@ async function syncTtnStatuses(tenantId, opts = {}) {
     if (!d) continue;
     res.checked++;
     const data = { ttnStatus: String(d.Status || '').trim() || o.ttnStatus, ttnStatusAt: new Date(), ttnEta: npDate(d.ScheduledDeliveryDate) || npDate(d.ActualDeliveryDate) };
+    // Відмову за НП позначаємо самі; зняти позначку — лише менеджер (CRM її не знімає, навіть якщо статус потім зміниться).
+    if (REFUSED_CODES.includes(String(d.StatusCode || '')) && !o.isRefused) { data.isRefused = true; res.refused = (res.refused || 0) + 1; }
     const outcome = npOutcome(d);
     const cur = String((o.stage && o.stage.name) || '').trim().toLowerCase();
     const target = stages && outcome ? stages[outcome] : null;

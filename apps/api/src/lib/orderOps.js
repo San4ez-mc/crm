@@ -17,9 +17,10 @@ function itemsTotal(items) {
 /**
  * Поля оплати для запису в Order. b = {paymentType?, prepaymentAmount?}; total — сума позицій замовлення;
  * existing — поточне замовлення (для часткового оновлення). Нічого не передано → {} (не чіпаємо).
- * full → передплата = сума замовлення; cod → 0; partial → вказана сума (за замовчуванням 200 грн), не більша за суму.
+ * full → передплата = сума замовлення; cod → 0; partial → вказана сума (за замовчуванням — передоплата з налаштувань магазину,
+ * defaultPrepayment; не задано — 200 грн), не більша за суму.
  */
-function paymentFields(b, total, existing = null) {
+function paymentFields(b, total, existing = null, defaultPrepayment = null) {
   const hasType = b.paymentType !== undefined;
   const hasAmount = b.prepaymentAmount !== undefined;
   if (!hasType && !hasAmount) return {};
@@ -31,7 +32,7 @@ function paymentFields(b, total, existing = null) {
   let amount;
   if (hasAmount && b.prepaymentAmount !== null && b.prepaymentAmount !== '') amount = Number(b.prepaymentAmount);
   else if (existing?.paymentType === 'partial' && existing.prepaymentAmount != null) amount = Number(existing.prepaymentAmount);
-  else amount = DEFAULT_PREPAYMENT;
+  else amount = Number(defaultPrepayment) > 0 ? Number(defaultPrepayment) : DEFAULT_PREPAYMENT; // налаштування магазину, інакше 200
   if (!Number.isFinite(amount) || amount <= 0) throw new ValidationError('Сума передплати має бути більшою за 0');
   if (total > 0 && amount > total) throw new ValidationError(`Передплата ${amount} грн більша за суму замовлення ${round2(total)} грн — оберіть «Повна передплата»`);
   return { paymentType: type, prepaymentAmount: round2(amount) };

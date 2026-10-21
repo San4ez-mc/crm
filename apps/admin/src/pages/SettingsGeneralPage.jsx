@@ -1,9 +1,10 @@
 // §9.16 Налаштування — Загальні: назва магазину, API-ключ (показати/перегенерувати),
 // + фінансові вхідні для щоденної аналітики (курс, постійні витрати, ЗП)
 // + розміри за замовчуванням (2026-10-18): загальна сітка магазину й межі для категорій/товарів без власних.
+// + магазин для бота (2026-10-21): тип магазину для ШІ, передоплата, терміни відправки — бот бере їх звідси, а не з коду.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Field, Input, Button, ErrorBanner, formatDateTime } from '../components/common/Common';
+import { PageHeader, Card, Field, Input, Textarea, Button, ErrorBanner, formatDateTime } from '../components/common/Common';
 import SizeFitEditor, { fitChartToRows } from '../components/common/SizeFitEditor';
 
 export default function SettingsGeneralPage() {
@@ -18,6 +19,8 @@ export default function SettingsGeneralPage() {
   const [fitRows, setFitRows] = useState([]);
   const [sizeRules, setSizeRules] = useState([]);
   const [sizesSaved, setSizesSaved] = useState(false);
+  const [shop, setShop] = useState({ shopDescription: '', prepaymentAmount: '', shippingTerms: '' });
+  const [shopSaved, setShopSaved] = useState(false);
 
   async function load() {
     try {
@@ -29,6 +32,7 @@ export default function SettingsGeneralPage() {
         dailyPayrollCosts: data.dailyPayrollCosts ?? '',
       });
       setFitRows(fitChartToRows(data.fitChart)); setSizeRules(Array.isArray(data.sizeRules) ? data.sizeRules : []);
+      setShop({ shopDescription: data.shopDescription || '', prepaymentAmount: data.prepaymentAmount ?? '', shippingTerms: data.shippingTerms || '' });
     } catch (e) { setError(e.message); }
   }
   useEffect(() => { load(); }, []);
@@ -61,6 +65,14 @@ export default function SettingsGeneralPage() {
     setError(''); setSizesSaved(false);
     try { await api.updateTenantSettings({ fitChart: fitRows.length ? fitRows : null, sizeRules }); setSizesSaved(true); load(); }
     catch (e) { setError(e.message); }
+  }
+
+  async function saveShop() {
+    setError(''); setShopSaved(false);
+    try {
+      await api.updateTenantSettings({ shopDescription: shop.shopDescription, prepaymentAmount: shop.prepaymentAmount === '' ? null : Number(shop.prepaymentAmount), shippingTerms: shop.shippingTerms });
+      setShopSaved(true); load();
+    } catch (e) { setError(e.message); }
   }
 
   async function regenerate() {
@@ -118,6 +130,22 @@ export default function SettingsGeneralPage() {
           </div>
         </Card>
       </div>
+
+      <Card className="p-5">
+        <h3 className="mb-1 text-sm font-semibold">Магазин для бота</h3>
+        <p className="mb-4 text-xs text-slate-500">
+          Бот бере ці умови звідси й називає їх клієнтам. Порожнє поле — бот не називає цю умову (не вигадує).
+        </p>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Field label="Хто ми (для ШІ)"><Input placeholder="Instagram-магазин чоловічого одягу" value={shop.shopDescription} onChange={(e) => setShop({ ...shop, shopDescription: e.target.value })} /></Field>
+          <Field label="Передоплата за часткової оплати, грн"><Input type="number" step="1" placeholder="200" value={shop.prepaymentAmount} onChange={(e) => setShop({ ...shop, prepaymentAmount: e.target.value })} /></Field>
+        </div>
+        <Field label="Терміни відправки (як бот скаже клієнту)"><Textarea rows={2} placeholder="Відправка — до 5 робочих днів з моменту оформлення (субота й неділя — вихідні)" value={shop.shippingTerms} onChange={(e) => setShop({ ...shop, shippingTerms: e.target.value })} /></Field>
+        <div className="mt-2 flex items-center gap-2">
+          <Button onClick={saveShop}>Зберегти</Button>
+          {shopSaved && <span className="text-xs text-emerald-400">Збережено</span>}
+        </div>
+      </Card>
 
       <Card className="p-5">
         <h3 className="mb-1 text-sm font-semibold">Розміри за замовчуванням</h3>
