@@ -96,6 +96,8 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
     igUsername: order.buyer?.igUsername || order.contactIg || '',
   };
   const [buyer, setBuyer] = useState(initialBuyer);
+  // Отримувач — зазвичай сам покупець (Edits a39d6416: імʼя й телефон двічі плутали менеджерів); окремі поля — лише для іншої людини.
+  const [otherRecipient, setOtherRecipient] = useState(() => !!((sh.recipientFullName && sh.recipientFullName !== initialBuyer.fullName) || (sh.recipientPhone && sh.recipientPhone !== initialBuyer.phone)));
   const [payment, setPayment] = useState(() => paymentFromOrder(order));
   const [ttn, setTtn] = useState((order.ttn || []).join(', '));
   const [suppliers, setSuppliers] = useState([]);
@@ -139,7 +141,6 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
     setError('');
     if (!items.length) { setError('У замовленні має лишитись хоча б одна позиція'); return; }
     if (items.some((it) => !it.name.trim())) { setError('Оберіть товар у кожному рядку'); return; }
-    if (!shipping.city.trim() || !shipping.branch.trim()) { setError('Вкажіть місто й відділення Нової Пошти'); return; }
     const ig = buyer.igUsername.trim() ? normalizeInstagram(buyer.igUsername) : '';
     if (buyer.igUsername.trim() && !ig) { setError('Не вдалося розпізнати Instagram — вставте посилання на профіль або нікнейм'); return; }
     if (order.buyer && !buyer.phone.trim()) { setError('Телефон покупця не може бути порожнім'); return; }
@@ -170,7 +171,10 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
       });
       await api.replaceOrderItems(order.id, payload);
       const r = await api.updateOrder(order.id, {
-        shipping: { ...sh, shippingService: sh.shippingService || 'Нова Пошта', ...shipping, warehouse: shipping.branch },
+        shipping: {
+          ...sh, shippingService: sh.shippingService || 'Нова Пошта', ...shipping, warehouse: shipping.branch,
+          ...(otherRecipient ? {} : { recipientFullName: buyer.fullName.trim(), recipientPhone: buyer.phone.trim() }),
+        },
         ...paymentPayload(payment),
         ttn,
         ...(buyerChanged ? { buyer: { fullName: buyer.fullName.trim(), igUsername: ig, ...(buyer.phone.trim() ? { phone: buyer.phone.trim() } : {}) } } : {}),
@@ -242,13 +246,25 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
       </section>
 
       <section>
-        <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Доставка (Нова Пошта)</h4>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          <Input placeholder="ПІБ отримувача" value={shipping.recipientFullName} onChange={(e) => setShipping({ ...shipping, recipientFullName: e.target.value })} />
-          <Input placeholder="Телефон" value={shipping.recipientPhone} onChange={(e) => setShipping({ ...shipping, recipientPhone: e.target.value })} />
-          <Input placeholder="Місто" value={shipping.city} onChange={(e) => setShipping({ ...shipping, city: e.target.value })} />
-          <Input placeholder="Відділення / поштомат (номер)" value={shipping.branch} onChange={(e) => setShipping({ ...shipping, branch: e.target.value })} />
-        </div>
+        <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Отримувач</h4>
+        <label className="flex items-center gap-2 text-xs text-slate-400">
+          <input type="checkbox" checked={otherRecipient} onChange={(e) => setOtherRecipient(e.target.checked)} />
+          Отримує інша людина (не покупець)
+        </label>
+        {otherRecipient && (
+          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+            <Input placeholder="ПІБ отримувача" value={shipping.recipientFullName} onChange={(e) => setShipping({ ...shipping, recipientFullName: e.target.value })} />
+            <Input placeholder="Телефон отримувача" value={shipping.recipientPhone} onChange={(e) => setShipping({ ...shipping, recipientPhone: e.target.value })} />
+          </div>
+        )}
+        {/* Місто й відділення CRM не потрібні (Edits a39d6416/57d02912) — лише для кнопки «Оформити постачальнику» в Telegram. */}
+        <details className="mt-2 text-xs text-slate-400" open={!!(shipping.city || shipping.branch)}>
+          <summary className="cursor-pointer">Адреса Нової Пошти (необовʼязково)</summary>
+          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+            <Input placeholder="Місто" value={shipping.city} onChange={(e) => setShipping({ ...shipping, city: e.target.value })} />
+            <Input placeholder="Відділення / поштомат (номер)" value={shipping.branch} onChange={(e) => setShipping({ ...shipping, branch: e.target.value })} />
+          </div>
+        </details>
       </section>
 
       <section>

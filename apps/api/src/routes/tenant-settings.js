@@ -20,7 +20,7 @@ router.get('/tenant', asyncHandler(async (req, res) => {
       usdExchangeRate: t.usdExchangeRate, usdExchangeRateUpdatedAt: t.usdExchangeRateUpdatedAt,
       dailyFixedCosts: t.dailyFixedCosts, dailyPayrollCosts: t.dailyPayrollCosts,
       fitChart: t.fitChart || null, sizeRules: Array.isArray(t.sizeRules) ? t.sizeRules : [],
-      shopDescription: t.shopDescription || '', prepaymentAmount: t.prepaymentAmount, shippingTerms: t.shippingTerms || '',
+      shopDescription: t.shopDescription || '', prepaymentAmount: t.prepaymentAmount, shippingTerms: t.shippingTerms || '', expectedRefusalPct: t.expectedRefusalPct,
     },
   });
 }));
@@ -38,7 +38,8 @@ router.get('/tenant/size-fit', asyncHandler(async (req, res) => {
 }));
 
 router.patch('/tenant', asyncHandler(async (req, res) => {
-  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts, fitChart, sizeRules, shopDescription, prepaymentAmount, shippingTerms } = req.body || {};
+  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts, fitChart, sizeRules, shopDescription, prepaymentAmount, shippingTerms, expectedRefusalPct } = req.body || {};
+  if (expectedRefusalPct !== undefined && expectedRefusalPct !== null && expectedRefusalPct !== '' && !(Number(expectedRefusalPct) >= 0 && Number(expectedRefusalPct) < 100)) throw new ValidationError('Очікувані відмови — від 0 до 99 %');
   if (prepaymentAmount !== undefined && prepaymentAmount !== null && prepaymentAmount !== '' && !(Number(prepaymentAmount) > 0)) throw new ValidationError('Передоплата має бути більшою за 0');
   if (name !== undefined && !String(name).trim()) throw new ValidationError('name не може бути порожнім');
   const tenant = await db.tenant.update({
@@ -55,6 +56,8 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
       ...(sizeRules !== undefined ? { sizeRules: normalizeSizeRules(sizeRules) } : {}),
       ...(shopDescription !== undefined ? { shopDescription: String(shopDescription || '').trim() || null } : {}),
       ...(prepaymentAmount !== undefined ? { prepaymentAmount: prepaymentAmount === null || prepaymentAmount === '' ? null : Number(prepaymentAmount) } : {}),
+      // Очікувані відмови й повернення, % — «з відмовами» у звіті реклами (Edits 537c402a); порожньо = 23.
+      ...(expectedRefusalPct !== undefined ? { expectedRefusalPct: expectedRefusalPct === null || expectedRefusalPct === '' ? null : Number(expectedRefusalPct) } : {}),
       ...(shippingTerms !== undefined ? { shippingTerms: String(shippingTerms || '').trim() || null } : {}),
     },
   });
@@ -65,7 +68,7 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
       usdExchangeRate: tenant.usdExchangeRate, usdExchangeRateUpdatedAt: tenant.usdExchangeRateUpdatedAt,
       dailyFixedCosts: tenant.dailyFixedCosts, dailyPayrollCosts: tenant.dailyPayrollCosts,
       fitChart: tenant.fitChart || null, sizeRules: Array.isArray(tenant.sizeRules) ? tenant.sizeRules : [],
-      shopDescription: tenant.shopDescription || '', prepaymentAmount: tenant.prepaymentAmount, shippingTerms: tenant.shippingTerms || '',
+      shopDescription: tenant.shopDescription || '', prepaymentAmount: tenant.prepaymentAmount, shippingTerms: tenant.shippingTerms || '', expectedRefusalPct: tenant.expectedRefusalPct,
     },
   });
 }));

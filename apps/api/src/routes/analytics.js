@@ -6,7 +6,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { parseFrom, parseTo, kyivDayKey, dayRange } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf } = require('../lib/margin');
 const { ensureFreshUsdRate, rowToUAH, adSpendUAHByProduct } = require('../lib/currency');
 const { ValidationError } = require('@crm/errors');
 
@@ -16,13 +16,18 @@ function periodWhere(from, to) {
   if (!from && !to) return {};
   return { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } };
 }
+// Оформлені замовлення — за датою оформлення (lib/margin placedAtOf); periodWhere — для карток розмов і повернень.
+function placedWhere(from, to) {
+  if (!from && !to) return {};
+  return { placedAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } };
+}
 
 // ── §6.1 Топ товарів за продажами ────────────────────────────────────────
 router.get('/analytics/top-products', asyncHandler(async (req, res) => {
   const { from, to, includeUpsells } = req.query;
   const items = await db.orderItem.findMany({
     where: {
-      order: { tenantId: req.tenant.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE },
+      order: { tenantId: req.tenant.id, ...placedWhere(from, to), ...REAL_SALE_ORDER_WHERE },
       ...(includeUpsells === 'true' ? {} : { isUpsell: false }),
     },
     include: { product: { select: { id: true, name: true, sku: true } } },
@@ -56,7 +61,7 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
   // з 9 з'єднань): пул вичерпувався, сторінка «Аналітика» падала й тягнула за собою весь CRM (тайм-аути в інших запитах).
   // Тепер — по одному агрегованому запиту на показник для всіх оголошень, далі зводимо в памʼяті. Результат той самий.
   const tenantAds = { tenantId: req.tenant.id };
-  const orderWhere = { tenantId: req.tenant.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE };
+  const orderWhere = { tenantId: req.tenant.id, ...placedWhere(from, to), ...REAL_SALE_ORDER_WHERE };
   const [clickRows, spendRows, firstRows, lastRows, revenueOrders] = await Promise.all([
     // «Кліки» (наші) = розмови, які почались із цієї реклами (картки воронки з firstTouchAdId). Раніше — порожня таблиця AdClick.
     db.order.groupBy({ by: ['firstTouchAdId'], where: { tenantId: req.tenant.id, ...periodWhere(from, to), ...LEAD_WHERE, firstTouchAdId: { not: null } }, _count: { _all: true } }).then((rows) => rows.map((r) => ({ adId: r.firstTouchAdId, _count: r._count }))),
@@ -125,7 +130,7 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     where: { tenantId: req.tenant.id },
     include: {
       productExpense: true,
-      orderItems: { where: { order: { ...REAL_SALE_ORDER_WHERE, ...periodWhere(from, to) } }, include: { order: { select: { isRefused: true, createdAt: true } } } },
+      orderItems: { where: { order: { ...REAL_SALE_ORDER_WHERE, ...placedWhere(from, to) } }, include: { order: { select: { isRefused: true, createdAt: true, placedAt: true } } } },
     },
   });
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
@@ -140,10 +145,10 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     // Собівартість за ціною постачальника, що діяла на дату КОЖНОГО замовлення (не поточною) —
     // той самий принцип, що marginPerOrderItem, щоб managerCost-residual нижче був коректним.
     const exp = expenseByProduct.get(p.id);
-    const cogsTotal = p.orderItems.reduce((s, it) => s + cogsAt(exp, it.order.createdAt) * it.quantity, 0);
+    const cogsTotal = p.orderItems.reduce((s, it) => s + cogsAt(exp, placedAtOf(it.order)) * it.quantity, 0);
     // ЗП менеджера — per-item через спільну формулу (10% від націнки, 0 за відмову),
     // не флет-формула по всій виручці товару (2026-09-05, правило власника).
-    const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, it.order.createdAt), 0);
+    const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, placedAtOf(it.order)), 0);
     const managerCost = revenue - cogsTotal - marginBeforeAdSpend;
     const margin = marginBeforeAdSpend - adSpend;
     return { productId: p.id, name: p.name, sku: p.sku, revenue, qty, adSpend, cogs: cogsTotal, managerCost, margin, marginPercent: revenue > 0 ? (margin / revenue) * 100 : null };
@@ -157,7 +162,7 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
 router.get('/analytics/upsells', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const orders = await db.order.findMany({
-    where: { tenantId: req.tenant.id, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE },
+    where: { tenantId: req.tenant.id, ...placedWhere(from, to), ...REAL_SALE_ORDER_WHERE },
     include: { items: { include: { product: { select: { id: true, name: true } } } } },
   });
 
@@ -197,14 +202,14 @@ router.get('/analytics/upsells', asyncHandler(async (req, res) => {
 router.get('/analytics/time-to-purchase', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const orders = await db.order.findMany({
-    where: { tenantId: req.tenant.id, firstTouchAt: { not: null }, ...periodWhere(from, to), ...REAL_SALE_ORDER_WHERE },
-    select: { id: true, createdAt: true, firstTouchAt: true, firstTouchAdId: true, items: { select: { productId: true }, take: 1 } },
+    where: { tenantId: req.tenant.id, firstTouchAt: { not: null }, ...placedWhere(from, to), ...REAL_SALE_ORDER_WHERE },
+    select: { id: true, createdAt: true, placedAt: true, firstTouchAt: true, firstTouchAdId: true, items: { select: { productId: true }, take: 1 } },
   });
-  const diffsMinutes = orders.map((o) => (o.createdAt.getTime() - o.firstTouchAt.getTime()) / 60000);
+  const diffsMinutes = orders.map((o) => (placedAtOf(o).getTime() - o.firstTouchAt.getTime()) / 60000);
   const overall = summarize(diffsMinutes);
 
-  const byAd = groupSummarize(orders.map((o) => ({ key: o.firstTouchAdId, minutes: (o.createdAt.getTime() - o.firstTouchAt.getTime()) / 60000 })));
-  const byProduct = groupSummarize(orders.map((o) => ({ key: o.items[0]?.productId || null, minutes: (o.createdAt.getTime() - o.firstTouchAt.getTime()) / 60000 })).filter((x) => x.key));
+  const byAd = groupSummarize(orders.map((o) => ({ key: o.firstTouchAdId, minutes: (placedAtOf(o).getTime() - o.firstTouchAt.getTime()) / 60000 })));
+  const byProduct = groupSummarize(orders.map((o) => ({ key: o.items[0]?.productId || null, minutes: (placedAtOf(o).getTime() - o.firstTouchAt.getTime()) / 60000 })).filter((x) => x.key));
 
   res.json({ ok: true, data: { overall, byAd, byProduct } });
 }));
@@ -226,7 +231,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 
   const [orders, spendRows, leadRows, returns] = await Promise.all([
     db.order.findMany({
-      where: { tenantId: tenant.id, ...periodWhere(from, to), ...ORDER_PLACED_WHERE },
+      where: { tenantId: tenant.id, ...placedWhere(from, to), ...ORDER_PLACED_WHERE },
       include: { items: true, buyer: { select: { id: true } }, returns: { select: { id: true } } },
     }),
     db.adSpendDaily.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { date: dayRange(from, to) } : {}) } }),
@@ -237,8 +242,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 
   // Для "новий/повторний клієнт" потрібна історія покупця ДО цього замовлення — рахуємо по всій базі, не тільки в періоді.
   const firstOrderAtByBuyer = new Map();
-  for (const o of await db.order.findMany({ where: { tenantId: tenant.id, buyerId: { not: null } }, select: { buyerId: true, createdAt: true }, orderBy: { createdAt: 'asc' } })) {
-    if (!firstOrderAtByBuyer.has(o.buyerId)) firstOrderAtByBuyer.set(o.buyerId, o.createdAt);
+  for (const o of await db.order.findMany({ where: { tenantId: tenant.id, buyerId: { not: null } }, select: { buyerId: true, createdAt: true, placedAt: true }, orderBy: { placedAt: 'asc' } })) {
+    if (!firstOrderAtByBuyer.has(o.buyerId)) firstOrderAtByBuyer.set(o.buyerId, placedAtOf(o));
   }
 
   const days = new Map(); // dayKey -> accumulator
@@ -253,7 +258,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   }
 
   for (const order of orders) {
-    const key = dayKey(order.createdAt);
+    const at = placedAtOf(order);
+    const key = dayKey(at);
     const b = bucket(key);
     b.ordersCount += 1;
     if (order.isRefused) b.refusedCount += 1;
@@ -265,14 +271,14 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 
     let orderMargin = 0;
     for (const item of order.items) {
-      orderMargin += marginPerOrderItem(item, expenseByProduct, order.isRefused, order.createdAt);
+      orderMargin += marginPerOrderItem(item, expenseByProduct, order.isRefused, at);
       if (isRealSale && !item.isUpsell) b.qtySold += item.quantity;
-      const isRepeat = order.buyerId && firstOrderAtByBuyer.get(order.buyerId) && firstOrderAtByBuyer.get(order.buyerId).getTime() < order.createdAt.getTime();
+      const isRepeat = order.buyerId && firstOrderAtByBuyer.get(order.buyerId) && firstOrderAtByBuyer.get(order.buyerId).getTime() < at.getTime();
       if (isRealSale && isRepeat) b.qtyRepeat += item.quantity;
     }
     if (isRealSale) b.marginNonRefusedTotal += orderMargin;
 
-    const isNewBuyer = !order.buyerId || (firstOrderAtByBuyer.get(order.buyerId)?.getTime() === order.createdAt.getTime());
+    const isNewBuyer = !order.buyerId || (firstOrderAtByBuyer.get(order.buyerId)?.getTime() === at.getTime());
     if (isRealSale && isNewBuyer) b.newBuyerOrders += 1;
   }
   for (const spend of spendRows) {
@@ -353,7 +359,7 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
   const [ads, orders] = await Promise.all([
     db.ad.findMany({ where: { tenantId: tenant.id, productId: String(productId) } }),
     db.order.findMany({
-      where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...periodWhere(from, to), ...ORDER_PLACED_WHERE },
+      where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...placedWhere(from, to), ...ORDER_PLACED_WHERE },
       include: { items: { where: { productId: String(productId) } }, returns: { select: { id: true } } },
     }),
   ]);
@@ -371,11 +377,11 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
     return days.get(key);
   }
   for (const order of orders) {
-    const b = bucket(dayKey(order.createdAt));
+    const b = bucket(dayKey(placedAtOf(order)));
     b.ordersCount += 1;
     if (order.isRefused) b.refusedCount += 1;
     let m = 0;
-    for (const item of order.items) m += marginPerOrderItem(item, expenseByProduct, order.isRefused, order.createdAt);
+    for (const item of order.items) m += marginPerOrderItem(item, expenseByProduct, order.isRefused, placedAtOf(order));
     b.marginGrossTotal += m; // "Маржа всього" — до врахування відмов/повернень (навмисно гросс)
     // 2026-09-12 (аудит аналітики): "фактична" маржа має виключати і відмову, і повернення —
     // раніше тут перевірялась лише isRefused, повернутий товар усе одно рахувався проданим.

@@ -6,10 +6,11 @@ const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo, kyivDayKey, dayRange } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem, ORDER_PLACED_WHERE, REAL_SALE_ORDER_WHERE, LEAD_WHERE } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, ORDER_PLACED_WHERE, REAL_SALE_ORDER_WHERE, LEAD_WHERE, placedAtOf } = require('../lib/margin');
 const { findOrCreateAdByExternalId } = require('../lib/adAttribution');
 const { linkAdVariantsFor, linkAllAdVariants, relinkVariantsByExternalId, propagateProductToVariants } = require('../lib/adVariants');
 const { ensureFreshUsdRate, rowToUAH } = require('../lib/currency');
+const { deliveryStatus } = require('../lib/deliveryStatus');
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ const router = express.Router();
 // 2026-10-05: дані завантажуються ПАКЕТОМ на всі оголошення (3 агреговані запити), а не 3 запити на кожне
 // одночасно — на ~1700 оголошеннях це вичерпувало пул зʼєднань Prisma і валило весь CRM (сторінки «Аналітика»,
 // «Рекламні витрати»). Розрахунок по оголошенню — чиста функція statsFromData.
-async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, usdRate) {
+async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, usdRate, refusalPct = 23) {
   if (!ads.length) return [];
   const ids = ads.map((a) => a.id);
   const one = ids.length === 1;
@@ -36,14 +37,14 @@ async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, u
       .then((rows) => rows.map((r) => ({ adId: r.firstTouchAdId, _count: r._count }))),
     // Замовлення = оформлені (є покупець), не картки розмов, яким бот лише показав товар.
     db.order.findMany({
-      where: { tenantId, firstTouchAdId: one ? ids[0] : { not: null }, ...ORDER_PLACED_WHERE, ...(dateWhere ? { createdAt: dateWhere } : {}) },
+      where: { tenantId, firstTouchAdId: one ? ids[0] : { not: null }, ...ORDER_PLACED_WHERE, ...(dateWhere ? { placedAt: dateWhere } : {}) },
       select: {
-        id: true, createdAt: true, isRefused: true, firstTouchAdId: true, funnelSessionId: true, contactIg: true, contactName: true,
+        id: true, createdAt: true, placedAt: true, isRefused: true, ttn: true, ttnStatus: true, stage: { select: { name: true } }, firstTouchAdId: true, funnelSessionId: true, contactIg: true, contactName: true,
         buyer: { select: { fullName: true, igUsername: true, phone: true } },
         returns: { select: { id: true } },
         items: { select: { productId: true, name: true, price: true, quantity: true, product: { select: { name: true } } } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { placedAt: 'desc' },
     }),
   ]);
   const spendBy = new Map();
@@ -51,14 +52,17 @@ async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, u
   const clicksBy = new Map(clickRows.map((r) => [r.adId, r._count._all]));
   const ordersBy = new Map();
   for (const o of orders) { const l = ordersBy.get(o.firstTouchAdId) || []; l.push(o); ordersBy.set(o.firstTouchAdId, l); }
-  return ads.map((ad) => statsFromData(ad, spendBy.get(ad.id) || 0, clicksBy.get(ad.id) || 0, ordersBy.get(ad.id) || [], expenseByProduct));
+  return ads.map((ad) => statsFromData(ad, spendBy.get(ad.id) || 0, clicksBy.get(ad.id) || 0, ordersBy.get(ad.id) || [], expenseByProduct, refusalPct));
 }
 
-async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct, usdRate) {
-  return (await computeAdStatsBatch(tenantId, [ad], dateWhere, expenseByProduct, usdRate))[0];
+async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct, usdRate, refusalPct) {
+  return (await computeAdStatsBatch(tenantId, [ad], dateWhere, expenseByProduct, usdRate, refusalPct))[0];
 }
 
-function statsFromData(ad, spend, contacts, orders, expenseByProduct) {
+// Очікувані відмови й повернення, % (налаштування магазину; за замовчуванням 23 = 20 відмов на пошті + 3 повернення — Олексій, Edits 537c402a).
+const refusalPctOf = (tenant) => { const v = Number(tenant && tenant.expectedRefusalPct); return Number.isFinite(v) && v >= 0 && v < 100 && tenant.expectedRefusalPct !== null ? v : 23; };
+
+function statsFromData(ad, spend, contacts, orders, expenseByProduct, refusalPct = 23) {
   const ordersCreated = orders.length;
   const pickedUp = orders.filter((o) => !o.isRefused);
   const ordersPickedUp = pickedUp.length;
@@ -66,17 +70,22 @@ function statsFromData(ad, spend, contacts, orders, expenseByProduct) {
   const revenueOrders = pickedUp.filter((o) => o.returns.length === 0); // "фактична" виручка — без відмов і без повернень
 
   let revenue = 0, margin = 0;
+  // «З відмовами» (Edits 537c402a): посилки, які ще не забрали (очікує / в дорозі / на пошті), можуть повернутись — їхню маржу
+  // зменшуємо на очікуваний % відмов; уже забрані — як є, відмови й повернення вже не в маржі (інакше відмови врахувались би двічі).
+  let marginExpected = 0;
   const productsMap = new Map(); // productId||name -> {name, qty}
   const orderRows = [];
   for (const o of orders) {
     let orderRevenue = 0, orderMargin = 0;
     for (const it of o.items) {
       orderRevenue += Number(it.price) * it.quantity;
-      orderMargin += marginPerOrderItem(it, expenseByProduct, o.isRefused, o.createdAt);
+      orderMargin += marginPerOrderItem(it, expenseByProduct, o.isRefused, placedAtOf(o));
     }
+    const dStatus = deliveryStatus(o);
     if (revenueOrders.includes(o)) {
       revenue += orderRevenue;
       margin += orderMargin;
+      marginExpected += dStatus === 'picked_up' ? orderMargin : orderMargin * (1 - refusalPct / 100);
       for (const it of o.items) {
         const key = it.productId || it.name;
         const row = productsMap.get(key) || { name: it.product?.name || it.name, qty: 0 };
@@ -92,17 +101,24 @@ function statsFromData(ad, spend, contacts, orders, expenseByProduct) {
       igUsername: String((o.buyer && o.buyer.igUsername) || o.contactIg || '').replace(/^@/, '') || null,
       // Пошук розмови у Flows для замовлень, оформлених менеджером (без funnelSessionId): нікнейм, інакше останні 9 цифр телефону.
       flowsSearch: String((o.buyer && o.buyer.igUsername) || o.contactIg || '').replace(/^@/, '') || String((o.buyer && o.buyer.phone) || '').replace(/\D/g, '').slice(-9) || null,
-      createdAt: o.createdAt,
+      createdAt: placedAtOf(o),
       itemsLabel: o.items.map((it) => it.product?.name || it.name).join(', ') || '—',
-      status: o.isRefused ? 'refused' : (o.returns.length > 0 ? 'returned' : 'picked_up'),
+      status: dStatus, // Edits 47935e18: очікує / в дорозі / на пошті / відмова / повернення / забрано (lib/deliveryStatus)
       revenue: orderRevenue,
       margin: orderMargin,
     });
   }
 
   const profit = margin - spend;
+  const profitExpected = marginExpected - spend;
   return {
     adId: ad.id,
+    marginExpected,
+    profitExpected,
+    roiExpected: spend > 0 ? marginExpected / spend : null,
+    romiExpected: spend > 0 ? (profitExpected / spend) * 100 : null,
+    refusalPct,
+    refusedRate: ordersCreated > 0 ? (refusedCount / ordersCreated) * 100 : null,
     spend,
     contacts,
     ordersCreated,
@@ -157,7 +173,15 @@ router.get('/ads', asyncHandler(async (req, res) => {
   // сторінку). АЛЕ: точковий пошук по externalId (матчинг воронки, дедуп) НІКОЛИ не має
   // фільтруватись за статусом — органічна реклама/пост лишається дійсною прив'язкою назавжди,
   // незалежно від поточного статусу кампанії в Meta. `?status=all` — явний запит показати все.
-  const statusFilter = (!externalId && status !== 'all') ? { OR: [{ effectiveStatus: 'ACTIVE' }, { effectiveStatus: null }] } : {};
+  // running=N — оголошення, що реально крутились останні N днів (є витрати), без варіантів Advantage+: вибір реклами в картці
+  // замовлення (Edits f609591e, 26.10: брали 30 найновіших за датою запуску — старіші, що досі крутяться, не влазили).
+  const runningDays = Math.min(60, Math.max(0, Number(req.query.running) || 0));
+  let runningIds = null;
+  if (runningDays) {
+    const since = new Date(Date.now() - runningDays * 86400000); since.setUTCHours(0, 0, 0, 0);
+    runningIds = (await db.adSpendDaily.groupBy({ by: ['adId'], where: { ad: { tenantId: req.tenant.id, variantOfAdId: null, ...(productId ? { productId: String(productId) } : {}) }, date: { gte: since }, amount: { gt: 0 } } })).map((r) => r.adId);
+  }
+  const statusFilter = (!externalId && status !== 'all' && !runningIds) ? { OR: [{ effectiveStatus: 'ACTIVE' }, { effectiveStatus: null }] } : {};
   const where = {
     tenantId: req.tenant.id,
     ...(productId ? { productId: String(productId) } : {}),
@@ -166,6 +190,7 @@ router.get('/ads', asyncHandler(async (req, res) => {
     // search — вибір реклами для замовлення вручну (картка замовлення, 2026-10-06): назва, кампанія або Meta-id.
     ...(search ? { AND: [{ OR: [{ name: { contains: String(search), mode: 'insensitive' } }, { campaignName: { contains: String(search), mode: 'insensitive' } }, { externalId: { contains: String(search) } }] }] } : {}),
     ...statusFilter,
+    ...(runningIds ? { id: { in: runningIds } } : {}),
   };
   const ads = await db.ad.findMany({
     where,
@@ -345,6 +370,12 @@ router.get('/ads/active-summary', asyncHandler(async (req, res) => {
 
 router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
   const { from, to, search, linked, take = '10', skip = '0' } = req.query;
+  // Edits 55e6794d (Олексій): сортування за колонкою (від більшого до меншого й навпаки) і без оголошень, де за період нічого нема
+  // («117 сторінок» — це 1167 оголошень за весь час, більшість без витрат). showEmpty=1 — показати всі.
+  const SORTS = { spend: 'spend', contacts: 'contacts', orders: 'ordersCreated', cpa: 'cpa', roi: 'roi', profit: 'profit' };
+  const sortKey = SORTS[String(req.query.sort || 'spend')] || 'spend';
+  const dir = String(req.query.dir || 'desc') === 'asc' ? 1 : -1;
+  const showEmpty = req.query.showEmpty === '1' || req.query.showEmpty === 'true';
   const dateWhere = periodDateWhere(from, to);
   const where = {
     tenantId: req.tenant.id,
@@ -364,7 +395,7 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
   const tenant = await ensureFreshUsdRate(req.tenant);
   const usdRate = Number(tenant.usdExchangeRate || 0);
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
-  const all = await computeAdStatsBatch(req.tenant.id, ads, dateWhere, expenseByProduct, usdRate);
+  const all = await computeAdStatsBatch(req.tenant.id, ads, dateWhere, expenseByProduct, usdRate, refusalPctOf(tenant));
   const statsByAd = new Map(all.map((s) => [s.adId, s]));
 
   const totals = all.reduce((acc, s) => {
@@ -396,16 +427,36 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
         ...lead, spend, margin, profit, contacts, ordersCreated, ordersPickedUp, revenue: sum('revenue'), refusedCount: sum('refusedCount'),
         roi: spend > 0 ? margin / spend : null, romi: spend > 0 ? (profit / spend) * 100 : null,
         cpa: ordersCreated > 0 ? spend / ordersCreated : null, costPerContact: contacts > 0 ? spend / contacts : null,
-        boosts: g.sort((a, b) => (b.spend || 0) - (a.spend || 0)).map((r) => ({ id: r.id, name: r.name, campaignName: r.campaignName, effectiveStatus: r.effectiveStatus, adCreatedAt: r.adCreatedAt, spend: r.spend, contacts: r.contacts, ordersCreated: r.ordersCreated })),
+        boosts: g.sort((a, b) => (b.spend || 0) - (a.spend || 0)).map((r) => ({ id: r.id, externalId: r.externalId, name: r.name, campaignName: r.campaignName, effectiveStatus: r.effectiveStatus, adCreatedAt: r.adCreatedAt, spend: r.spend, contacts: r.contacts, ordersCreated: r.ordersCreated })),
       };
-    }).sort((a, b) => (b.spend || 0) - (a.spend || 0));
+    });
   }
+  // Окупність по товарах (план Б11): ті самі цифри, згруповані за товаром оголошення; без товару — один рядок «Без товару».
+  if (req.query.group === 'product') {
+    const byProd = new Map();
+    for (const r of adRows) {
+      const k = r.productId || 'none';
+      const g = byProd.get(k) || { id: 'product:' + k, productId: r.productId || null, name: r.productName || 'Без товару', productName: null, thumbnailUrl: null, spend: 0, margin: 0, contacts: 0, ordersCreated: 0, ordersPickedUp: 0, revenue: 0, refusedCount: 0, adsCount: 0, activeAds: 0, _topSpend: -1, boosts: [] };
+      g.spend += r.spend || 0; g.margin += r.margin || 0; g.contacts += r.contacts || 0; g.ordersCreated += r.ordersCreated || 0;
+      g.ordersPickedUp += r.ordersPickedUp || 0; g.revenue += r.revenue || 0; g.refusedCount += r.refusedCount || 0; g.adsCount += 1;
+      if ((r.spend || 0) > 0) g.activeAds += 1;
+      if ((r.spend || 0) > g._topSpend && r.thumbnailUrl) { g.thumbnailUrl = r.thumbnailUrl; g._topSpend = r.spend || 0; }
+      byProd.set(k, g);
+    }
+    rows = [...byProd.values()].map(({ _topSpend, ...g }) => {
+      const profit = g.margin - g.spend;
+      return { ...g, profit, roi: g.spend > 0 ? g.margin / g.spend : null, romi: g.spend > 0 ? (profit / g.spend) * 100 : null, cpa: g.ordersCreated > 0 ? g.spend / g.ordersCreated : null };
+    });
+  }
+  if (!showEmpty) rows = rows.filter((r) => (r.spend || 0) > 0 || (r.ordersCreated || 0) > 0 || (r.contacts || 0) > 0);
+  // null (ділення на нуль) — завжди в кінці, незалежно від напрямку.
+  rows.sort((a, b) => { const x = a[sortKey], y = b[sortKey]; if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x - y) * dir; });
   const paged = rows.slice(Number(skip), Number(skip) + Number(take));
 
   res.json({
     ok: true,
     data: paged,
-    meta: { total: req.query.group === 'ad' ? total : rows.length, take: Number(take), skip: Number(skip) },
+    meta: { total: rows.length, take: Number(take), skip: Number(skip), usdRate },
     totals: { activeAds: totals.activeAds, spend: totals.spend, orders: totals.orders, roi: totals.spend > 0 ? totals.margin / totals.spend : null },
   });
 }));
@@ -419,15 +470,15 @@ router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
   const tenant = await ensureFreshUsdRate(req.tenant);
   const usdRate = Number(tenant.usdExchangeRate || 0);
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
-  const stats = await computeAdStats(req.tenant.id, ad, dateWhere, expenseByProduct, usdRate);
+  const stats = await computeAdStats(req.tenant.id, ad, dateWhere, expenseByProduct, usdRate, refusalPctOf(tenant));
 
   // Тренд по днях — та сама межа періоду, спред по днях (спенд з AdSpendDaily, маржа з
   // замовлень, створених того дня, по тій самій "фактичній" логіці — не відмова, без Return).
   const [spendRows, orders] = await Promise.all([
     db.adSpendDaily.findMany({ where: { adId: ad.id, ...(dateWhere ? { date: dayRange(dateWhere) } : {}) }, select: { date: true, amount: true, currency: true } }),
     db.order.findMany({
-      where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...(dateWhere ? { createdAt: dateWhere } : {}), ...REAL_SALE_ORDER_WHERE },
-      select: { createdAt: true, items: { select: { productId: true, price: true, quantity: true } } },
+      where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...(dateWhere ? { placedAt: dateWhere } : {}), ...REAL_SALE_ORDER_WHERE },
+      select: { createdAt: true, placedAt: true, items: { select: { productId: true, price: true, quantity: true } } },
     }),
   ]);
   const dayKey = kyivDayKey; // 2026-09-12: групування по днях за Києвом, не UTC (аудит аналітики)
@@ -435,17 +486,18 @@ router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
   const bucket = (k) => { if (!days.has(k)) days.set(k, { date: k, spend: 0, margin: 0 }); return days.get(k); };
   for (const row of spendRows) bucket(dayKey(row.date)).spend += rowToUAH(row.amount, row.currency, usdRate);
   for (const o of orders) {
-    const b = bucket(dayKey(o.createdAt));
-    for (const it of o.items) b.margin += marginPerOrderItem(it, expenseByProduct, false, o.createdAt);
+    const b = bucket(dayKey(placedAtOf(o)));
+    for (const it of o.items) b.margin += marginPerOrderItem(it, expenseByProduct, false, placedAtOf(o));
   }
-  const trend = [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ ...d, profit: d.margin - d.spend }));
+  const trend = [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ ...d, profit: d.margin - d.spend, roi: d.spend > 0 ? d.margin / d.spend : null }));
 
   res.json({
     ok: true,
     data: {
-      ad: { id: ad.id, name: ad.name, externalId: ad.externalId, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName, productId: ad.productId, productName: ad.product?.name || null },
+      ad: { id: ad.id, name: ad.name, externalId: ad.externalId, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName, productId: ad.productId, productName: ad.product?.name || null, postUrl: ad.postUrl || null, effectiveStatus: ad.effectiveStatus || null },
       ...stats,
       trend,
+      usdRate,
     },
   });
 }));

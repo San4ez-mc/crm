@@ -70,5 +70,8 @@ const ORDER_PLACED_WHERE = { buyerId: { not: null } };
 // Скасоване вручну (2026-10-18: кнопка «Скасувати» переводить у стадію «Скасовано», замовлення лишається в історії) — не продаж.
 const REAL_SALE_ORDER_WHERE = { ...ORDER_PLACED_WHERE, isRefused: false, returns: { none: {} }, NOT: { stage: { is: { name: { contains: 'скасов', mode: 'insensitive' } } } } };
 const LEAD_WHERE = { funnelSessionId: { not: null } };
+// Дата замовлення в звітах (2026-10-26, Edits c4fc2dcd) — дата ОФОРМЛЕННЯ (placedAt); createdAt замовлення з розмови — початок розмови.
+// Для карток розмов (LEAD_WHERE) лишається createdAt. placedAt заповнено для всіх замовлень (міграція 20261026010000).
+const placedAtOf = (o) => (o && (o.placedAt || o.createdAt)) || null;
 
-module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE };
+module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf };

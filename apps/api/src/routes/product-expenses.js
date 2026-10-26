@@ -9,7 +9,7 @@ const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { NotFoundError, ValidationError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, placedAtOf } = require('../lib/margin');
 const { ensureFreshUsdRate, adSpendUAHByProduct } = require('../lib/currency');
 const { logProductChange } = require('../lib/changeLog');
 
@@ -40,8 +40,8 @@ router.get('/product-expenses', asyncHandler(async (req, res) => {
       orderItems: {
         // 2026-09-12 (аудит аналітики): раніше тут не виключались ні відмови, ні повернені
         // замовлення — виручка/маржа товару рахувались із грошей, яких магазин не отримав.
-        where: { order: { ...REAL_SALE_ORDER_WHERE, ...(fromDate || toDate ? { createdAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}) } },
-        include: { order: { select: { createdAt: true, isRefused: true } } },
+        where: { order: { ...REAL_SALE_ORDER_WHERE, ...(fromDate || toDate ? { placedAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}) } },
+        include: { order: { select: { createdAt: true, placedAt: true, isRefused: true } } },
       },
     },
   });
@@ -53,7 +53,7 @@ router.get('/product-expenses', asyncHandler(async (req, res) => {
     const revenue = p.orderItems.reduce((s, it) => s + Number(it.price) * it.quantity, 0);
     const adSpend = adSpendByProduct.get(p.id) || 0;
     const exp = p.productExpense;
-    const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, it.order.createdAt), 0);
+    const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, placedAtOf(it.order)), 0);
     const margin = marginBeforeAdSpend - adSpend;
     return {
       productId: p.id,
@@ -127,7 +127,7 @@ router.get('/product-expenses/alerts', asyncHandler(async (req, res) => {
   const usdRate = Number(tenant.usdExchangeRate || 0);
   const products = await db.product.findMany({
     where: { tenantId: req.tenant.id },
-    include: { productExpense: true, orderItems: { where: { order: { ...REAL_SALE_ORDER_WHERE, createdAt: { gte: since } } }, include: { order: { select: { createdAt: true, isRefused: true } } } } },
+    include: { productExpense: true, orderItems: { where: { order: { ...REAL_SALE_ORDER_WHERE, placedAt: { gte: since } } }, include: { order: { select: { createdAt: true, placedAt: true, isRefused: true } } } } },
   });
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
   const adSpendByProduct = await adSpendUAHByProduct(req.tenant.id, { gte: since }, usdRate);
@@ -137,7 +137,7 @@ router.get('/product-expenses/alerts', asyncHandler(async (req, res) => {
     const qty = p.orderItems.reduce((s, it) => s + it.quantity, 0);
     if (qty === 0) continue;
     const adSpend = adSpendByProduct.get(p.id) || 0;
-    const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, it.order.createdAt), 0);
+    const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, placedAtOf(it.order)), 0);
     const margin = marginBeforeAdSpend - adSpend;
     if (margin < 0) alerts.push({ productId: p.id, name: p.name, sku: p.sku, margin, periodHours: 24 });
   }

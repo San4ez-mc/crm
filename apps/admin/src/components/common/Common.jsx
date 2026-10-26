@@ -117,6 +117,8 @@ export function Badge({ children, color = 'slate' }) {
     red: 'bg-red-900/30 border-red-800/50 text-red-300',
     amber: 'bg-amber-900/30 border-amber-800/50 text-amber-300',
     green: 'bg-emerald-900/30 border-emerald-800/50 text-emerald-300',
+    sky: 'bg-sky-900/30 border-sky-800/50 text-sky-300',
+    orange: 'bg-orange-900/30 border-orange-800/50 text-orange-300',
   };
   return <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs ${colors[color]}`}>{children}</span>;
 }

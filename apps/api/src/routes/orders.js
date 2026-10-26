@@ -51,7 +51,7 @@ async function defaultStageId(tenantId) {
 
 // ── Список (kanban/таблиця) ──────────────────────────────────────────────
 router.get('/orders', asyncHandler(async (req, res) => {
-  const { stageId, from, to, ftFrom, ftTo, productId, adId, q, take = '100', skip = '0' } = req.query;
+  const { stageId, from, to, ftFrom, ftTo, productId, adId, noAd, q, take = '100', skip = '0' } = req.query;
   // q і adId — обидва OR-блоки, тому комбінуємо через AND (інакше другий спред перезаписав би
   // перший ключ "OR" в об'єкті where — знайдено під час додавання фільтра по рекламі 2026-09-04).
   const andClauses = [];
@@ -83,13 +83,17 @@ router.get('/orders', asyncHandler(async (req, res) => {
   // Fallback: якщо firstTouchAt відомий — фільтруємо по ньому; якщо ні (null) — по createdAt (це й
   // так було справжньою датою першого контакту для старих замовлень, де окреме поле не велось).
   // Воронка тепер заповнює firstTouchAt/firstTouchAdId на НОВИХ замовленнях (apps/api n_crm_order).
+  // 2026-10-26 (Edits c4fc2dcd): фільтр дошки — дата ОФОРМЛЕННЯ замовлення, для карток розмов — дата розмови. Раніше — дата
+  // першого дотику реклами, яку ручний вибір реклами ставив на день правки (замовлення 20.10 «переїжджало» на 23.10).
   if (ftFrom || ftTo) {
     const ftRange = { ...(ftFrom ? { gte: parseFrom(ftFrom) } : {}), ...(ftTo ? { lte: parseTo(ftTo) } : {}) };
     andClauses.push({ OR: [
-      { firstTouchAt: ftRange },
-      { AND: [{ firstTouchAt: null }, { createdAt: ftRange }] },
+      { placedAt: ftRange },
+      { AND: [{ placedAt: null }, { createdAt: ftRange }] },
     ] });
   }
+  // «Без реклами» (Edits 15b533ae): оформлені замовлення, де не відомо, з якого оголошення написав клієнт — щоб вказати вручну.
+  if (noAd === '1' || noAd === 'true') andClauses.push({ buyerId: { not: null }, firstTouchAdId: null });
   const where = {
     tenantId: req.tenant.id,
     ...(stageId ? { stageId: String(stageId) } : {}),
@@ -104,6 +108,11 @@ router.get('/orders', asyncHandler(async (req, res) => {
   const paid = await paidSumsByOrder(req.tenant.id, items.map((o) => o.id));
   res.json({ ok: true, data: items.map((o) => ({ ...o, paidSum: paid.get(o.id) || 0 })), meta: { total, take: Number(take), skip: Number(skip) } });
 }));
+
+// Дата оформлення з тіла запиту («Змінити дату», імпорт) — інакше null (тоді «зараз»).
+function placedAtFrom(v) { if (!v) return null; const d = new Date(v); return Number.isNaN(d.getTime()) ? null : d; }
+// «Хто оформив» (Edits 15b533ae): явно з тіла (імпорт EasyDrop) → менеджер, що вхід у CRM → «Бот» для замовлення з розмови.
+function placedByFrom(b, req, fromFunnel) { return (b.placedBy && String(b.placedBy).trim().slice(0, 80)) || (req.user && req.user.name) || (fromFunnel ? 'Бот' : null); }
 
 // ── Створення (переважно з воронки) ──────────────────────────────────────
 router.post('/orders', asyncHandler(async (req, res) => {
@@ -175,6 +184,9 @@ router.post('/orders', asyncHandler(async (req, res) => {
         data: {
           buyerId, stageId,
           ...payFields,
+          // Картка розмови стала замовленням саме зараз: це й дата оформлення (createdAt картки — початок розмови).
+          placedAt: placedAtFrom(b.placedAt) || card.placedAt || new Date(),
+          placedBy: card.placedBy || placedByFrom(b, req, true),
           sourceName: b.sourceName || card.sourceName || null,
           managerComment: b.managerComment || null,
           shipping: b.shipping || null,
@@ -203,6 +215,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
       managerComment: b.managerComment || null,
       shipping: b.shipping || null,
       ttn: b.ttn !== undefined ? parseTtnList(b.ttn) : [],
+      ...(buyerId ? { placedAt: placedAtFrom(b.placedAt) || new Date(), placedBy: placedByFrom(b, req, !!b.funnelSessionId) } : {}),
       funnelSessionId: b.funnelSessionId ? String(b.funnelSessionId) : null,
       lastClientAt: b.funnelSessionId ? new Date() : null,
       firstTouchAdId: b.firstTouchAdId || null,
@@ -294,6 +307,11 @@ router.patch('/orders/:id', asyncHandler(async (req, res) => {
       ...(ttnList ? { ttn: ttnList } : {}),
       ...(b.sourceName !== undefined ? { sourceName: b.sourceName } : {}),
       ...(b.isRefused !== undefined ? { isRefused: !!b.isRefused } : {}),
+      // «Змінити дату» (Edits c4fc2dcd): дата оформлення — лише явно; інші правки її не чіпають.
+      ...(b.placedAt !== undefined ? { placedAt: placedAtFrom(b.placedAt) } : {}),
+      ...(b.placedBy !== undefined ? { placedBy: b.placedBy ? String(b.placedBy).trim().slice(0, 80) : null } : {}),
+      // Покупець зʼявився вперше (картку перетворили на замовлення вручну) — це оформлення.
+      ...(!existing.buyerId && buyerPatch.buyerId && !existing.placedAt && b.placedAt === undefined ? { placedAt: new Date(), placedBy: placedByFrom(b, req, false) } : {}),
     },
     include: ORDER_INCLUDE,
   });
@@ -393,8 +411,10 @@ router.patch('/orders/:id/attribution', asyncHandler(async (req, res) => {
   const order = await db.order.update({
     where: { id: existing.id },
     data: {
-      ...(firstTouchAdId !== undefined ? { firstTouchAdId, firstTouchAt: firstTouchAdId ? new Date() : null } : {}),
-      ...(lastTouchAdId !== undefined ? { lastTouchAdId, lastTouchAt: lastTouchAdId ? new Date() : null } : {}),
+      // Ручний вибір реклами — дата дотику лишається датою розмови/замовлення, не днем правки (Edits c4fc2dcd: замовлення 20.10
+      // «переїхало» на 23.10, коли 23.10 вказали рекламу).
+      ...(firstTouchAdId !== undefined ? { firstTouchAdId, firstTouchAt: firstTouchAdId ? (existing.firstTouchAt || existing.createdAt) : null } : {}),
+      ...(lastTouchAdId !== undefined ? { lastTouchAdId, lastTouchAt: lastTouchAdId ? (existing.lastTouchAt || existing.placedAt || existing.createdAt) : null } : {}),
     },
   });
   res.json({ ok: true, data: order });

@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { PageHeader, Button, Input, Select, Card, EmptyState, ErrorBanner, Badge, money, formatDate } from '../components/common/Common';
+import { DELIVERY, deliveryStatusOf } from '../components/orders/deliveryStatus';
 import Modal from '../components/common/Modal';
 import OrderDetailModal from './OrderDetailModal';
 import NewOrderModal from './NewOrderModal';
@@ -58,7 +59,7 @@ export default function OrdersPage() {
     try {
       const params = {};
       if (q) params.q = q;
-      if (adId) params.adId = adId;
+      if (adId === '__none') params.noAd = '1'; else if (adId) params.adId = adId;
       if (ftFrom) params.ftFrom = ftFrom;
       if (ftTo) params.ftTo = ftTo;
       const [o, p] = await Promise.all([api.listOrders(params), api.listPipelines()]);
@@ -85,7 +86,7 @@ export default function OrdersPage() {
     try {
       const params = {};
       if (q) params.q = q;
-      if (adId) params.adId = adId;
+      if (adId === '__none') params.noAd = '1'; else if (adId) params.adId = adId;
       if (ftFrom) params.ftFrom = ftFrom;
       if (ftTo) params.ftTo = ftTo;
       const results = await Promise.all(stageList.map((s) => api.listOrders({ ...params, stageId: s.id, take: 200 })));
@@ -138,11 +139,13 @@ export default function OrdersPage() {
           <Input className="w-64" placeholder="Пошук: імʼя, телефон, ТТН, Instagram (посилання або @нік)…" title="Можна вставити посилання на профіль Instagram — шукає за нікнеймом" value={q} onChange={(e) => setQ(e.target.value)} />
           <Select className="w-56" value={adId} onChange={(e) => setAdId(e.target.value)}>
             <option value="">Усі оголошення</option>
+            {/* Edits 15b533ae: замовлення, де не відомо, з якого оголошення написав клієнт — вказати вручну в картці. */}
+            <option value="__none">Без реклами (вказати вручну)</option>
             {ads.map((a) => <option key={a.id} value={a.id}>{a.name || a.externalId || a.id.slice(0, 8)}</option>)}
           </Select>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5">
-          <span className="whitespace-nowrap text-xs font-medium text-slate-400">Перший контакт</span>
+          <span className="whitespace-nowrap text-xs font-medium text-slate-400" title="Замовлення — за датою оформлення (її можна змінити в картці), розмови без замовлення — за датою розмови">Дата</span>
           <Input type="date" className="!w-auto" value={ftFrom} onChange={(e) => setFtFrom(e.target.value)} />
           <span className="text-slate-600">—</span>
           <Input type="date" className="!w-auto" value={ftTo} onChange={(e) => setFtTo(e.target.value)} />
@@ -189,7 +192,7 @@ export default function OrdersPage() {
                           {money(orderTotal(o))}
                           {o.paidSum > 0 && <span className={`ml-1.5 text-[11px] ${o.paidSum >= orderTotal(o) ? 'text-emerald-400' : 'text-amber-300'}`} title="Оплачено (журнал платежів)">💳 {money(o.paidSum)}</span>}
                         </span>
-                        {o.ttnStatus && <Badge color="green">{o.ttnStatus}</Badge>}
+                        {o.ttnStatus && <Badge color={DELIVERY[deliveryStatusOf(o)].color}>{o.ttnStatus}</Badge>}
                       </div>
                       {o.firstTouchAd?.name && <div className="mt-1 truncate text-[11px] text-slate-500" title={o.firstTouchAd.name}>📢 {o.firstTouchAd.name}</div>}
                       <Select className="mt-2 w-full !py-1 text-xs" value={o.stageId || ''} onClick={(e) => e.stopPropagation()} onChange={(e) => moveOrderToStage(o.id, e.target.value)}>
@@ -212,7 +215,7 @@ export default function OrdersPage() {
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30" onClick={() => setSelectedOrder(o)}>
-                  <td className="px-4 py-3 text-slate-400">{formatDate(o.createdAt)}</td>
+                  <td className="px-4 py-3 text-slate-400">{formatDate(o.placedAt || o.createdAt)}</td>
                   <td className="px-4 py-3">{o.buyer?.fullName || o.buyer?.phone || '—'}</td>
                   <td className="px-4 py-3 text-slate-400">{o.items.map((it) => it.name).join(', ')}</td>
                   <td className="px-4 py-3">
@@ -224,7 +227,7 @@ export default function OrdersPage() {
                       {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </Select>
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{o.ttn?.join(', ') || '—'} {o.ttnStatus && <Badge color="green">{o.ttnStatus}</Badge>}</td>
+                  <td className="px-4 py-3 text-slate-400">{o.ttn?.join(', ') || '—'} {o.ttnStatus && <Badge color={DELIVERY[deliveryStatusOf(o)].color}>{o.ttnStatus}</Badge>}</td>
                   <td className="px-4 py-3 text-slate-400">{o.firstTouchAd?.name || o.sourceName || 'органіка'}</td>
                 </tr>
               ))}

@@ -5,6 +5,7 @@ import { Field, Input, Textarea, Select, Button, Badge, ErrorBanner, money, form
 import Modal from '../components/common/Modal';
 import OrderEditor from './OrderEditor';
 import { PAYMENT_TYPE_LABEL } from '../components/orders/OrderFields';
+import { DELIVERY, deliveryStatusOf } from '../components/orders/deliveryStatus';
 
 // Реклама замовлення (Edits 3605aed1/2f4d68fd, 2026-10-06): видно для будь-якого замовлення (і створеного ботом), можна змінити вручну.
 // Перший дотик — реклама, з якої людина вперше прийшла в розмову (саме їй звіти зараховують замовлення); останній — остання реклама
@@ -33,10 +34,12 @@ function AttributionSection({ order, onSaved, onError }) {
   const productIds = [...new Set((order.items || []).filter((it) => !it.isUpsell).map((it) => it.productId || it.product?.id).filter(Boolean))];
   useEffect(() => {
     if (!open || suggested !== null) return;
-    Promise.all(productIds.map((productId) => api.listAds({ productId, take: '30' }).then((r) => r.data || r || []).catch(() => [])))
+    // Оголошення товару, що реально крутились (є витрати) від тижня до замовлення до сьогодні — не «30 найновіших за запуском» (Edits f609591e).
+    const days = Math.min(60, 7 + Math.ceil((Date.now() - new Date(order.placedAt || order.createdAt).getTime()) / 86400000));
+    Promise.all(productIds.map((productId) => api.listAds({ productId, running: String(days), take: '60' }).then((r) => r.data || r || []).catch(() => [])))
       .then((lists) => {
         const seen = new Set();
-        setSuggested(lists.flat().filter((a) => a.effectiveStatus === 'ACTIVE' && !a.variantOfAdId && !seen.has(a.id) && seen.add(a.id)));
+        setSuggested(lists.flat().filter((a) => !a.variantOfAdId && !seen.has(a.id) && seen.add(a.id)));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -100,6 +103,55 @@ function AttributionSection({ order, onSaved, onError }) {
 
 // Оплата (2026-10-14, власник: «у картці замовлення має бути видно оплату»): платежі з журналу (бот, фонова перезвірка
 // Flows) — GET /orders/:id віддає payments. Успішна = status 'success' або не вказано.
+// Дата оформлення й «Хто оформив» (2026-10-26, Edits c4fc2dcd/15b533ae): від дати оформлення рахують звіти й фільтр дошки; правки
+// її не змінюють. «Змінити дату» — менеджер прийняв у пʼятницю ввечері, а оформив у понеділок.
+const toLocalInput = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 16); };
+function PlacementSection({ order, onSaved, onError }) {
+  const [editDate, setEditDate] = useState(false);
+  const [editWho, setEditWho] = useState(false);
+  const [date, setDate] = useState(toLocalInput(order.placedAt || order.createdAt));
+  const [who, setWho] = useState(order.placedBy || '');
+  async function save(patch) {
+    try { const r = await api.updateOrder(order.id, patch); onSaved(r.data || patch); setEditDate(false); setEditWho(false); } catch (e) { onError(e.message); }
+  }
+  if (!order.buyer && !order.placedAt) return null; // картка розмови — ще не оформлено
+  return (
+    <section>
+      <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Оформлення</h4>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div>
+          <div className="text-xs text-slate-500">Дата оформлення</div>
+          {editDate ? (
+            <div className="mt-1 flex items-center gap-2">
+              <Input type="datetime-local" className="!w-auto" value={date} onChange={(e) => setDate(e.target.value)} />
+              <button onClick={() => save({ placedAt: new Date(date).toISOString() })} className="text-xs text-brand-light hover:underline">Зберегти</button>
+              <button onClick={() => setEditDate(false)} className="text-xs text-slate-500 hover:underline">Скасувати</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-slate-200">{formatDateTime(order.placedAt || order.createdAt)}
+              <button onClick={() => setEditDate(true)} className="text-xs text-brand-light hover:underline">Змінити дату</button>
+            </div>
+          )}
+        </div>
+        <div>
+          <div className="text-xs text-slate-500">Хто оформив</div>
+          {editWho ? (
+            <div className="mt-1 flex items-center gap-2">
+              <Input className="max-w-[12rem]" placeholder="Імʼя менеджера" value={who} onChange={(e) => setWho(e.target.value)} />
+              <button onClick={() => save({ placedBy: who.trim() || null })} className="text-xs text-brand-light hover:underline">Зберегти</button>
+              <button onClick={() => setEditWho(false)} className="text-xs text-slate-500 hover:underline">Скасувати</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-slate-200">{order.placedBy || <span className="text-slate-500">не вказано</span>}
+              <button onClick={() => setEditWho(true)} className="text-xs text-brand-light hover:underline">Змінити</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const PAY_STATUS_LABEL = { success: 'успішно', pending: 'очікує', failed: 'не пройшла' };
 // 2026-10-18: спосіб оплати, про який домовились із клієнтом (Order.paymentType/prepaymentAmount), — окремо від журналу.
 function PaymentTerms({ order, total }) {
@@ -196,7 +248,7 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
   const isCancelled = /скасов|cancel/i.test(currentStage?.name || '');
 
   return (
-    <Modal isOpen title={`Замовлення від ${formatDateTime(order.createdAt)}`} onClose={onClose} wide>
+    <Modal isOpen title={order.buyer || order.placedAt ? `Замовлення від ${formatDateTime(order.placedAt || order.createdAt)}` : `Розмова від ${formatDateTime(order.createdAt)}`} onClose={onClose} wide>
       <ErrorBanner message={error} />
       {editing ? (
         <OrderEditor order={order} onCancel={() => setEditing(false)} onSaved={(o) => { setOrder(o); setEditing(false); onChanged(); }} />
@@ -205,7 +257,8 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
         <section>
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <h4 className="text-xs font-semibold uppercase text-slate-500">Покупець</h4>
-            <button onClick={() => setEditing(true)} className="text-xs text-brand-light hover:underline">✏️ Змінити дані клієнта</button>
+            {/* Одна кнопка (Edits 15b533ae): редактор міняє і клієнта, і товари, і доставку, і оплату. */}
+            <button onClick={() => setEditing(true)} className="text-xs text-brand-light hover:underline">✏️ Редагувати замовлення</button>
           </div>
           {/* 2026-10-15 (Edit 2cb4dd27): поки клієнт не замовив (покупця ще нема) — імʼя й нікнейм з Instagram і розмова у Flows, а не «— ·». */}
           {order.buyer
@@ -224,13 +277,12 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
           )}
         </section>
 
+        <PlacementSection order={order} onSaved={(o) => { setOrder({ ...order, ...o }); onChanged(); }} onError={setError} />
+
         <section>
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <h4 className="text-xs font-semibold uppercase text-slate-500">Товари</h4>
-            <div className="flex items-center gap-2">
-              {order.managerEditedAt && <Badge color="teal">Змінено менеджером {formatDateTime(order.managerEditedAt)}</Badge>}
-              <button onClick={() => setEditing(true)} className="text-xs text-brand-light hover:underline">✏️ Редагувати замовлення</button>
-            </div>
+            {order.managerEditedAt && <Badge color="teal">Змінено менеджером {formatDateTime(order.managerEditedAt)}</Badge>}
           </div>
           <div className="space-y-1">
             {order.items.map((it) => {
@@ -270,7 +322,7 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
           )}
           <div className="mt-1 flex flex-wrap items-center gap-2">
             {order.ttn?.length ? order.ttn.map((t) => <Badge key={t}>{t}</Badge>) : <span className="text-slate-500">ТТН немає</span>}
-            {order.ttnStatus && <Badge color="green">{order.ttnStatus}</Badge>}
+            {order.ttnStatus && <Badge color={DELIVERY[deliveryStatusOf(order)].color}>{order.ttnStatus}</Badge>}
             {order.ttnEta && <span className="text-xs text-slate-400">доставка за НП: {new Date(order.ttnEta).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}</span>}
             {order.ttnStatusAt && <span className="text-xs text-slate-500">перевірено {new Date(order.ttnStatusAt).toLocaleString('uk-UA', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
             <button onClick={refreshTtn} className="text-xs text-brand-light hover:underline">Оновити зараз</button>

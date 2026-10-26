@@ -34,6 +34,7 @@ model Tenant {
   // 2026-10-21 (власник: умови й тип магазину — у налаштуваннях, не в коді бота). Бот читає через GET /tenant/shop-profile.
   shopDescription     String? // хто ми для ШІ: «Instagram-магазин чоловічого одягу» — у промптах розпізнавання
   prepaymentAmount    Decimal? @db.Decimal(12, 2) // передоплата за часткової оплати, грн (бот називає її клієнту; CRM — сума за замовчуванням)
+  expectedRefusalPct  Decimal? @db.Decimal(5, 2) // очікувані відмови+повернення, % (за замовчуванням 23: 20 відмов на пошті + 3 повернення) — «з відмовами» у звіті реклами (Edits 537c402a)
   shippingTerms       String? // терміни відправки словами: «Відправка — до 5 робочих днів з моменту оформлення (субота й неділя — вихідні)»
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -438,6 +439,11 @@ model Order {
   // Фактичні оплати — окремо в Payment (журнал), тут — домовленість із клієнтом.
   paymentType      String?
   prepaymentAmount Decimal?  @db.Decimal(12, 2)
+  // 2026-10-26 (Олексій, Edits c4fc2dcd/15b533ae): дата ОФОРМЛЕННЯ замовлення — від неї рахують звіти й фільтри замовлень.
+  // createdAt у замовлення з розмови — початок розмови (картка), а не оформлення; правки (зокрема реклама) дату не змінюють.
+  // Менеджер може змінити («Змінити дату»: прийняв у пʼятницю ввечері — оформив у понеділок). null — картка розмови без покупця.
+  placedAt         DateTime?
+  placedBy         String? // хто оформив: «Бот», імʼя менеджера (вхід у CRM / EasyDrop) — Edits 15b533ae «Хто оформив»
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -448,6 +454,7 @@ model Order {
   @@index([tenantId])
   @@index([tenantId, stageId])
   @@index([tenantId, createdAt])
+  @@index([tenantId, placedAt])
   @@index([tenantId, funnelSessionId])
 }
 
