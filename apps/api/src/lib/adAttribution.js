@@ -29,6 +29,22 @@ async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {})
   return ad;
 }
 
+/**
+ * Оголошення за дописом Instagram (Ad.postId = effective_instagram_media_id). Meta не передала рекламу, але клієнт переслав
+ * сам рекламний рілс (20.10, shumko_helen / nataliyaghubar, Edits 44c07e5b/ae75528c: «Відповідь на рекламу» в Instagram, а в
+ * CRM «не вказано»). У допису кілька просувань — беремо те, що крутилось найближче до дотику (витрати ±3 дні), інакше найновіше.
+ */
+async function adByPostId(tenantId, postId, at) {
+  const ads = await db.ad.findMany({ where: { tenantId, postId: String(postId), variantOfAdId: null }, select: { id: true, createdAt: true } });
+  if (ads.length <= 1) return ads[0] ? db.ad.findUnique({ where: { id: ads[0].id } }) : null;
+  const t = validDate(at) || new Date();
+  const from = new Date(t.getTime() - 3 * 86400e3); const to = new Date(t.getTime() + 86400e3);
+  const sp = await db.adSpendDaily.groupBy({ by: ['adId'], where: { adId: { in: ads.map((a) => a.id) }, date: { gte: from, lte: to } }, _sum: { amount: true } });
+  const best = sp.sort((a, b) => Number(b._sum.amount || 0) - Number(a._sum.amount || 0))[0];
+  const id = best ? best.adId : ads.sort((a, b) => b.createdAt - a.createdAt)[0].id;
+  return db.ad.findUnique({ where: { id } });
+}
+
 function validDate(v) { const d = v ? new Date(v) : null; return d && !Number.isNaN(d.getTime()) ? d : null; }
 
 /**
@@ -42,6 +58,7 @@ async function touchFields(tenantId, { firstTouch, lastTouch } = {}, existing = 
     let ad = null;
     if (t.adId) ad = await db.ad.findFirst({ where: { id: String(t.adId), tenantId } });
     else if (t.externalId) ad = await findOrCreateAdByExternalId(tenantId, String(t.externalId), t.name || null);
+    else if (t.postId) ad = await adByPostId(tenantId, String(t.postId), t.at);
     // Варіант Advantage+ («_Group_1») — дотик зараховуємо справжньому оголошенню (lib/adVariants.js). На живому дотику
     // перевіряємо, що це оголошення тоді крутилось (2026-10-15: однойменні оголошення — варіант сидів на паузнутому).
     if (ad && ad.variantOfAdId) {
@@ -64,4 +81,21 @@ async function touchFields(tenantId, { firstTouch, lastTouch } = {}, existing = 
   return out;
 }
 
-module.exports = { findOrCreateAdByExternalId, touchFields };
+/**
+ * Реклама для замовлення, створеного НЕ з розмови (вручну, EasyDrop): з картки розмови того ж клієнта (нікнейм Instagram), де бот
+ * її записав, — за останні 14 днів. 26.10 (власник, план А8): раніше це робили разовим скриптом, у нових ручних замовленнях реклами не було.
+ */
+async function touchFromCard(tenantId, ig, before) {
+  const nick = String(ig || '').trim().replace(/^@/, '');
+  if (!nick) return {};
+  const t = before || new Date();
+  const card = await db.order.findFirst({
+    where: { tenantId, funnelSessionId: { not: null }, firstTouchAdId: { not: null }, contactIg: { equals: nick, mode: 'insensitive' }, createdAt: { gte: new Date(t.getTime() - 14 * 86400e3), lte: t } },
+    orderBy: { createdAt: 'desc' },
+    select: { firstTouchAdId: true, firstTouchAt: true, lastTouchAdId: true, lastTouchAt: true },
+  });
+  if (!card) return {};
+  return { firstTouchAdId: card.firstTouchAdId, firstTouchAt: card.firstTouchAt || t, lastTouchAdId: card.lastTouchAdId || card.firstTouchAdId, lastTouchAt: card.lastTouchAt || card.firstTouchAt || t };
+}
+
+module.exports = { findOrCreateAdByExternalId, touchFields, adByPostId, touchFromCard };

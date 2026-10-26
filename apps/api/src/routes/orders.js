@@ -1,7 +1,7 @@
 // §4.8 Order + OrderItem — основний робочий екран менеджера (§9.7/9.8) + операції для воронки (§5).
 const express = require('express');
 const { db } = require('@crm/db');
-const { touchFields } = require('../lib/adAttribution');
+const { touchFields, touchFromCard } = require('../lib/adAttribution');
 const { canonicalAdId } = require('../lib/adVariants');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
@@ -191,7 +191,9 @@ router.post('/orders', asyncHandler(async (req, res) => {
     }
   }
 
-  const newTouch = await touchFields(req.tenant.id, { firstTouch: b.firstTouch, lastTouch: b.lastTouch }, null);
+  let newTouch = await touchFields(req.tenant.id, { firstTouch: b.firstTouch, lastTouch: b.lastTouch }, null);
+  // Замовлення не з розмови (вручну, EasyDrop) без реклами — реклама з картки розмови цього клієнта (Edits 44c07e5b/ae75528c, 26.10).
+  if (!b.funnelSessionId && !b.firstTouchAdId && !newTouch.firstTouchAdId) newTouch = { ...newTouch, ...(await touchFromCard(req.tenant.id, igOrNull(b.contactIg) || buyerIg)) };
   const order = await db.order.create({
     data: {
       tenantId: req.tenant.id,
