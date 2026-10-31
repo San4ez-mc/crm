@@ -101,8 +101,13 @@ export default function OrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, pipelineId, q, adId, ftFrom, ftTo, stages.map((s) => s.id).join(',')]);
 
+  // 31.10 (менеджери: «ТТН зникає після закриття картки»): дошка — вигляд за замовчуванням і вантажиться ОКРЕМО від таблиці. Картка
+  // оновлювала лише таблицю (load), а дошка лишалась зі старими замовленнями — після збереження ТТН (і коментаря, дати, «Хто оформив»,
+  // реклами) картка на дошці відкривалась зі старими даними, ніби нічого не збереглось. Тепер будь-яка зміна оновлює обидва списки.
+  function refreshAll() { load(); if (view === 'board') loadBoard(stages); } // у таблиці дошку не вантажимо — при поверненні на дошку її перезавантажує ефект [view]
+
   async function moveOrderToStage(orderId, newStageId) {
-    try { await api.updateOrder(orderId, { stageId: newStageId }); load(); loadBoard(stages); } catch (e) { alert(e.message); }
+    try { await api.updateOrder(orderId, { stageId: newStageId }); refreshAll(); } catch (e) { alert(e.message); }
   }
 
   function orderTotal(order) {
@@ -243,7 +248,7 @@ export default function OrdersPage() {
           pipelines={pipelines}
           autoEdit={openInEdit}
           onClose={() => { setSelectedOrder(null); setOpenInEdit(false); }}
-          onChanged={() => { load(); }}
+          onChanged={refreshAll}
           onOpenReturn={(o) => { setReturnForOrder(o); setSelectedOrder(null); }}
         />
       )}
@@ -253,7 +258,7 @@ export default function OrdersPage() {
           stages={stages}
           ads={ads}
           onClose={() => setShowNewOrder(false)}
-          onCreated={() => load()}
+          onCreated={refreshAll}
         />
       )}
 
@@ -262,7 +267,7 @@ export default function OrdersPage() {
           <ReturnForm
             orderId={returnForOrder.id}
             onCancel={() => setReturnForOrder(null)}
-            onSave={async (data) => { await api.createReturn(data); setReturnForOrder(null); load(); }}
+            onSave={async (data) => { await api.createReturn(data); setReturnForOrder(null); refreshAll(); }}
           />
         )}
       </Modal>

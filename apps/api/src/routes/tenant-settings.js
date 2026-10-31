@@ -7,6 +7,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError } = require('@crm/errors');
 const { ensureFreshUsdRate, fetchUsdToUahFromNbu } = require('../lib/currency');
 const { normalizeFitChart, normalizeSizeRules } = require('../lib/sizeFit');
+const ssoClient = require('../lib/ssoClient');
 
 const router = express.Router();
 
@@ -23,6 +24,15 @@ router.get('/tenant', asyncHandler(async (req, res) => {
       shopDescription: t.shopDescription || '', prepaymentAmount: t.prepaymentAmount, shippingTerms: t.shippingTerms || '', expectedRefusalPct: t.expectedRefusalPct,
     },
   });
+}));
+
+// Люди з доступом до CRM цього магазину (SSO) — випадаючий список «Хто оформив» у картці замовлення (Edits goverla, 31.10:
+// Олексій рахує зарплату за прийнятими замовленнями). Імена такі ж, як підставляються автоматично, коли менеджер оформлює замовлення
+// зі свого кабінету (placedBy = імʼя з SSO). SSO недоступний → пустий список + unavailable: форма лишає поточне значення.
+// Шлях НЕ під /tenant: той розділ закритий для менеджерів з обмеженими правами (ключ API магазину), а список імен потрібен у картці замовлення.
+router.get('/staff', asyncHandler(async (req, res) => {
+  const users = await ssoClient.listProjectUsers(req.tenant.id);
+  res.json({ ok: true, data: users || [], ...(users ? {} : { unavailable: true }) });
 }));
 
 // Умови й тип магазину — для бота (Flows): що він каже клієнту про передоплату й відправку, ким себе вважає в промптах.

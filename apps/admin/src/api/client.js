@@ -150,6 +150,7 @@ export const api = {
 
   // Налаштування
   getTenantSettings: () => get('/tenant'),
+  getStaff: () => get('/staff'), // люди з доступом до CRM магазину (SSO) — «Хто оформив»
   updateTenantSettings: (data) => patch('/tenant', data),
   regenerateApiKey: () => post('/tenant/regenerate-key'),
   refreshExchangeRate: () => post('/tenant/refresh-exchange-rate'),

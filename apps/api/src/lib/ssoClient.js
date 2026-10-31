@@ -59,4 +59,23 @@ async function getPermissions(userId) {
   return value;
 }
 
-module.exports = { authorizeUrl, exchangeCodeForToken, introspect, getPermissions, SSO_URL, PRODUCT };
+// Хто має доступ до проєкту (магазину) в CRM — для списку «Хто оформив» (Edits goverla, 31.10). SSO віддає лише імена.
+// Кеш 60 с: список міняється рідко, а картку замовлення відкривають часто. SSO недоступний → null (форма лишає поточне значення).
+const staffCache = new Map(); // projectId -> { value, expiresAt }
+async function listProjectUsers(projectId) {
+  const cached = staffCache.get(projectId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const res = await fetch(`${SSO_URL}/oauth/product-users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, product: PRODUCT, projectId }),
+    signal: AbortSignal.timeout(8000),
+  }).catch((err) => { logger.warn('SSO /oauth/product-users unreachable', { message: err.message }); return null; });
+  if (!res || !res.ok) return null;
+  const j = await res.json().catch(() => null);
+  const value = j && Array.isArray(j.users) ? j.users.map((u) => ({ id: u.id, name: u.name })) : null;
+  if (value) staffCache.set(projectId, { value, expiresAt: Date.now() + 60_000 });
+  return value;
+}
+
+module.exports = { authorizeUrl, exchangeCodeForToken, introspect, getPermissions, listProjectUsers, SSO_URL, PRODUCT };

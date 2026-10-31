@@ -111,6 +111,14 @@ function PlacementSection({ order, onSaved, onError }) {
   const [editWho, setEditWho] = useState(false);
   const [date, setDate] = useState(toLocalInput(order.placedAt || order.createdAt));
   const [who, setWho] = useState(order.placedBy || '');
+  // «Хто оформив» — випадаючий список усіх, хто має доступ до CRM цього магазину (SSO), а не вільний текст (Edits, 31.10: за ним рахують зарплату).
+  const [managers, setManagers] = useState(null);
+  useEffect(() => {
+    if (!editWho || managers) return;
+    api.getStaff().then((r) => setManagers((r.data || []).map((u) => u.name))).catch(() => setManagers([]));
+  }, [editWho]);
+  // «Бот» — завжди; поточне значення, якого нема в списку (стара вільна назва), лишається вибраним, а не губиться.
+  const whoOptions = [...new Set([...(managers || []), 'Бот', ...(order.placedBy ? [order.placedBy] : [])])];
   async function save(patch) {
     try { const r = await api.updateOrder(order.id, patch); onSaved(r.data || patch); setEditDate(false); setEditWho(false); } catch (e) { onError(e.message); }
   }
@@ -137,7 +145,10 @@ function PlacementSection({ order, onSaved, onError }) {
           <div className="text-xs text-slate-500">Хто оформив</div>
           {editWho ? (
             <div className="mt-1 flex items-center gap-2">
-              <Input className="max-w-[12rem]" placeholder="Імʼя менеджера" value={who} onChange={(e) => setWho(e.target.value)} />
+              <Select className="max-w-[12rem]" value={who} onChange={(e) => setWho(e.target.value)} disabled={managers === null}>
+                <option value="">{managers === null ? 'Завантаження…' : '— не вказано —'}</option>
+                {whoOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+              </Select>
               <button onClick={() => save({ placedBy: who.trim() || null })} className="text-xs text-brand-light hover:underline">Зберегти</button>
               <button onClick={() => setEditWho(false)} className="text-xs text-slate-500 hover:underline">Скасувати</button>
             </div>
