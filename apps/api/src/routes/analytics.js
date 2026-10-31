@@ -156,6 +156,40 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
   res.json({ ok: true, data: data.filter((r) => r.qty > 0).sort((a, b) => b.margin - a.margin) });
 }));
 
+// ── Менеджери: хто скільки оформив, % відмов, маржа, ЗП за формулою (31.10) ─────────────────────────────────────────────
+// Edits Олексія (27–31.10): «роблю в статистиці фільтр по менеджеру — дивлюсь, скільки в неї було замовлень, % відмов, загальна маржа — і
+// рахую зарплату». Групуємо оформлені замовлення за «Хто оформив» (Order.placedBy) за ДАТОЮ ОФОРМЛЕННЯ. Оформлено = усі з покупцем, крім
+// скасованих (відмови входять — це знаменник «% відмов»). Виручка/маржа/ЗП — лише з фактичних продажів (не відмова, без повернення), маржа
+// до витрат на рекламу (її на менеджера не розкласти). ЗП = managerCost за формулою товару (marginPerOrderItem: фікс + % від націнки).
+router.get('/analytics/managers', asyncHandler(async (req, res) => {
+  const { from, to } = req.query;
+  const expenseByProduct = await loadExpenseMap(req.tenant.id);
+  const orders = await db.order.findMany({
+    where: { tenantId: req.tenant.id, ...ORDER_PLACED_WHERE, NOT: { stage: { is: { name: { contains: 'скасов', mode: 'insensitive' } } } }, ...placedWhere(from, to) },
+    select: { placedBy: true, isRefused: true, placedAt: true, createdAt: true, returns: { select: { id: true } }, items: { select: { productId: true, price: true, quantity: true } } },
+  });
+  const rows = new Map();
+  for (const o of orders) {
+    const key = (o.placedBy && o.placedBy.trim()) || 'не вказано';
+    const r = rows.get(key) || { manager: key, orders: 0, refused: 0, returned: 0, revenue: 0, margin: 0, managerPay: 0 };
+    r.orders++;
+    if (o.isRefused) r.refused++;
+    else if (o.returns.length) r.returned++;
+    else {
+      const at = placedAtOf(o);
+      for (const it of o.items) {
+        const revenue = Number(it.price) * it.quantity;
+        const cogs = cogsAt(it.productId ? expenseByProduct.get(it.productId) : null, at) * it.quantity;
+        const margin = marginPerOrderItem(it, expenseByProduct, false, at);
+        r.revenue += revenue; r.margin += margin; r.managerPay += revenue - cogs - margin;
+      }
+    }
+    rows.set(key, r);
+  }
+  const data = [...rows.values()].map((r) => ({ ...r, refusedPct: r.orders ? (r.refused / r.orders) * 100 : 0 })).sort((a, b) => b.orders - a.orders);
+  res.json({ ok: true, data });
+}));
+
 // ── §6.4 Допродажі ────────────────────────────────────────────────────────
 // Примітка: модель не фіксує «запропоновано, але відхилено» — acceptanceRate тут це
 // частка появи товару як допродажу серед усіх його появ у замовленнях (наближення з наявних даних).

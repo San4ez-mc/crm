@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { Field, Input, Select, Button, ErrorBanner } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 import { PaymentFields, SupplierSelect, paymentFromOrder, paymentPayload, paymentError } from '../components/orders/OrderFields';
+import ProductPicker from '../components/orders/ProductPicker';
 import { normalizeInstagram, igInputValue } from '../lib/instagram';
 
 function emptyItem() { return { productId: '', name: '', price: '', quantity: 1, color: '', size: '', supplierId: '' }; }
@@ -89,10 +90,7 @@ export default function NewOrderModal({ stages, ads, onClose, onCreated }) {
         <div className="space-y-2">
           {items.map((it, i) => (
             <div key={i} className="grid grid-cols-1 gap-1.5 rounded-lg border border-slate-800 p-2 md:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_minmax(0,1.4fr)_auto]">
-              <Select value={it.productId} onChange={(e) => pickProduct(i, e.target.value)}>
-                <option value="">— оберіть товар —</option>
-                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </Select>
+              <ProductPicker products={products} value={it.productId} onChange={(id) => pickProduct(i, id)} />
               <Input placeholder="Ціна" type="number" value={it.price} onChange={(e) => updateItem(i, { price: e.target.value })} />
               <Input placeholder="К-сть" type="number" min="1" value={it.quantity} onChange={(e) => updateItem(i, { quantity: e.target.value })} />
               <Input placeholder="Колір" value={it.color} onChange={(e) => updateItem(i, { color: e.target.value })} />

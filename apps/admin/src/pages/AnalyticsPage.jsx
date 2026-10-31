@@ -53,7 +53,7 @@ export default function AnalyticsPage() {
     try {
       const params = { from: range.from, to: range.to };
       const prevRange = previousPeriod(range);
-      const [top, prevTop, ads, margin, upsells, ttp, daily, prevDaily] = await Promise.all([
+      const [top, prevTop, ads, margin, upsells, ttp, daily, prevDaily, managers] = await Promise.all([
         api.analyticsTopProducts({ ...params, includeUpsells }),
         api.analyticsTopProducts({ ...prevRange, includeUpsells }),
         api.analyticsAdsConversion(params),
@@ -62,6 +62,7 @@ export default function AnalyticsPage() {
         api.analyticsTimeToPurchase(params),
         api.analyticsDaily(params),
         api.analyticsDaily(prevRange),
+        api.analyticsManagers(params),
       ]);
 
       const revenue = top.data.reduce((s, t) => s + t.revenue, 0);
@@ -81,6 +82,7 @@ export default function AnalyticsPage() {
         trend: daily.data,
         products,
         ads: ads.data,
+        managers: managers.data,
         upsells: upsells.data,
         ttp: ttp.data,
       });
@@ -189,6 +191,30 @@ export default function AnalyticsPage() {
                   </tr>
                 ))}
                 {data.ads.length === 0 && <tr><td colSpan={6} className="py-3 text-center text-slate-500">Оголошень ще немає.</td></tr>}
+              </tbody>
+            </table>
+          </Card>
+
+          {/* Менеджери (31.10, Edits Олексія): скільки оформив кожен, % відмов, маржа й ЗП за формулою — для розрахунку зарплат */}
+          <Card className="p-4">
+            <h3 className="mb-1 text-sm font-semibold">Менеджери: замовлення, відмови, маржа</h3>
+            <p className="mb-3 text-xs text-slate-500">За датою оформлення. «Хто оформив» обирається в картці замовлення. Виручка, маржа й ЗП — лише з фактичних продажів (без відмов і повернень); маржа — до витрат на рекламу.</p>
+            <table className="w-full text-xs">
+              <thead className="text-slate-500"><tr><th className="pb-1 text-left">Менеджер</th><th className="pb-1 text-right">Оформлено</th><th className="pb-1 text-right">Відмов</th><th className="pb-1 text-right">% відмов</th><th className="pb-1 text-right">Повернень</th><th className="pb-1 text-right">Виручка</th><th className="pb-1 text-right">Маржа</th><th className="pb-1 text-right" title="За формулою товару: фіксована сума + % від націнки">ЗП за формулою</th></tr></thead>
+              <tbody>
+                {data.managers.map((m) => (
+                  <tr key={m.manager} className="border-t border-slate-800/60">
+                    <td className="py-1">{m.manager}</td>
+                    <td className="py-1 text-right">{m.orders}</td>
+                    <td className="py-1 text-right">{m.refused}</td>
+                    <td className="py-1 text-right">{m.refusedPct.toFixed(0)}%</td>
+                    <td className="py-1 text-right">{m.returned}</td>
+                    <td className="py-1 text-right">{money(m.revenue)}</td>
+                    <td className="py-1 text-right">{money(m.margin)}</td>
+                    <td className="py-1 text-right">{money(m.managerPay)}</td>
+                  </tr>
+                ))}
+                {data.managers.length === 0 && <tr><td colSpan={8} className="py-3 text-center text-slate-500">Даних за період немає.</td></tr>}
               </tbody>
             </table>
           </Card>

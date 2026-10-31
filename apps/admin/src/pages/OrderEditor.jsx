@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { Field, Input, Select, Button, Badge, ErrorBanner, money } from '../components/common/Common';
 import { PaymentFields, SupplierSelect, paymentFromOrder, paymentPayload, paymentError } from '../components/orders/OrderFields';
+import ProductPicker from '../components/orders/ProductPicker';
 import { normalizeInstagram, igInputValue } from '../lib/instagram';
 
 const COLOR_RE = /кол|цвет|color/i;
@@ -205,10 +206,7 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
             return (
               <div key={it.key} className="rounded-lg border border-slate-800 p-2">
                 <div className="grid grid-cols-1 gap-1.5 md:grid-cols-[minmax(0,2.4fr)_repeat(2,minmax(0,1fr))_70px_90px_auto]">
-                  <Select value={it.productId} onChange={(e) => pickProduct(it.key, e.target.value)}>
-                    <option value="">{it.productId ? it.name : '— оберіть товар —'}</option>
-                    {products.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                  </Select>
+                  <ProductPicker products={products} value={it.productId} label={it.name} onChange={(id) => pickProduct(it.key, id)} />
                   {p?.isSet
                     ? <div className="col-span-2 self-center text-xs text-slate-400">Комплект — колір і розмір по кожній речі нижче</div>
                     : <ColorSizeFields product={p} color={it.color} size={it.size} onChange={(patch) => update(it.key, patch)} />}

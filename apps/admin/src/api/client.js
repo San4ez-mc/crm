@@ -126,6 +126,7 @@ export const api = {
   analyticsTopProducts: (params = {}) => get(`/analytics/top-products?${new URLSearchParams(params)}`),
   analyticsAdsConversion: (params = {}) => get(`/analytics/ads-conversion?${new URLSearchParams(params)}`),
   analyticsMargin: (params = {}) => get(`/analytics/margin?${new URLSearchParams(params)}`),
+  analyticsManagers: (params = {}) => get(`/analytics/managers?${new URLSearchParams(params)}`),
   analyticsUpsells: (params = {}) => get(`/analytics/upsells?${new URLSearchParams(params)}`),
   analyticsTimeToPurchase: (params = {}) => get(`/analytics/time-to-purchase?${new URLSearchParams(params)}`),
   analyticsDaily: (params = {}) => get(`/analytics/daily?${new URLSearchParams(params)}`),

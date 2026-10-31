@@ -36,6 +36,9 @@ router.post('/returns', asyncHandler(async (req, res) => {
   }
   if (!orderId) throw new ValidationError('orderId або funnelSessionId обовʼязковий');
   const order = await db.order.findFirst({ where: { id: orderId, tenantId: req.tenant.id }, include: { stage: { select: { pipelineId: true } } } });
+  // Клієнт відмовився на пошті (Нова пошта: «Відмова від отримання») — це «Не забрав на пошті» і `% відмов`, а не повернення товару:
+  // обмін/повернення лишається записом у журналі, але замовлення з дошки у «Повернення/обмін» не переносимо (Edits Олексія, 31.10).
+  const refusedAtPost = /відмов/i.test(String(order.ttnStatus || ''));
   if (!order) throw new NotFoundError('Order', orderId);
   const ret = await db.return.create({
     data: { tenantId: req.tenant.id, orderId, type, reason: reason || null, status: status || 'new', ttn: ttn ? String(ttn).replace(/\D/g, '') || null : null, exchangeFor: exchangeFor || null, source: source || null },
@@ -44,7 +47,7 @@ router.post('/returns', asyncHandler(async (req, res) => {
   // є (2026-09-05, за проханням власника) — щоб факт повернення/обміну було видно на дошці
   // замовлень, не лише в журналі повернень. Немає такої стадії — тихо пропускаємо, не блокуючи
   // створення самого Return.
-  if (order.stage?.pipelineId) {
+  if (order.stage?.pipelineId && !refusedAtPost) {
     const returnStage = await db.stage.findFirst({ where: { pipelineId: order.stage.pipelineId, name: 'Повернення/обмін' } });
     if (returnStage && returnStage.id !== order.stageId) {
       await db.order.update({ where: { id: order.id }, data: { stageId: returnStage.id } }).catch(() => {});

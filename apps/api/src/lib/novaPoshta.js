@@ -104,6 +104,12 @@ async function syncTtnStatuses(tenantId, opts = {}) {
       data.stageId = target.id;
       res.moved.push({ orderId: o.id, ttn, to: outcome, stage: target.name, name: (o.buyer && o.buyer.fullName) || o.contactName || null });
     }
+    // Відмова за НП зараз (не липка позначка isRefused — клієнт міг потім забрати) + замовлення стоїть у «Повернення/обмін» (туди його
+    // переносив POST /returns, коли бот реєстрував обмін після відмови) → повертаємо в «Не забрав на пошті» (Edits Олексія, 31.10).
+    else if (stages && stages.arrived && REFUSED_CODES.includes(String(d.StatusCode || '')) && /поверн|обмін/.test(cur) && stages.arrived.id !== o.stageId) {
+      data.stageId = stages.arrived.id;
+      res.moved.push({ orderId: o.id, ttn, to: 'refused', stage: stages.arrived.name, name: (o.buyer && o.buyer.fullName) || o.contactName || null });
+    }
     await db.order.update({ where: { id: o.id }, data });
     res.updated++;
   }
