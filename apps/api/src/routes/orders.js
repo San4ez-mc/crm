@@ -311,7 +311,7 @@ router.patch('/orders/:id', asyncHandler(async (req, res) => {
       ...(b.placedAt !== undefined ? { placedAt: placedAtFrom(b.placedAt) } : {}),
       ...(b.placedBy !== undefined ? { placedBy: b.placedBy ? String(b.placedBy).trim().slice(0, 80) : null } : {}),
       // Покупець зʼявився вперше (картку перетворили на замовлення вручну) — це оформлення.
-      ...(!existing.buyerId && buyerPatch.buyerId && !existing.placedAt && b.placedAt === undefined ? { placedAt: new Date(), placedBy: placedByFrom(b, req, false) } : {}),
+      ...(!existing.buyerId && buyerPatch.buyerId && !existing.placedAt && b.placedAt === undefined ? { placedAt: new Date(), placedBy: existing.placedBy || placedByFrom(b, req, false) } : {}),
     },
     include: ORDER_INCLUDE,
   });

@@ -1,11 +1,36 @@
 // §9.8 Замовлення — деталі (drawer/модалка з рядка списку).
+// 31.10 (власник: «поскладай картку зграбніше, щоб не було порожніх місць і не було переповнених»): розділи — однакові блоки у двох
+// стовпцях (на вузьких екранах — в один), кожен рядок «підпис — значення» вирівняний; стадія й менеджер — угорі в «Оформленні».
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { Field, Input, Textarea, Select, Button, Badge, ErrorBanner, money, formatDateTime } from '../components/common/Common';
+import { Input, Textarea, Select, Button, Badge, ErrorBanner, money, formatDateTime } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 import OrderEditor from './OrderEditor';
 import { PAYMENT_TYPE_LABEL } from '../components/orders/OrderFields';
 import { DELIVERY, deliveryStatusOf } from '../components/orders/deliveryStatus';
+
+// Блок картки: однаковий вигляд усіх розділів (заголовок + дія праворуч). h-full — блоки в одному ряду сітки однакової висоти.
+function Block({ title, action, children, className = '' }) {
+  return (
+    <section className={`h-full rounded-xl border border-slate-800 bg-slate-900/40 p-4 ${className}`}>
+      <div className="mb-3 flex min-h-[1.25rem] items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h4>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// Рядок «підпис — значення»: підпис фіксованої ширини зліва, значення в другій колонці (на вузькому екрані — два рядки).
+function Row({ label, children }) {
+  return (
+    <div className="grid grid-cols-1 items-center gap-x-3 gap-y-1 py-2 first:pt-0 last:pb-0 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+      <span className="text-xs text-slate-500">{label}</span>
+      <div className="min-w-0 text-slate-200">{children}</div>
+    </div>
+  );
+}
 
 // Реклама замовлення (Edits 3605aed1/2f4d68fd, 2026-10-06): видно для будь-якого замовлення (і створеного ботом), можна змінити вручну.
 // Перший дотик — реклама, з якої людина вперше прийшла в розмову (саме їй звіти зараховують замовлення); останній — остання реклама
@@ -65,11 +90,10 @@ function AttributionSection({ order, onSaved, onError }) {
     </button>
   );
   return (
-    <section>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <h4 className="text-xs font-semibold uppercase text-slate-500">Реклама (атрибуція)</h4>
-        <button onClick={() => { setOpen(!open); setQ(''); setFound([]); }} className="shrink-0 text-xs text-brand-light hover:underline">{open ? 'Скасувати' : (first || last) ? 'Змінити' : 'Вказати оголошення'}</button>
-      </div>
+    <Block
+      title="Реклама"
+      action={<button onClick={() => { setOpen(!open); setQ(''); setFound([]); }} className="shrink-0 text-xs text-brand-light hover:underline">{open ? 'Скасувати' : (first || last) ? 'Змінити' : 'Вказати оголошення'}</button>}
+    >
       <div className="space-y-1.5 text-slate-300">
         {differ ? (
           <>
@@ -77,11 +101,11 @@ function AttributionSection({ order, onSaved, onError }) {
             <div><span className="text-slate-500">Останній дотик: </span><AdLine ad={last} /></div>
           </>
         ) : (
-          <div><span className="text-slate-500">Оголошення: </span><AdLine ad={first || last} /></div>
+          <div><AdLine ad={first || last} /></div>
         )}
       </div>
       {open && (
-        <div className="mt-2 rounded border border-slate-800 p-2">
+        <div className="mt-3 rounded-lg border border-slate-800 p-2">
           {productIds.length > 0 && (
             <div className="mb-2">
               <div className="mb-1 text-[11px] uppercase text-slate-500">Активні оголошення товарів цього замовлення</div>
@@ -97,69 +121,61 @@ function AttributionSection({ order, onSaved, onError }) {
           </div>
         </div>
       )}
-    </section>
+    </Block>
   );
 }
 
-// Оплата (2026-10-14, власник: «у картці замовлення має бути видно оплату»): платежі з журналу (бот, фонова перезвірка
-// Flows) — GET /orders/:id віддає payments. Успішна = status 'success' або не вказано.
-// Дата оформлення й «Хто оформив» (2026-10-26, Edits c4fc2dcd/15b533ae): від дати оформлення рахують звіти й фільтр дошки; правки
-// її не змінюють. «Змінити дату» — менеджер прийняв у пʼятницю ввечері, а оформив у понеділок.
+// Оформлення: стадія, «Хто оформив» і дата. Дата оформлення й «Хто оформив» (2026-10-26, Edits c4fc2dcd/15b533ae): від дати оформлення
+// рахують звіти й фільтр дошки; правки її не змінюють. «Змінити дату» — менеджер прийняв у пʼятницю ввечері, а оформив у понеділок.
+// 31.10 (власник): менеджер — у ВСІХ статусах (і в картці розмови до замовлення), одразу випадаючим списком усіх, хто має доступ до CRM
+// магазину (SSO); зберігається при виборі, без окремої кнопки «Змінити» (за цим полем Олексій рахує зарплату).
 const toLocalInput = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 16); };
-function PlacementSection({ order, onSaved, onError }) {
+function OrderMeta({ order, stages, onChangeStage, onSaved, onError }) {
+  const placed = !!(order.buyer || order.placedAt);
   const [editDate, setEditDate] = useState(false);
-  const [editWho, setEditWho] = useState(false);
   const [date, setDate] = useState(toLocalInput(order.placedAt || order.createdAt));
-  const [who, setWho] = useState(order.placedBy || '');
-  // «Хто оформив» — випадаючий список усіх, хто має доступ до CRM цього магазину (SSO), а не вільний текст (Edits, 31.10: за ним рахують зарплату).
   const [managers, setManagers] = useState(null);
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
-    if (!editWho || managers) return;
     api.getStaff().then((r) => setManagers((r.data || []).map((u) => u.name))).catch(() => setManagers([]));
-  }, [editWho]);
+  }, []);
   // «Бот» — завжди; поточне значення, якого нема в списку (стара вільна назва), лишається вибраним, а не губиться.
   const whoOptions = [...new Set([...(managers || []), 'Бот', ...(order.placedBy ? [order.placedBy] : [])])];
   async function save(patch) {
-    try { const r = await api.updateOrder(order.id, patch); onSaved(r.data || patch); setEditDate(false); setEditWho(false); } catch (e) { onError(e.message); }
+    setSaving(true);
+    try { const r = await api.updateOrder(order.id, patch); onSaved(r.data || patch); setEditDate(false); } catch (e) { onError(e.message); }
+    finally { setSaving(false); }
   }
-  if (!order.buyer && !order.placedAt) return null; // картка розмови — ще не оформлено
   return (
-    <section>
-      <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Оформлення</h4>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div>
-          <div className="text-xs text-slate-500">Дата оформлення</div>
-          {editDate ? (
-            <div className="mt-1 flex items-center gap-2">
-              <Input type="datetime-local" className="!w-auto" value={date} onChange={(e) => setDate(e.target.value)} />
+    <Block title="Оформлення">
+      <div className="divide-y divide-slate-800/60">
+        <Row label="Стадія">
+          <Select className="!py-1.5" value={order.stageId || ''} onChange={(e) => onChangeStage(e.target.value)}>
+            {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </Select>
+        </Row>
+        <Row label={placed ? 'Хто оформив' : 'Менеджер'}>
+          <Select className="!py-1.5" value={order.placedBy || ''} onChange={(e) => save({ placedBy: e.target.value || null })} disabled={managers === null || saving}>
+            <option value="">{managers === null ? 'Завантаження…' : '— не вказано —'}</option>
+            {whoOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+          </Select>
+        </Row>
+        <Row label={placed ? 'Дата оформлення' : 'Розмова від'}>
+          {placed && editDate ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Input type="datetime-local" className="!w-auto !py-1.5" value={date} onChange={(e) => setDate(e.target.value)} />
               <button onClick={() => save({ placedAt: new Date(date).toISOString() })} className="text-xs text-brand-light hover:underline">Зберегти</button>
               <button onClick={() => setEditDate(false)} className="text-xs text-slate-500 hover:underline">Скасувати</button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-slate-200">{formatDateTime(order.placedAt || order.createdAt)}
-              <button onClick={() => setEditDate(true)} className="text-xs text-brand-light hover:underline">Змінити дату</button>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>{formatDateTime(order.placedAt || order.createdAt)}</span>
+              {placed && <button onClick={() => setEditDate(true)} className="text-xs text-brand-light hover:underline">Змінити дату</button>}
             </div>
           )}
-        </div>
-        <div>
-          <div className="text-xs text-slate-500">Хто оформив</div>
-          {editWho ? (
-            <div className="mt-1 flex items-center gap-2">
-              <Select className="max-w-[12rem]" value={who} onChange={(e) => setWho(e.target.value)} disabled={managers === null}>
-                <option value="">{managers === null ? 'Завантаження…' : '— не вказано —'}</option>
-                {whoOptions.map((n) => <option key={n} value={n}>{n}</option>)}
-              </Select>
-              <button onClick={() => save({ placedBy: who.trim() || null })} className="text-xs text-brand-light hover:underline">Зберегти</button>
-              <button onClick={() => setEditWho(false)} className="text-xs text-slate-500 hover:underline">Скасувати</button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-slate-200">{order.placedBy || <span className="text-slate-500">не вказано</span>}
-              <button onClick={() => setEditWho(true)} className="text-xs text-brand-light hover:underline">Змінити</button>
-            </div>
-          )}
-        </div>
+        </Row>
       </div>
-    </section>
+    </Block>
   );
 }
 
@@ -176,6 +192,8 @@ function PaymentTerms({ order, total }) {
     </div>
   );
 }
+// Оплата (2026-10-14, власник: «у картці замовлення має бути видно оплату»): платежі з журналу (бот, фонова перезвірка
+// Flows) — GET /orders/:id віддає payments. Успішна = status 'success' або не вказано.
 function PaymentSection({ order, payments }) {
   const total = (order.items || []).reduce((s, it) => s + Number(it.price) * it.quantity, 0);
   const list = payments || [];
@@ -184,17 +202,13 @@ function PaymentSection({ order, payments }) {
     ? <Badge color="red">не оплачено</Badge>
     : paid >= total && total > 0 ? <Badge color="green">оплачено повністю</Badge> : <Badge color="amber">передоплата</Badge>;
   return (
-    <section>
-      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-xs font-semibold uppercase text-slate-500">Оплата</h4>
-        {payments === null ? <span className="text-xs text-slate-500">завантаження…</span> : badge}
-      </div>
+    <Block title="Оплата" action={payments === null ? <span className="text-xs text-slate-500">завантаження…</span> : badge}>
       <PaymentTerms order={order} total={total} />
       {payments !== null && (
         <>
-          <div className="mt-1 text-slate-200">Оплачено <b>{money(paid)}</b> з {money(total)}</div>
+          <div className="mt-1.5 text-slate-200">Оплачено <b>{money(paid)}</b> з {money(total)}</div>
           {list.length > 0 ? (
-            <div className="mt-1.5 space-y-1">
+            <div className="mt-2 space-y-1">
               {list.map((p) => (
                 <div key={p.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg bg-slate-800/50 px-3 py-1.5 text-xs">
                   <span className="text-slate-400">{formatDateTime(p.createdAt)}</span>
@@ -204,10 +218,10 @@ function PaymentSection({ order, payments }) {
                 </div>
               ))}
             </div>
-          ) : <div className="mt-1 text-xs text-slate-500">Платежів у журналі немає</div>}
+          ) : <div className="mt-1.5 text-xs text-slate-500">Платежів у журналі немає</div>}
         </>
       )}
-    </section>
+    </Block>
   );
 }
 
@@ -224,21 +238,26 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
     api.getOrder(initialOrder.id).then((r) => setPayments(r.data?.payments || [])).catch(() => setPayments([]));
   }, [initialOrder.id]);
 
+  // Після зміни на сервері картка одразу показує нове значення (раніше стадія/відмова/статус НП після збереження лишались старими
+  // до повторного відкриття) — зливаємо відповідь API в локальний стан і оновлюємо списки.
+  const merge = (data) => setOrder((o) => ({ ...o, ...(data || {}) }));
   async function saveComment() {
     try { await api.updateOrder(order.id, { managerComment }); onChanged(); } catch (e) { setError(e.message); }
   }
   async function changeStage(stageId) {
-    try { await api.updateOrder(order.id, { stageId }); onChanged(); } catch (e) { setError(e.message); }
+    try { const r = await api.updateOrder(order.id, { stageId }); merge(r.data); onChanged(); } catch (e) { setError(e.message); }
   }
   async function refreshTtn() {
     try {
       const r = await api.refreshOrderTtn(order.id);
       if (r?.data?.skipped) setError(r.data.skipped);
+      const fresh = await api.getOrder(order.id);
+      merge(fresh.data); setPayments(fresh.data?.payments || []);
       onChanged();
     } catch (e) { setError(e.message); }
   }
   async function toggleRefused() {
-    try { await api.updateOrder(order.id, { isRefused: !order.isRefused }); onChanged(); } catch (e) { setError(e.message); }
+    try { const r = await api.updateOrder(order.id, { isRefused: !order.isRefused }); merge(r.data); onChanged(); } catch (e) { setError(e.message); }
   }
   // 2026-10-18 (Олексій: «видалити/скасувати»): скасування — стадія «Скасовано», замовлення лишається в історії й аналітиці;
   // видалення — лише помилково створене замовлення без платежів, ТТН і повернень (сервер перевіряє те саме).
@@ -257,56 +276,57 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
   }
   const currentStage = stages.find((s) => s.id === order.stageId);
   const isCancelled = /скасов|cancel/i.test(currentStage?.name || '');
+  const itemsTotal = (order.items || []).reduce((s, it) => s + Number(it.price) * it.quantity, 0);
+  const igName = order.buyer?.igUsername || order.contactIg;
+  const measurements = order.buyer?.knownMeasurements && Object.keys(order.buyer.knownMeasurements).length ? Object.entries(order.buyer.knownMeasurements) : [];
 
   return (
-    <Modal isOpen title={order.buyer || order.placedAt ? `Замовлення від ${formatDateTime(order.placedAt || order.createdAt)}` : `Розмова від ${formatDateTime(order.createdAt)}`} onClose={onClose} wide>
+    <Modal isOpen title={order.buyer || order.placedAt ? `Замовлення від ${formatDateTime(order.placedAt || order.createdAt)}` : `Розмова від ${formatDateTime(order.createdAt)}`} onClose={onClose} wide="xl">
       <ErrorBanner message={error} />
       {editing ? (
         <OrderEditor order={order} onCancel={() => setEditing(false)} onSaved={(o) => { setOrder(o); setEditing(false); onChanged(); }} />
       ) : (
-      <div className="space-y-5 text-sm">
-        <section>
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <h4 className="text-xs font-semibold uppercase text-slate-500">Покупець</h4>
-            {/* Одна кнопка (Edits 15b533ae): редактор міняє і клієнта, і товари, і доставку, і оплату. */}
-            <button onClick={() => setEditing(true)} className="text-xs text-brand-light hover:underline">✏️ Редагувати замовлення</button>
-          </div>
-          {/* 2026-10-15 (Edit 2cb4dd27): поки клієнт не замовив (покупця ще нема) — імʼя й нікнейм з Instagram і розмова у Flows, а не «— ·». */}
-          {order.buyer
-            ? <div>{order.buyer.fullName || '—'}{order.buyer.phone ? ` · ${order.buyer.phone}` : ''}</div>
-            : <div>{order.contactName || <span className="text-slate-500">ще не замовив</span>}</div>}
-          <div className="flex flex-wrap items-center gap-x-3">
-            {(order.buyer?.igUsername || order.contactIg) && <a className="text-brand-light" href={`https://instagram.com/${order.buyer?.igUsername || order.contactIg}`} target="_blank" rel="noreferrer">@{order.buyer?.igUsername || order.contactIg}</a>}
-            {order.funnelSessionId && <a className="text-xs text-brand-light hover:underline" href={`https://flows.fineko.space/sessions/${order.funnelSessionId}`} target="_blank" rel="noreferrer">розмова у Flows ↗</a>}
-          </div>
-          {order.buyer?.knownMeasurements && Object.keys(order.buyer.knownMeasurements).length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {Object.entries(order.buyer.knownMeasurements).map(([k, v]) => (
-                <Badge key={k}>{k}: {v}</Badge>
-              ))}
+      <div className="space-y-4 text-sm">
+        {/* Хто купує | стадія, менеджер, дата */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Block
+            title="Покупець"
+            /* Одна кнопка (Edits 15b533ae): редактор міняє і клієнта, і товари, і доставку, і оплату. */
+            action={<button onClick={() => setEditing(true)} className="text-xs text-brand-light hover:underline">✏️ Редагувати замовлення</button>}
+          >
+            {/* 2026-10-15 (Edit 2cb4dd27): поки клієнт не замовив (покупця ще нема) — імʼя й нікнейм з Instagram і розмова у Flows, а не «— ·». */}
+            <div className="text-base font-medium text-slate-100">
+              {order.buyer
+                ? <>{order.buyer.fullName || '—'}{order.buyer.phone ? <span className="font-normal text-slate-300"> · {order.buyer.phone}</span> : null}</>
+                : (order.contactName || <span className="font-normal text-slate-500">ще не замовив</span>)}
             </div>
-          )}
-        </section>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {igName && <a className="text-brand-light hover:underline" href={`https://instagram.com/${igName}`} target="_blank" rel="noreferrer">@{igName}</a>}
+              {order.funnelSessionId && <a className="text-xs text-brand-light hover:underline" href={`https://flows.fineko.space/sessions/${order.funnelSessionId}`} target="_blank" rel="noreferrer">розмова у Flows ↗</a>}
+            </div>
+            {measurements.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {measurements.map(([k, v]) => <Badge key={k}>{k}: {v}</Badge>)}
+              </div>
+            )}
+          </Block>
+          <OrderMeta order={order} stages={stages} onChangeStage={changeStage} onSaved={(o) => { merge(o); onChanged(); }} onError={setError} />
+        </div>
 
-        <PlacementSection order={order} onSaved={(o) => { setOrder({ ...order, ...o }); onChanged(); }} onError={setError} />
-
-        <section>
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <h4 className="text-xs font-semibold uppercase text-slate-500">Товари</h4>
-            {order.managerEditedAt && <Badge color="teal">Змінено менеджером {formatDateTime(order.managerEditedAt)}</Badge>}
-          </div>
-          <div className="space-y-1">
+        {/* Що замовлено */}
+        <Block title="Товари" action={order.managerEditedAt ? <Badge color="teal">Змінено менеджером {formatDateTime(order.managerEditedAt)}</Badge> : null}>
+          <div className="space-y-1.5">
             {order.items.map((it) => {
               // Фото конкретного варіанту (колір/розмір), якщо є — інакше загальне фото товару.
               const thumb = it.offer?.images?.[0] || it.product?.images?.[0] || it.product?.thumbnailUrl || '';
               return (
                 <div key={it.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-800/50 px-3 py-2">
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     {thumb
                       ? <img src={thumb} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
                       : <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-800 text-slate-600">—</div>}
-                    <span>
-                      {it.name} × {it.quantity} {it.isUpsell && <Badge color="teal">Допродаж</Badge>}
+                    <span className="min-w-0">
+                      <span className="text-slate-100">{it.name} × {it.quantity}</span> {it.isUpsell && <Badge color="teal">Допродаж</Badge>}
                       {Array.isArray(it.properties) && it.properties.length > 0 && (
                         <span className="ml-2 text-xs text-slate-400">({it.properties.map((p) => `${p.name}: ${p.value}`).join(', ')})</span>
                       )}
@@ -318,56 +338,66 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
                       )}
                     </span>
                   </div>
-                  <span className="shrink-0">{money(Number(it.price) * it.quantity)}</span>
+                  <span className="shrink-0 font-medium text-slate-100">{money(Number(it.price) * it.quantity)}</span>
                 </div>
               );
             })}
           </div>
-        </section>
-
-        <section>
-          <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Доставка</h4>
-          <div className="text-slate-300">{order.shipping?.city || '—'}{(order.shipping?.branch || order.shipping?.warehouse) ? `, ${order.shipping.branch || order.shipping.warehouse}` : ''}</div>
-          {(order.shipping?.recipientFullName || order.shipping?.recipientPhone) && (
-            <div className="text-slate-400">Отримувач: {[order.shipping.recipientFullName, order.shipping.recipientPhone].filter(Boolean).join(' · ')}</div>
-          )}
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            {order.ttn?.length ? order.ttn.map((t) => <Badge key={t}>{t}</Badge>) : <span className="text-slate-500">ТТН немає</span>}
-            {order.ttnStatus && <Badge color={DELIVERY[deliveryStatusOf(order)].color}>{order.ttnStatus}</Badge>}
-            {order.ttnEta && <span className="text-xs text-slate-400">доставка за НП: {new Date(order.ttnEta).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}</span>}
-            {order.ttnStatusAt && <span className="text-xs text-slate-500">перевірено {new Date(order.ttnStatusAt).toLocaleString('uk-UA', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
-            <button onClick={refreshTtn} className="text-xs text-brand-light hover:underline">Оновити зараз</button>
+          <div className="mt-3 flex items-center justify-between border-t border-slate-800/60 pt-3">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Разом</span>
+            <span className="text-base font-semibold text-slate-100">{money(itemsTotal)}</span>
           </div>
-          <div className="mt-2 flex items-center gap-2">
-            {order.isRefused ? <Badge color="red">Відмова від НП</Badge> : null}
-            <button onClick={toggleRefused} className="text-xs text-slate-400 hover:text-red-300">
-              {order.isRefused ? 'Зняти позначку відмови' : 'Позначити як відмову (не забрав/не оплатив на НП)'}
-            </button>
-          </div>
-        </section>
+        </Block>
 
-        <PaymentSection order={order} payments={payments} />
+        {/* Доставка | оплата */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Block title="Доставка" action={order.ttn?.length ? <button onClick={refreshTtn} className="text-xs text-brand-light hover:underline">Оновити статус НП</button> : null}>
+            <div className="divide-y divide-slate-800/60">
+              <Row label="Адреса">
+                {order.shipping?.city || order.shipping?.branch || order.shipping?.warehouse
+                  ? `${order.shipping?.city || '—'}${(order.shipping?.branch || order.shipping?.warehouse) ? `, ${order.shipping.branch || order.shipping.warehouse}` : ''}`
+                  : <span className="text-slate-500">не вказана</span>}
+              </Row>
+              {(order.shipping?.recipientFullName || order.shipping?.recipientPhone) && (
+                <Row label="Отримувач">{[order.shipping.recipientFullName, order.shipping.recipientPhone].filter(Boolean).join(' · ')}</Row>
+              )}
+              <Row label="ТТН">
+                {order.ttn?.length
+                  ? <div className="flex flex-wrap gap-1.5">{order.ttn.map((t) => <Badge key={t}>{t}</Badge>)}</div>
+                  : <span className="text-slate-500">ще немає</span>}
+              </Row>
+              {order.ttn?.length > 0 && (
+                <Row label="Статус НП">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    {order.ttnStatus ? <Badge color={DELIVERY[deliveryStatusOf(order)].color}>{order.ttnStatus}</Badge> : <span className="text-slate-500">ще не перевірено</span>}
+                    {order.ttnEta && <span className="text-xs text-slate-400">доставка: {new Date(order.ttnEta).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}</span>}
+                    {order.ttnStatusAt && <span className="text-xs text-slate-500">перевірено {new Date(order.ttnStatusAt).toLocaleString('uk-UA', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
+                  </div>
+                </Row>
+              )}
+            </div>
+            <label className="mt-3 flex cursor-pointer items-center gap-2 border-t border-slate-800/60 pt-3 text-xs text-slate-400">
+              <input type="checkbox" checked={!!order.isRefused} onChange={toggleRefused} />
+              <span className={order.isRefused ? 'text-red-300' : ''}>Відмова на НП (не забрав / не оплатив)</span>
+            </label>
+          </Block>
+          <PaymentSection order={order} payments={payments} />
+        </div>
 
-        <section>
-          <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Оплата / коментар менеджера</h4>
-          <Textarea rows={2} value={managerComment} onChange={(e) => setManagerComment(e.target.value)} onBlur={saveComment} />
-        </section>
+        {/* Реклама | коментар */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <AttributionSection order={order} onSaved={(o) => { merge(o); onChanged(); }} onError={setError} />
+          <Block title="Коментар менеджера">
+            <Textarea rows={3} placeholder="Нотатки для команди: домовленості з клієнтом, нюанси оплати чи доставки…" value={managerComment} onChange={(e) => setManagerComment(e.target.value)} onBlur={saveComment} />
+          </Block>
+        </div>
 
-        <AttributionSection order={order} onSaved={(o) => { setOrder({ ...order, ...o }); onChanged(); }} onError={setError} />
-
-        <section>
-          <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Стадія</h4>
-          <Select value={order.stageId || ''} onChange={(e) => changeStage(e.target.value)}>
-            {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </Select>
-        </section>
-
-        <div className="flex flex-wrap justify-between gap-2 border-t border-slate-800 pt-4">
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-4">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="secondary" onClick={() => onOpenReturn(order)}>Оформити повернення/обмін</Button>
             {!isCancelled && <Button variant="secondary" onClick={cancelOrder}>Скасувати замовлення</Button>}
             {payments !== null && (deleteBlockers.length
-              ? <span className="self-center text-xs text-slate-500" title="Видаляти можна лише помилково створені замовлення">Видалити не можна: {deleteBlockers.join(', ')}</span>
+              ? <span className="text-xs text-slate-500" title="Видаляти можна лише помилково створені замовлення">Видалити не можна: {deleteBlockers.join(', ')}</span>
               : <button onClick={deleteOrder} className="px-2 text-sm text-red-400 hover:text-red-300">Видалити</button>)}
           </div>
           <Button variant="secondary" onClick={onClose}>Закрити</Button>

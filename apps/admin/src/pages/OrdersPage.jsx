@@ -192,6 +192,8 @@ export default function OrdersPage() {
                       <div className="text-sm font-medium">{o.buyer?.fullName || o.buyer?.phone || o.contactName || (o.contactIg ? '@' + o.contactIg : 'Без покупця')}</div>
                       {(o.buyer?.igUsername || o.contactIg) && <div className="text-xs text-brand-light">@{o.buyer?.igUsername || o.contactIg}</div>}
                       <div className="mt-1 text-xs text-slate-500 line-clamp-1">{o.items.map((it) => it.name).join(', ')}</div>
+                      {/* Менеджер видно у всіх стадіях (31.10, власник) — не лише оформлених. */}
+                      {o.placedBy && <div className="mt-1 text-[11px] text-slate-400">👤 {o.placedBy}</div>}
                       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1">
                         <span className="text-sm">
                           {money(orderTotal(o))}
@@ -221,7 +223,10 @@ export default function OrdersPage() {
               {orders.map((o) => (
                 <tr key={o.id} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30" onClick={() => setSelectedOrder(o)}>
                   <td className="px-4 py-3 text-slate-400">{formatDate(o.placedAt || o.createdAt)}</td>
-                  <td className="px-4 py-3">{o.buyer?.fullName || o.buyer?.phone || '—'}</td>
+                  <td className="px-4 py-3">
+                    {o.buyer?.fullName || o.buyer?.phone || o.contactName || (o.contactIg ? '@' + o.contactIg : '—')}
+                    {o.placedBy && <div className="text-[11px] text-slate-500">👤 {o.placedBy}</div>}
+                  </td>
                   <td className="px-4 py-3 text-slate-400">{o.items.map((it) => it.name).join(', ')}</td>
                   <td className="px-4 py-3">
                     {money(orderTotal(o))}
