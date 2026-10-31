@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import { Field, Input, Select, Button, Badge, ErrorBanner, money } from '../components/common/Common';
 import { PaymentFields, SupplierSelect, paymentFromOrder, paymentPayload, paymentError } from '../components/orders/OrderFields';
 import ProductPicker from '../components/orders/ProductPicker';
+import { findSize } from '../lib/sizes';
 import { normalizeInstagram, igInputValue } from '../lib/instagram';
 
 const COLOR_RE = /кол|цвет|color/i;
@@ -61,6 +62,8 @@ function componentsFromSet(product, productsById) {
 function ColorSizeFields({ product, color, size, onChange }) {
   const colors = colorsOf(product);
   const sizes = sizesOf(product, color);
+  // 2XL = XXL, 3XL = XXXL: розмір, записаний інакше, ніж у каталозі, — той самий розмір, а не «немає» (Edits 31.10).
+  const sameSize = findSize(sizes, size);
   return (
     <>
       {colors.length ? (
@@ -71,9 +74,9 @@ function ColorSizeFields({ product, color, size, onChange }) {
         </Select>
       ) : <Input placeholder="Колір" value={color} onChange={(e) => onChange({ color: e.target.value })} />}
       {sizes.length ? (
-        <Select value={size} onChange={(e) => onChange({ size: e.target.value })}>
+        <Select value={sameSize || size} onChange={(e) => onChange({ size: e.target.value })}>
           <option value="">— розмір —</option>
-          {size && !sizes.includes(size) && <option value={size}>{size} (немає для цього кольору)</option>}
+          {size && !sameSize && <option value={size}>{size} (немає для цього кольору)</option>}
           {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
         </Select>
       ) : <Input placeholder="Розмір" value={size} onChange={(e) => onChange({ size: e.target.value })} />}
