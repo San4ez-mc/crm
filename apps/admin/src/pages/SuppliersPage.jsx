@@ -87,7 +87,7 @@ function ApiConfigEditor({ value, onChange }) {
     <div className="space-y-1.5">
       {rows.map(([k, v], i) => (
         <div key={i} className="flex gap-1.5">
-          <Input className="w-40 !py-1 text-xs" placeholder="Назва (напр. token)" value={k} onChange={(e) => setRow(i, e.target.value, v)} />
+          <Input className="!w-40 !py-1 text-xs" placeholder="Назва (напр. token)" value={k} onChange={(e) => setRow(i, e.target.value, v)} />
           <Input className="!py-1 text-xs font-mono" placeholder="Значення" value={v} onChange={(e) => setRow(i, k, e.target.value)} />
           <button type="button" onClick={() => removeRow(i)} className="px-1 text-slate-500 hover:text-red-400">✕</button>
         </div>

@@ -139,17 +139,17 @@ export default function OrdersPage() {
           flex-wrap ряду з'їжджало хаотично на вузьких вікнах. Тепер два чіткі блоки:
           пошук/фільтр зліва, діапазон дати — окрема "пігулка" справа з власним фоном,
           щоб на wrap завжди падала ЦІЛА група, а не розривалась посередині. */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Input className="w-64" placeholder="Пошук: імʼя, телефон, ТТН, Instagram (посилання або @нік)…" title="Можна вставити посилання на профіль Instagram — шукає за нікнеймом" value={q} onChange={(e) => setQ(e.target.value)} />
-          <Select className="w-56" value={adId} onChange={(e) => setAdId(e.target.value)}>
-            <option value="">Усі оголошення</option>
-            {/* Edits 15b533ae: замовлення, де не відомо, з якого оголошення написав клієнт — вказати вручну в картці. */}
-            <option value="__none">Без реклами (вказати вручну)</option>
-            {ads.map((a) => <option key={a.id} value={a.id}>{a.name || a.externalId || a.id.slice(0, 8)}</option>)}
-          </Select>
-        </div>
-        <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5">
+      {/* 1.11 (власник, скріншот): Input має w-full за замовчуванням і перебивав w-64/w-56 — пошук і реклама розтягувались на весь рядок, а дата
+          падала на третій. Тепер сітка: широкий — пошук | реклама | дата в один рядок; середній — пошук | реклама, дата під ними; вузький — стовпчик. */}
+      <div className="mb-4 grid grid-cols-1 items-center gap-3 md:grid-cols-[minmax(0,1fr)_15rem] xl:grid-cols-[minmax(0,1fr)_15rem_auto]">
+        <Input placeholder="Пошук: імʼя, телефон, ТТН, Instagram (посилання або @нік)…" title="Можна вставити посилання на профіль Instagram — шукає за нікнеймом" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Select value={adId} onChange={(e) => setAdId(e.target.value)}>
+          <option value="">Усі оголошення</option>
+          {/* Edits 15b533ae: замовлення, де не відомо, з якого оголошення написав клієнт — вказати вручну в картці. */}
+          <option value="__none">Без реклами (вказати вручну)</option>
+          {ads.map((a) => <option key={a.id} value={a.id}>{a.name || a.externalId || a.id.slice(0, 8)}</option>)}
+        </Select>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 md:col-span-2 xl:col-span-1">
           <span className="whitespace-nowrap text-xs font-medium text-slate-400" title="Замовлення — за датою оформлення (її можна змінити в картці), розмови без замовлення — за датою розмови">Дата</span>
           <Input type="date" className="!w-auto" value={ftFrom} onChange={(e) => setFtFrom(e.target.value)} />
           <span className="text-slate-600">—</span>
