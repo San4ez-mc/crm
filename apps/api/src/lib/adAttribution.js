@@ -35,7 +35,10 @@ async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {})
  * CRM «не вказано»). У допису кілька просувань — беремо те, що крутилось найближче до дотику (витрати ±3 дні), інакше найновіше.
  */
 async function adByPostId(tenantId, postId, at) {
-  const ads = await db.ad.findMany({ where: { tenantId, postId: String(postId), variantOfAdId: null }, select: { id: true, createdAt: true } });
+  // 2.11 (Edits Олексія «в CRM не додалось рекламне оголошення, з якого клієнт написав»): оголошення, яке бот сам завів із пересланого
+  // допису, має id допису в externalId (postId порожній), а оголошення з Meta — навпаки; шукали лише за postId, тож 6 із 8 допис-замовлень
+  // за добу лишались без реклами. Шукаємо в обох полях.
+  const ads = await db.ad.findMany({ where: { tenantId, variantOfAdId: null, OR: [{ postId: String(postId) }, { externalId: String(postId) }] }, select: { id: true, createdAt: true } });
   if (ads.length <= 1) return ads[0] ? db.ad.findUnique({ where: { id: ads[0].id } }) : null;
   const t = validDate(at) || new Date();
   const from = new Date(t.getTime() - 3 * 86400e3); const to = new Date(t.getTime() + 86400e3);
