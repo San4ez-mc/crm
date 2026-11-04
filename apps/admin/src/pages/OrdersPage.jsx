@@ -71,12 +71,15 @@ export default function OrdersPage() {
   async function loadSummary() {
     try { setSummary((await api.ordersSummary(filterParams())).data); } catch (e) { /* зведення — додаток до списку, помилка не блокує роботу */ }
   }
-  useEffect(() => { loadSummary(); }, [q, adId, ftFrom, ftTo]);
+  // Зведення й фільтр по статусу — лише для таблиці (4.11, Олексій: «в канбані цього не треба»); у дошці стадії — це самі колонки.
+  const [stageFilter, setStageFilter] = useState('');
+  const activeStage = view === 'table' ? stageFilter : '';
+  useEffect(() => { if (view === 'table') loadSummary(); }, [view, q, adId, ftFrom, ftTo]);
 
   const [exporting, setExporting] = useState(false);
   async function exportXlsx() {
     setExporting(true); setError('');
-    try { await api.downloadOrdersXlsx(filterParams()); } catch (e) { setError('Не вдалось сформувати файл: ' + e.message); } finally { setExporting(false); }
+    try { await api.downloadOrdersXlsx({ ...filterParams(), ...(activeStage ? { stageId: activeStage } : {}) }); } catch (e) { setError('Не вдалось сформувати файл: ' + e.message); } finally { setExporting(false); }
   }
 
   async function load() {
@@ -87,13 +90,14 @@ export default function OrdersPage() {
       if (adId === '__none') params.noAd = '1'; else if (adId) params.adId = adId;
       if (ftFrom) params.ftFrom = ftFrom;
       if (ftTo) params.ftTo = ftTo;
+      if (activeStage) params.stageId = activeStage;
       const [o, p] = await Promise.all([api.listOrders(params), api.listPipelines()]);
       setOrders(o.data);
       setPipelines(p.data);
       setPipelineId((prev) => (prev && p.data.some((pl) => pl.id === prev) ? prev : p.data[0]?.id || ''));
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [q, adId, ftFrom, ftTo]);
+  useEffect(() => { load(); }, [q, adId, ftFrom, ftTo, activeStage]);
 
   const currentPipeline = pipelines.find((p) => p.id === pipelineId);
   const stages = currentPipeline?.stages || [];
@@ -129,7 +133,7 @@ export default function OrdersPage() {
   // 31.10 (менеджери: «ТТН зникає після закриття картки»): дошка — вигляд за замовчуванням і вантажиться ОКРЕМО від таблиці. Картка
   // оновлювала лише таблицю (load), а дошка лишалась зі старими замовленнями — після збереження ТТН (і коментаря, дати, «Хто оформив»,
   // реклами) картка на дошці відкривалась зі старими даними, ніби нічого не збереглось. Тепер будь-яка зміна оновлює обидва списки.
-  function refreshAll() { load(); loadSummary(); if (view === 'board') loadBoard(stages); } // у таблиці дошку не вантажимо — при поверненні на дошку її перезавантажує ефект [view]
+  function refreshAll() { load(); if (view === 'table') loadSummary(); if (view === 'board') loadBoard(stages); } // у таблиці дошку не вантажимо — при поверненні на дошку її перезавантажує ефект [view]
 
   async function moveOrderToStage(orderId, newStageId) {
     try { await api.updateOrder(orderId, { stageId: newStageId }); refreshAll(); } catch (e) { alert(e.message); }
@@ -199,21 +203,32 @@ export default function OrdersPage() {
 
       {/* Зведення за фільтрами (3.11, Олексій): один рядок дрібним шрифтом — «Оформлено» (є покупець) і по стадіях кількість · сума; порожні стадії не показуємо.
           Картки розмов без покупця входять у стадії, але не в «Оформлено». */}
-      {summary && summary.total.count > 0 && (
+      {/* 4.11 (Олексій): лише у вигляді «Таблиця» + фільтр по статусу; у дошці цього рядка нема. Чип стадії — теж фільтр (повторний клік знімає). */}
+      {view === 'table' && (
         <div className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] leading-5 text-slate-400">
-          <span className="rounded bg-brand/20 px-2 py-0.5 font-medium text-brand-light" title="Оформлені замовлення (є покупець) за обраними фільтрами">
-            Оформлено: <b>{summary.total.placedCount}</b> · {roundMoney(summary.total.placedSum)}
-          </span>
-          {stages.map((s) => {
-            const st = summary.stages.find((x) => x.stageId === s.id);
-            if (!st || !st.count) return null;
-            return (
-              <span key={s.id} className="rounded bg-slate-800/70 px-1.5 py-0.5" title={`${s.name}: ${st.count} шт., ${roundMoney(st.sum)}`}>
-                {s.name} <b className="text-slate-200">{st.count}</b> · {roundMoney(st.sum)}
+          <Select className="!w-auto !py-0.5 !text-xs" value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} title="Фільтр за статусом (стадією)">
+            <option value="">Усі статуси</option>
+            {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </Select>
+          {summary && summary.total.count > 0 && (
+            <>
+              <span className="rounded bg-brand/20 px-2 py-0.5 font-medium text-brand-light" title="Оформлені замовлення (є покупець) за обраними фільтрами, без фільтра по статусу">
+                Оформлено: <b>{summary.total.placedCount}</b> · {roundMoney(summary.total.placedSum)}
               </span>
-            );
-          })}
-          {summary.truncated && <span className="text-amber-300">(показано не всі — звузьте дати)</span>}
+              {stages.map((s) => {
+                const st = summary.stages.find((x) => x.stageId === s.id);
+                if (!st || !st.count) return null;
+                const on = stageFilter === s.id;
+                return (
+                  <button key={s.id} type="button" onClick={() => setStageFilter(on ? '' : s.id)} title={`${s.name}: ${st.count} шт., ${roundMoney(st.sum)} — натисніть, щоб відфільтрувати`}
+                    className={`rounded px-1.5 py-0.5 transition-colors ${on ? 'bg-brand text-white' : 'bg-slate-800/70 hover:bg-slate-700'}`}>
+                    {s.name} <b className={on ? 'text-white' : 'text-slate-200'}>{st.count}</b> · {roundMoney(st.sum)}
+                  </button>
+                );
+              })}
+              {summary.truncated && <span className="text-amber-300">(показано не всі — звузьте дати)</span>}
+            </>
+          )}
         </div>
       )}
 
