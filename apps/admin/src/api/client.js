@@ -35,6 +35,21 @@ async function uploadFile(file) {
   return json.data.url;
 }
 
+// Скачування файлу (Excel зі списку замовлень): ім'я бере із Content-Disposition, помилку показує текстом з відповіді.
+async function downloadFile(path, fallbackName) {
+  const res = await fetch(`/api${withTenant(path)}`, { credentials: 'include' });
+  if (!res.ok) {
+    const j = await res.json().catch(() => null);
+    throw new Error(j?.error?.message || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const name = ((res.headers.get('Content-Disposition') || '').match(/filename="?([^";]+)"?/) || [])[1] || fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 const get = (path) => req('GET', path);
 const post = (path, body) => req('POST', path, body);
 const patch = (path, body) => req('PATCH', path, body);
@@ -90,6 +105,8 @@ export const api = {
   deleteStage: (id) => del(`/stages/${id}`),
 
   listOrders: (params = {}) => get(`/orders?${new URLSearchParams(params)}`),
+  ordersSummary: (params = {}) => get(`/orders/summary?${new URLSearchParams(params)}`),
+  downloadOrdersXlsx: (params = {}) => downloadFile(`/orders/export.xlsx?${new URLSearchParams(params)}`, 'orders.xlsx'),
   getOrder: (id) => get(`/orders/${id}`),
   createOrder: (data) => post('/orders', data),
   updateOrder: (id, data) => patch(`/orders/${id}`, data),

@@ -9,6 +9,7 @@ const { parseFrom, parseTo } = require('../lib/dateRange');
 const { igOrNull, igSearchTerm, normalizeInstagram } = require('../lib/instagram');
 const { itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList, shippedStagePatch, applyBuyerEdit, cancelOrder, deleteOrder } = require('../lib/orderOps');
 const { syncTtnStatuses } = require('../lib/novaPoshta');
+const { buildXlsx } = require('../lib/xlsx');
 const logger = require('@crm/logger');
 
 const router = express.Router();
@@ -50,8 +51,9 @@ async function defaultStageId(tenantId) {
 }
 
 // ── Список (kanban/таблиця) ──────────────────────────────────────────────
-router.get('/orders', asyncHandler(async (req, res) => {
-  const { stageId, from, to, ftFrom, ftTo, productId, adId, noAd, q, take = '100', skip = '0' } = req.query;
+// WHERE списку замовлень за фільтрами сторінки (пошук, реклама, дата, стадія) — один на список і на вивантаження в Excel (2026-11-04).
+function buildOrdersWhere(tenantId, query) {
+  const { stageId, from, to, ftFrom, ftTo, productId, adId, noAd, q } = query;
   // q і adId — обидва OR-блоки, тому комбінуємо через AND (інакше другий спред перезаписав би
   // перший ключ "OR" в об'єкті where — знайдено під час додавання фільтра по рекламі 2026-09-04).
   const andClauses = [];
@@ -94,13 +96,18 @@ router.get('/orders', asyncHandler(async (req, res) => {
   }
   // «Без реклами» (Edits 15b533ae): оформлені замовлення, де не відомо, з якого оголошення написав клієнт — щоб вказати вручну.
   if (noAd === '1' || noAd === 'true') andClauses.push({ buyerId: { not: null }, firstTouchAdId: null });
-  const where = {
-    tenantId: req.tenant.id,
+  return {
+    tenantId,
     ...(stageId ? { stageId: String(stageId) } : {}),
     ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}),
     ...(productId ? { items: { some: { productId: String(productId) } } } : {}),
     ...(andClauses.length ? { AND: andClauses } : {}),
   };
+}
+
+router.get('/orders', asyncHandler(async (req, res) => {
+  const { take = '100', skip = '0' } = req.query;
+  const where = buildOrdersWhere(req.tenant.id, req.query);
   const [items, total] = await Promise.all([
     db.order.findMany({ where, include: ORDER_INCLUDE, orderBy: { createdAt: 'desc' }, take: Number(take), skip: Number(skip) }),
     db.order.count({ where }),
@@ -273,6 +280,79 @@ router.post('/orders/:id/ttn-refresh', asyncHandler(async (req, res) => {
   if (!existing) throw new NotFoundError('Order', req.params.id);
   if (!existing.ttn.length) throw new ValidationError('У замовлення немає ТТН');
   res.json({ ok: true, data: await syncTtnStatuses(req.tenant.id, { orderIds: [existing.id] }) });
+}));
+
+// Зведення над списком (2026-11-04, Олексій): скільки замовлень і на яку суму за обраними фільтрами, з розбивкою по стадіях. Рахується по ВСІХ
+// знайдених, а не по перших 100 зі списку. «Оформлені» = є покупець (картки розмов без покупця — окремо, як у звітах: lib/margin ORDER_PLACED_WHERE).
+router.get('/orders/summary', asyncHandler(async (req, res) => {
+  const where = buildOrdersWhere(req.tenant.id, req.query);
+  const rows = await db.order.findMany({ where, select: { stageId: true, buyerId: true, items: { select: { price: true, quantity: true } } }, take: 50000 });
+  const by = new Map(); const total = { count: 0, sum: 0, placedCount: 0, placedSum: 0 };
+  for (const o of rows) {
+    const sum = itemsTotal(o.items);
+    const k = o.stageId || '';
+    const s = by.get(k) || { stageId: o.stageId, count: 0, sum: 0 };
+    s.count += 1; s.sum += sum; by.set(k, s);
+    total.count += 1; total.sum += sum;
+    if (o.buyerId) { total.placedCount += 1; total.placedSum += sum; }
+  }
+  res.json({ ok: true, data: { total, stages: [...by.values()], truncated: rows.length >= 50000 } });
+}));
+
+// Вивантаження в Excel (2026-11-04, Олексій: «скачати файл із замовленнями — бачити список товарів, які замовили за день»): ті самі фільтри, що у списку,
+// лише оформлені замовлення (є покупець). Аркуш «Замовлення» — рядок на замовлення; «Позиції» — рядок на товар (комплект розгорнуто на склад).
+const propOf = (props, re) => (Array.isArray(props) ? props : []).filter((p) => p && re.test(String(p.name || ''))).map((p) => p.value).filter(Boolean).join(', ');
+router.get('/orders/export.xlsx', asyncHandler(async (req, res) => {
+  const where = { ...buildOrdersWhere(req.tenant.id, req.query), buyerId: { not: null } };
+  const orders = await db.order.findMany({
+    where, orderBy: [{ placedAt: 'desc' }, { createdAt: 'desc' }], take: 5000,
+    include: { buyer: true, stage: { select: { name: true } }, firstTouchAd: { select: { name: true } }, payments: PAYMENTS_INCLUDE, items: { include: { supplier: { select: { name: true } }, product: { select: { sku: true } } } } },
+  });
+  const at = (o) => o.placedAt || o.createdAt;
+  const personOf = (o) => (o.buyer && (o.buyer.fullName || o.buyer.phone)) || o.contactName || (o.contactIg ? '@' + o.contactIg : '');
+  const PAY = { partial: 'Часткова передплата', full: 'Повна передплата', cod: 'Накладений платіж' };
+  const orderRows = orders.map((o) => {
+    const total = itemsTotal(o.items);
+    const paid = (o.payments || []).filter((p) => isPaidStatus(p.status)).reduce((s, p) => s + Number(p.amount || 0), 0);
+    const sh = o.shipping || {};
+    return [
+      at(o), personOf(o), (o.buyer && o.buyer.phone) || '', (o.buyer && o.buyer.igUsername) || o.contactIg || '',
+      [sh.city, sh.branch || sh.warehouse].filter(Boolean).join(', '),
+      o.items.map((it) => `${it.name.split('.')[0].trim()} × ${it.quantity}`).join('\n'),
+      o.items.reduce((s, it) => s + it.quantity, 0), total, paid, PAY[o.paymentType] || '',
+      o.stage ? o.stage.name : '', (o.ttn || []).join(', '), o.ttnStatus || '', o.isRefused ? 'Так' : '',
+      o.placedBy || '', (o.firstTouchAd && o.firstTouchAd.name) || o.sourceName || 'органіка', o.managerComment || '',
+    ];
+  });
+  const itemRows = [];
+  for (const o of orders) {
+    for (const it of o.items) {
+      const comps = Array.isArray(it.components) && it.components.length ? it.components : null;
+      const parent = at(o);
+      if (comps) {
+        for (const c of comps) itemRows.push([parent, personOf(o), it.name.split('.')[0].trim(), String(c.name || '').replace(/\.?\s*Артикул:?.*$/i, '').trim(), c.sku || '', c.color || '', c.size || '', (Number(c.qty) || 1) * it.quantity, '', (it.supplier && it.supplier.name) || '', o.stage ? o.stage.name : '', (o.ttn || []).join(', ')]);
+      } else {
+        itemRows.push([parent, personOf(o), '', it.name.split('.')[0].trim(), (it.product && it.product.sku) || propOf(it.properties, /артикул/i), propOf(it.properties, /кол|цвет/i), propOf(it.properties, /розмір|размер|size/i), it.quantity, Number(it.price) * it.quantity, (it.supplier && it.supplier.name) || '', o.stage ? o.stage.name : '', (o.ttn || []).join(', ')]);
+      }
+    }
+  }
+  const buf = buildXlsx([
+    { name: 'Замовлення', columns: [
+      { header: 'Дата оформлення', fmt: 'date', width: 17 }, { header: 'Покупець', width: 24 }, { header: 'Телефон', width: 16 }, { header: 'Instagram', width: 18 },
+      { header: 'Доставка', width: 30 }, { header: 'Товари', fmt: 'wrap', width: 42 }, { header: 'К-сть', fmt: 'int', width: 7 }, { header: 'Сума, грн', fmt: 'money', width: 12 },
+      { header: 'Оплачено, грн', fmt: 'money', width: 13 }, { header: 'Оплата', width: 20 }, { header: 'Стадія', width: 28 }, { header: 'ТТН', width: 22 },
+      { header: 'Статус НП', width: 30 }, { header: 'Відмова', width: 9 }, { header: 'Хто оформив', width: 18 }, { header: 'Реклама / джерело', width: 30 }, { header: 'Коментар', fmt: 'wrap', width: 30 },
+    ], rows: orderRows },
+    { name: 'Позиції', columns: [
+      { header: 'Дата оформлення', fmt: 'date', width: 17 }, { header: 'Покупець', width: 24 }, { header: 'Комплект', width: 18 }, { header: 'Товар', width: 34 }, { header: 'Артикул', width: 14 },
+      { header: 'Колір', width: 14 }, { header: 'Розмір', width: 9 }, { header: 'К-сть', fmt: 'int', width: 7 }, { header: 'Сума, грн', fmt: 'money', width: 12 }, { header: 'Постачальник', width: 18 }, { header: 'Стадія', width: 28 }, { header: 'ТТН', width: 22 },
+    ], rows: itemRows },
+  ]);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const period = [req.query.ftFrom, req.query.ftTo].filter(Boolean).join('_');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="orders_${period || stamp}.xlsx"`);
+  res.send(buf);
 }));
 
 router.get('/orders/:id', asyncHandler(async (req, res) => {

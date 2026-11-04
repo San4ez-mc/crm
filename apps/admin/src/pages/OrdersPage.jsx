@@ -12,6 +12,8 @@ import OrderDetailModal from './OrderDetailModal';
 import NewOrderModal from './NewOrderModal';
 import { ReturnForm } from './ReturnsPage';
 
+const roundMoney = (v) => `${Math.round(Number(v) || 0).toLocaleString('uk-UA')} ₴`;
+
 export default function OrdersPage() {
   const [view, setView] = useState('board');
   // Верхній дублер горизонтального скролу дошки (2026-09-08): ширина береться з реальної ширини дошки.
@@ -53,6 +55,29 @@ export default function OrdersPage() {
     if (!openId) return;
     api.getOrder(openId).then((r) => { if (r.data) setSelectedOrder(r.data); }).catch((e) => setError('Замовлення ' + openId + ' не знайдено: ' + e.message));
   }, []);
+
+  // Фільтри сторінки — для списку, зведення зверху й Excel (одні й ті самі).
+  function filterParams() {
+    const params = {};
+    if (q) params.q = q;
+    if (adId === '__none') params.noAd = '1'; else if (adId) params.adId = adId;
+    if (ftFrom) params.ftFrom = ftFrom;
+    if (ftTo) params.ftTo = ftTo;
+    return params;
+  }
+
+  // Зведення над списком: усього замовлень і сума за фільтрами + розбивка по стадіях (3.11, Олексій). Рахує сервер по всіх знайдених, не по перших 100.
+  const [summary, setSummary] = useState(null);
+  async function loadSummary() {
+    try { setSummary((await api.ordersSummary(filterParams())).data); } catch (e) { /* зведення — додаток до списку, помилка не блокує роботу */ }
+  }
+  useEffect(() => { loadSummary(); }, [q, adId, ftFrom, ftTo]);
+
+  const [exporting, setExporting] = useState(false);
+  async function exportXlsx() {
+    setExporting(true); setError('');
+    try { await api.downloadOrdersXlsx(filterParams()); } catch (e) { setError('Не вдалось сформувати файл: ' + e.message); } finally { setExporting(false); }
+  }
 
   async function load() {
     setError('');
@@ -104,7 +129,7 @@ export default function OrdersPage() {
   // 31.10 (менеджери: «ТТН зникає після закриття картки»): дошка — вигляд за замовчуванням і вантажиться ОКРЕМО від таблиці. Картка
   // оновлювала лише таблицю (load), а дошка лишалась зі старими замовленнями — після збереження ТТН (і коментаря, дати, «Хто оформив»,
   // реклами) картка на дошці відкривалась зі старими даними, ніби нічого не збереглось. Тепер будь-яка зміна оновлює обидва списки.
-  function refreshAll() { load(); if (view === 'board') loadBoard(stages); } // у таблиці дошку не вантажимо — при поверненні на дошку її перезавантажує ефект [view]
+  function refreshAll() { load(); loadSummary(); if (view === 'board') loadBoard(stages); } // у таблиці дошку не вантажимо — при поверненні на дошку її перезавантажує ефект [view]
 
   async function moveOrderToStage(orderId, newStageId) {
     try { await api.updateOrder(orderId, { stageId: newStageId }); refreshAll(); } catch (e) { alert(e.message); }
@@ -125,10 +150,24 @@ export default function OrdersPage() {
                 {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </Select>
             )}
-            <Select className="!w-auto" value={view} onChange={(e) => setView(e.target.value)}>
-              <option value="board">Дошка</option>
-              <option value="table">Таблиця</option>
-            </Select>
+            {/* Перемикач вигляду іконками (3.11, Олексій): дошка — стовпці, таблиця — рядки. */}
+            <div className="inline-flex overflow-hidden rounded-lg border border-slate-700" role="group" aria-label="Вигляд">
+              {[
+                { key: 'board', label: 'Дошка', icon: <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><rect x="2.5" y="3" width="4" height="14" rx="1" /><rect x="8" y="3" width="4" height="9" rx="1" /><rect x="13.5" y="3" width="4" height="11.5" rx="1" /></svg> },
+                { key: 'table', label: 'Таблиця', icon: <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><rect x="2.5" y="3.5" width="15" height="13" rx="1.5" /><path d="M2.5 8h15M2.5 12.2h15M8 8v8.5" /></svg> },
+              ].map((v) => (
+                <button key={v.key} type="button" title={v.label} aria-label={v.label} aria-pressed={view === v.key} onClick={() => setView(v.key)}
+                  className={`flex h-9 w-10 items-center justify-center transition-colors ${view === v.key ? 'bg-brand text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'}`}>
+                  {v.icon}
+                </button>
+              ))}
+            </div>
+            <Button variant="secondary" onClick={exportXlsx} disabled={exporting} title="Excel за обраними фільтрами (пошук, реклама, дата): аркуші «Замовлення» і «Позиції» — що саме замовили">
+              <span className="inline-flex items-center gap-1.5">
+                <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16.5h13" /></svg>
+                {exporting ? 'Формую…' : 'Excel'}
+              </span>
+            </Button>
             <Button onClick={() => setShowNewOrder(true)}>+ Замовлення</Button>
           </div>
         }
@@ -157,6 +196,26 @@ export default function OrdersPage() {
           <Button variant="secondary" className="!px-2 !py-1 text-xs" onClick={() => { setFtFrom(_daysAgoStr(7)); setFtTo(_todayStr()); }}>Останні 7 днів</Button>
         </div>
       </div>
+
+      {/* Зведення за фільтрами (3.11, Олексій): один рядок дрібним шрифтом — «Оформлено» (є покупець) і по стадіях кількість · сума; порожні стадії не показуємо.
+          Картки розмов без покупця входять у стадії, але не в «Оформлено». */}
+      {summary && summary.total.count > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] leading-5 text-slate-400">
+          <span className="rounded bg-brand/20 px-2 py-0.5 font-medium text-brand-light" title="Оформлені замовлення (є покупець) за обраними фільтрами">
+            Оформлено: <b>{summary.total.placedCount}</b> · {roundMoney(summary.total.placedSum)}
+          </span>
+          {stages.map((s) => {
+            const st = summary.stages.find((x) => x.stageId === s.id);
+            if (!st || !st.count) return null;
+            return (
+              <span key={s.id} className="rounded bg-slate-800/70 px-1.5 py-0.5" title={`${s.name}: ${st.count} шт., ${roundMoney(st.sum)}`}>
+                {s.name} <b className="text-slate-200">{st.count}</b> · {roundMoney(st.sum)}
+              </span>
+            );
+          })}
+          {summary.truncated && <span className="text-amber-300">(показано не всі — звузьте дати)</span>}
+        </div>
+      )}
 
       {orders === null ? null : orders.length === 0 ? (
         <EmptyState title="Замовлень ще немає" hint="Вони приходять автоматично з воронки після оформлення клієнтом." />
@@ -214,31 +273,45 @@ export default function OrdersPage() {
         </div>
         </>
       ) : (
-        <Card>
-          <table className="w-full text-sm">
+        <Card className="overflow-x-auto">
+          {/* 3.11 (власник, скріншот): колонки мали однакову ширину — «Дата» і «Сума» марно широкі, «Товари» вузькі. Тепер фіксована розкладка:
+              короткі колонки вузькі, «Товари» забирає весь залишок (до трьох рядків), стадія — повна ширина селекта. */}
+          <table className="w-full min-w-[980px] table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: '5.25rem' }} />
+              <col style={{ width: '11rem' }} />
+              <col />
+              <col style={{ width: '6.5rem' }} />
+              <col style={{ width: '13.5rem' }} />
+              <col style={{ width: '10.5rem' }} />
+              <col style={{ width: '10rem' }} />
+            </colgroup>
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-              <tr><th className="px-4 py-3">Дата</th><th className="px-4 py-3">Покупець</th><th className="px-4 py-3">Товари</th><th className="px-4 py-3">Сума</th><th className="px-4 py-3">Стадія</th><th className="px-4 py-3">ТТН</th><th className="px-4 py-3">Джерело</th></tr>
+              <tr><th className="px-3 py-3">Дата</th><th className="px-3 py-3">Покупець</th><th className="px-3 py-3">Товари</th><th className="px-3 py-3">Сума</th><th className="px-3 py-3">Стадія</th><th className="px-3 py-3">ТТН</th><th className="px-3 py-3">Джерело</th></tr>
             </thead>
             <tbody>
               {orders.map((o) => (
-                <tr key={o.id} className="cursor-pointer border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30" onClick={() => setSelectedOrder(o)}>
-                  <td className="px-4 py-3 text-slate-400">{formatDate(o.placedAt || o.createdAt)}</td>
-                  <td className="px-4 py-3">
-                    {o.buyer?.fullName || o.buyer?.phone || o.contactName || (o.contactIg ? '@' + o.contactIg : '—')}
+                <tr key={o.id} className="cursor-pointer border-b border-slate-800/60 align-top last:border-0 hover:bg-slate-800/30" onClick={() => setSelectedOrder(o)}>
+                  <td className="whitespace-nowrap px-3 py-3 text-slate-400">{formatDate(o.placedAt || o.createdAt)}</td>
+                  <td className="px-3 py-3">
+                    <div className="break-words">{o.buyer?.fullName || o.buyer?.phone || o.contactName || (o.contactIg ? '@' + o.contactIg : '—')}</div>
                     {o.placedBy && <div className="text-[11px] text-slate-500">👤 {o.placedBy}</div>}
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{o.items.map((it) => it.name).join(', ')}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3 text-slate-400"><div className="line-clamp-3 break-words" title={o.items.map((it) => it.name).join('\n')}>{o.items.map((it) => it.name).join(', ')}</div></td>
+                  <td className="whitespace-nowrap px-3 py-3">
                     {money(orderTotal(o))}
                     {o.paidSum > 0 && <div className={`text-[11px] ${o.paidSum >= orderTotal(o) ? 'text-emerald-400' : 'text-amber-300'}`} title="Оплачено (журнал платежів)">💳 {money(o.paidSum)}</div>}
                   </td>
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                    <Select className="!w-auto py-1" value={o.stageId || ''} onChange={(e) => moveOrderToStage(o.id, e.target.value)}>
+                  <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <Select className="!w-full !py-1 text-xs" value={o.stageId || ''} onChange={(e) => moveOrderToStage(o.id, e.target.value)}>
                       {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </Select>
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{o.ttn?.join(', ') || '—'} {o.ttnStatus && <Badge color={DELIVERY[deliveryStatusOf(o)].color}>{o.ttnStatus}</Badge>}</td>
-                  <td className="px-4 py-3 text-slate-400">{o.firstTouchAd?.name || o.sourceName || 'органіка'}</td>
+                  <td className="px-3 py-3 text-slate-400">
+                    <div className="break-all text-xs">{o.ttn?.join(', ') || '—'}</div>
+                    {o.ttnStatus && <div className="mt-1"><Badge color={DELIVERY[deliveryStatusOf(o)].color}>{o.ttnStatus}</Badge></div>}
+                  </td>
+                  <td className="px-3 py-3 text-slate-400"><div className="line-clamp-3 break-words text-xs" title={o.firstTouchAd?.name || o.sourceName || 'органіка'}>{o.firstTouchAd?.name || o.sourceName || 'органіка'}</div></td>
                 </tr>
               ))}
             </tbody>
