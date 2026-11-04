@@ -12,6 +12,10 @@ const { ValidationError } = require('@crm/errors');
 
 const router = express.Router();
 
+// Прогноз «Щоденної аналітики», %: так воно в goverla (20% відмов на пошті + 3% повернень), поки власник не вписав свої.
+const DEFAULT_FORECAST_REFUSAL = 20;
+const DEFAULT_FORECAST_RETURN = 3;
+
 function periodWhere(from, to) {
   if (!from && !to) return {};
   return { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } };
@@ -263,14 +267,15 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   const usdRate = Number(tenant.usdExchangeRate || 0);
   const expenseByProduct = await loadExpenseMap(tenant.id);
 
-  const [orders, spendRows, leadRows, returns] = await Promise.all([
+  const [forecastRows, orders, spendRows, leadRows, returns] = await Promise.all([
+    db.dayForecast.findMany({ where: { tenantId: tenant.id, ...(from || to ? { date: dayRange(from, to) } : {}) } }),
     db.order.findMany({
       where: { tenantId: tenant.id, ...placedWhere(from, to), ...ORDER_PLACED_WHERE },
       include: { items: true, buyer: { select: { id: true } }, returns: { select: { id: true } } },
     }),
     db.adSpendDaily.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { date: dayRange(from, to) } : {}) } }),
     // «Нові повідомлення» = нові розмови з воронки (картки). Раніше — таблиця AdClick, яку з 13.09 ніхто не заповнює (0 записів).
-    db.order.findMany({ where: { tenantId: tenant.id, ...periodWhere(from, to), ...LEAD_WHERE }, select: { createdAt: true } }),
+    db.order.findMany({ where: { tenantId: tenant.id, ...periodWhere(from, to), ...LEAD_WHERE }, select: { createdAt: true, aiCostUsd: true } }),
     db.return.findMany({ where: { tenantId: tenant.id, ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}) } }),
   ]);
 
@@ -297,6 +302,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     const b = bucket(key);
     b.ordersCount += 1;
     if (order.isRefused) b.refusedCount += 1;
+    else if (order.returns.length > 0) b.returnOrders = (b.returnOrders || 0) + 1; // замовлення цього дня, що вже мають повернення (не відмова)
     // 2026-09-12 (аудит аналітики): "фактичний продаж" — не відмова НА ПРИДБАННІ і без
     // оформленого повернення. ordersCount/refusedCount лишаються по ВСІХ замовленнях
     // (це і є суть "Відсоток відмов, %" — знаменник має включати відмови), а от
@@ -328,6 +334,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   for (const lead of leadRows) {
     const b = bucket(dayKey(lead.createdAt));
     b.messages = (b.messages || 0) + 1;
+    b.aiCostUsd = (b.aiCostUsd || 0) + Number(lead.aiCostUsd || 0); // токени ШІ-бота у розмовах, що почались цього дня
   }
   for (const ret of returns) {
     const b = bucket(dayKey(ret.createdAt));
@@ -336,15 +343,37 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 
   const fixedCosts = Number(tenant.dailyFixedCosts || 0);
   const payrollCosts = Number(tenant.dailyPayrollCosts || 0);
+  const defRefusal = tenant.forecastRefusalPct != null ? Number(tenant.forecastRefusalPct) : DEFAULT_FORECAST_REFUSAL;
+  const defReturn = tenant.forecastReturnPct != null ? Number(tenant.forecastReturnPct) : DEFAULT_FORECAST_RETURN;
+  const forecastByDay = new Map(forecastRows.map((f) => [f.date.toISOString().slice(0, 10), f]));
 
   const data = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
     const adSpend = d.adSpend || 0; // вже в грн (сконвертовано вище з $ по курсу НБУ)
     const messages = d.messages || 0;
     const impressions = d.impressions || 0;
     const platformClicks = d.platformClicks || 0;
-    const profitExpected = d.marginNonRefusedTotal - adSpend - fixedCosts - payrollCosts;
-    const profitNoPayroll = d.marginNonRefusedTotal - adSpend - fixedCosts;
+    // Прогноз відмов/повернень (Edits 03.11): посилка їде кілька днів, тож свіжі дні показують ~0% відмов і завищений прибуток.
+    // Клітинка дня — ПОВНИЙ очікуваний % для замовлень цього дня; маржа вже без відмов/повернень, що відбулись, тому віднімаємо лише
+    // ще не відбуті (прогноз × замовлень мінус уже відомі). Свіжий день (0 відмов) = маржа × (1 − відмови − повернення).
+    const fc = forecastByDay.get(date);
+    const fRefusal = fc && fc.refusalPct != null ? Number(fc.refusalPct) : defRefusal;
+    const fReturn = fc && fc.returnPct != null ? Number(fc.returnPct) : defReturn;
+    const goodOrders = d.ordersCount - d.refusedCount - (d.returnOrders || 0);
+    const avgGoodMargin = goodOrders > 0 ? d.marginNonRefusedTotal / goodOrders : 0;
+    const pendingLoss = Math.max(0, (fRefusal / 100) * d.ordersCount - d.refusedCount) + Math.max(0, (fReturn / 100) * d.ordersCount - (d.returnOrders || 0));
+    const marginForecast = Math.max(0, d.marginNonRefusedTotal - avgGoodMargin * pendingLoss);
+    const aiCost = (d.aiCostUsd || 0) * (usdRate || 0); // токени ШІ-бота, грн
+    const profitExpected = marginForecast - adSpend - fixedCosts - payrollCosts - aiCost;
+    const profitNoPayroll = marginForecast - adSpend - fixedCosts - aiCost;
     return {
+      marginTotalForecast: marginForecast,
+      roiForecast: adSpend > 0 ? marginForecast / adSpend : null,
+      forecastRefusalPct: fRefusal,
+      forecastReturnPct: fReturn,
+      forecastRefusalCustom: !!(fc && fc.refusalPct != null),
+      forecastReturnCustom: !!(fc && fc.returnPct != null),
+      aiCost,
+      aiCostUsd: d.aiCostUsd || 0,
       date,
       marginAvgNonRefused: d.ordersCount - d.refusedCount > 0 ? d.marginNonRefusedTotal / (d.ordersCount - d.refusedCount) : null,
       marginAvgWithRefused: d.ordersCount > 0 ? d.marginNonRefusedTotal / d.ordersCount : null,
@@ -380,6 +409,30 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   });
 
   res.json({ ok: true, data });
+}));
+
+// Прогноз відмов/повернень на день (клітинка «Щоденної аналітики»): date = YYYY-MM-DD (київська доба); refusalPct/returnPct —
+// число 0–99, null або '' → знову за замовчуванням (Tenant.forecastRefusalPct/forecastReturnPct, інакше 20 і 3). Не передано — не чіпаємо.
+router.put('/analytics/daily-forecast', asyncHandler(async (req, res) => {
+  const { date } = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw new ValidationError('date має бути у форматі YYYY-MM-DD');
+  const parsePct = (v, label) => {
+    if (v === undefined) return undefined;
+    if (v === null || v === '') return null;
+    const n = Number(String(v).replace(',', '.'));
+    if (!(n >= 0 && n < 100)) throw new ValidationError(`${label}: від 0 до 99 %`);
+    return Math.round(n * 100) / 100;
+  };
+  const refusalPct = parsePct(req.body.refusalPct, 'Відсоток відмов');
+  const returnPct = parsePct(req.body.returnPct, 'Відсоток повернень');
+  const day = new Date(date + 'T00:00:00.000Z');
+  const data = { ...(refusalPct !== undefined ? { refusalPct } : {}), ...(returnPct !== undefined ? { returnPct } : {}) };
+  const row = await db.dayForecast.upsert({
+    where: { tenantId_date: { tenantId: req.tenant.id, date: day } },
+    update: data,
+    create: { tenantId: req.tenant.id, date: day, ...data },
+  });
+  res.json({ ok: true, data: { date, refusalPct: row.refusalPct, returnPct: row.returnPct } });
 }));
 
 // ── Щоденний звіт по одному товару (скріншот "Артикул") ─────────────────

@@ -60,7 +60,7 @@ function AdFunnel({ contacts, ordersCreated, ordersPickedUp, refusedCount, refus
 
 const SERIES = [
   { key: 'spend', label: 'Витрати', color: '#3b82f6' },
-  { key: 'margin', label: 'Маржа', color: '#10b981' },
+  { key: 'margin', label: 'Маржинальний прибуток', color: '#10b981' },
   { key: 'profit', label: 'Прибуток', color: '#1d4ed8' },
   { key: 'roi', label: 'Окупність', color: '#f59e0b' },
 ];
@@ -195,7 +195,7 @@ export default function AdSpendDetailPage() {
             <KpiCard label="Фактична виручка" value={m(data.revenue)} />
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <KpiCard label="Маржа до реклами" value={m(data.margin)} />
+            <KpiCard label="Маржинальний прибуток до реклами" value={m(data.margin)} />
             <HighlightCard label="Прибуток після реклами" value={m(data.profit)} good={data.profit >= 0} />
             <HighlightCard label="Окупність за маржею" value={data.roi !== null ? `×${data.roi.toFixed(2)}` : '—'} good={data.roi !== null && data.roi >= 1} />
             <HighlightCard label="ROMI" value={data.romi !== null ? `${data.romi.toFixed(1)}%` : '—'} good={data.romi !== null && data.romi >= 0} />
@@ -216,7 +216,7 @@ export default function AdSpendDetailPage() {
               )}
             </div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <SignCard label="Маржа до реклами з відмовами" value={m(data.marginExpected)} positive={data.marginExpected >= 0} />
+              <SignCard label="Маржинальний прибуток до реклами з відмовами" value={m(data.marginExpected)} positive={data.marginExpected >= 0} />
               <SignCard label="Прибуток після реклами з відмовами" value={m(data.profitExpected)} positive={data.profitExpected >= 0} />
               <SignCard label="Окупність за маржею з відмовами" value={data.roiExpected !== null ? `×${data.roiExpected.toFixed(2)}` : '—'} positive={data.roiExpected === null || data.roiExpected >= 1} />
               <SignCard label="ROMI з відмовами" value={data.romiExpected !== null ? `${data.romiExpected.toFixed(1)}%` : '—'} positive={data.romiExpected === null || data.romiExpected >= 0} />
@@ -235,7 +235,7 @@ export default function AdSpendDetailPage() {
             ['Конверсія в замовлення', data.conversionToOrder !== null ? `${data.conversionToOrder.toFixed(1)}%` : '—'],
             ['Без відмов', data.pickupRate !== null ? `${data.pickupRate.toFixed(1)}%` : '—'],
             ['Середній чек', data.avgCheck !== null ? m(data.avgCheck) : '—'],
-            ['Середня маржа замовлення', data.avgMargin !== null ? m(data.avgMargin) : '—'],
+            ['Середній маржинальний прибуток замовлення', data.avgMargin !== null ? m(data.avgMargin) : '—'],
           ].map(([label, value]) => (
             <div key={label}>
               <div className="text-xs text-slate-500">{label}</div>
@@ -276,7 +276,7 @@ export default function AdSpendDetailPage() {
         <h3 className="p-4 pb-0 text-sm font-semibold">Замовлення, привʼязані до оголошення</h3>
         <table className="w-full text-sm">
           <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
-            <tr><th className="px-4 py-3">Дата</th><th className="px-4 py-3">Покупець</th><th className="px-4 py-3">Фактичний кошик</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3 text-right">Виручка</th><th className="px-4 py-3 text-right">Маржа</th></tr>
+            <tr><th className="px-4 py-3">Дата</th><th className="px-4 py-3">Покупець</th><th className="px-4 py-3">Фактичний кошик</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3 text-right">Виручка</th><th className="px-4 py-3 text-right">Маржинальний прибуток</th></tr>
           </thead>
           <tbody>
             {data.orders.map((o) => (
@@ -305,7 +305,7 @@ export default function AdSpendDetailPage() {
 
       <div className="mt-4 flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-900 px-4 py-3 text-xs text-slate-400">
         <span>ℹ️</span>
-        <span>Уся маржа фактичного кошика (включно з допродажами чи іншими товарами) зараховується оголошенню, яке привело клієнта. Дата замовлення — дата оформлення.</span>
+        <span>Весь маржинальний прибуток фактичного кошика (включно з допродажами чи іншими товарами) зараховується оголошенню, яке привело клієнта. Дата замовлення — дата оформлення.</span>
       </div>
     </div>
   );

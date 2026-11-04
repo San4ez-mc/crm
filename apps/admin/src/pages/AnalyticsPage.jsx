@@ -114,7 +114,7 @@ export default function AnalyticsPage() {
           {/* 1. Скільки заробили і чи це росте — перше, що цікавить власника */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             <KpiCard label="Виручка" value={money(data.kpi.revenue)} delta={deltaPct(data.kpi.revenue, data.kpi.prevRevenue)} deltaGood="up" />
-            <KpiCard label="Маржа" value={money(data.kpi.margin)} delta={deltaPct(data.kpi.margin, data.kpi.prevMargin)} deltaGood="up" />
+            <KpiCard label="Маржинальний прибуток" value={money(data.kpi.margin)} delta={deltaPct(data.kpi.margin, data.kpi.prevMargin)} deltaGood="up" />
             <KpiCard label="Рекламний бюджет" value={money(data.kpi.adSpend)} delta={deltaPct(data.kpi.adSpend, data.kpi.prevAdSpend)} deltaGood="neutral" />
             <KpiCard label="Прибуток" value={money(data.kpi.profit)} delta={deltaPct(data.kpi.profit, data.kpi.prevProfit)} deltaGood="up" />
             <KpiCard label="Замовлень" value={data.kpi.orders} delta={deltaPct(data.kpi.orders, data.kpi.prevOrders)} deltaGood="up" />
@@ -123,11 +123,11 @@ export default function AnalyticsPage() {
 
           {/* 2. Головний графік: маржа й рекламний бюджет по днях стовпчиками, прибуток — лінією зверху */}
           <Card className="p-4">
-            <h3 className="mb-3 text-sm font-semibold">Маржа, реклама і прибуток по днях</h3>
+            <h3 className="mb-3 text-sm font-semibold">Маржинальний прибуток, реклама і прибуток по днях</h3>
             <ComboTrendChart
               data={data.trend}
               bars={[
-                { key: 'marginTotal', label: 'Маржа', color: '#14b8a6' },
+                { key: 'marginTotal', label: 'Маржинальний прибуток', color: '#14b8a6' },
                 { key: 'adSpend', label: 'Реклама', color: '#fb923c' },
               ]}
               line={{ key: 'expectedProfit', label: 'Прибуток (після ЗП і постійних витрат)', color: '#38bdf8' }}
@@ -156,9 +156,9 @@ export default function AnalyticsPage() {
 
           {/* 3. Що продається і наскільки прибутково — топ товарів і маржа в одній таблиці */}
           <Card className="p-4">
-            <h3 className="mb-3 text-sm font-semibold">Товари: виручка і маржа</h3>
+            <h3 className="mb-3 text-sm font-semibold">Товари: виручка і маржинальний прибуток</h3>
             <table className="w-full text-xs">
-              <thead className="text-slate-500"><tr><th className="pb-1 text-left">Товар</th><th className="pb-1 text-right">К-сть</th><th className="pb-1 text-right">Виручка</th><th className="pb-1 text-right">Маржа</th><th className="pb-1 text-right">Маржа %</th></tr></thead>
+              <thead className="text-slate-500"><tr><th className="pb-1 text-left">Товар</th><th className="pb-1 text-right">К-сть</th><th className="pb-1 text-right">Виручка</th><th className="pb-1 text-right">Маржинальний прибуток</th><th className="pb-1 text-right">Маржинальність, %</th></tr></thead>
               <tbody>
                 {data.products.slice(0, 10).map((p) => (
                   <tr key={p.productId || p.name} className="border-t border-slate-800/60">
@@ -197,10 +197,10 @@ export default function AnalyticsPage() {
 
           {/* Менеджери (31.10, Edits Олексія): скільки оформив кожен, % відмов, маржа й ЗП за формулою — для розрахунку зарплат */}
           <Card className="p-4">
-            <h3 className="mb-1 text-sm font-semibold">Менеджери: замовлення, відмови, маржа</h3>
-            <p className="mb-3 text-xs text-slate-500">За датою оформлення. «Хто оформив» обирається в картці замовлення. Виручка, маржа й ЗП — лише з фактичних продажів (без відмов і повернень); маржа — до витрат на рекламу.</p>
+            <h3 className="mb-1 text-sm font-semibold">Менеджери: замовлення, відмови, маржинальний прибуток</h3>
+            <p className="mb-3 text-xs text-slate-500">За датою оформлення. «Хто оформив» обирається в картці замовлення. Виручка, маржинальний прибуток і ЗП — лише з фактичних продажів (без відмов і повернень); маржинальний прибуток — до витрат на рекламу.</p>
             <table className="w-full text-xs">
-              <thead className="text-slate-500"><tr><th className="pb-1 text-left">Менеджер</th><th className="pb-1 text-right">Оформлено</th><th className="pb-1 text-right">Відмов</th><th className="pb-1 text-right">% відмов</th><th className="pb-1 text-right">Повернень</th><th className="pb-1 text-right">Виручка</th><th className="pb-1 text-right">Маржа</th><th className="pb-1 text-right" title="За формулою товару: фіксована сума + % від націнки">ЗП за формулою</th></tr></thead>
+              <thead className="text-slate-500"><tr><th className="pb-1 text-left">Менеджер</th><th className="pb-1 text-right">Оформлено</th><th className="pb-1 text-right">Відмов</th><th className="pb-1 text-right">% відмов</th><th className="pb-1 text-right">Повернень</th><th className="pb-1 text-right">Виручка</th><th className="pb-1 text-right">Маржинальний прибуток</th><th className="pb-1 text-right" title="За формулою товару: фіксована сума + % від націнки">ЗП за формулою</th></tr></thead>
               <tbody>
                 {data.managers.map((m) => (
                   <tr key={m.manager} className="border-t border-slate-800/60">

@@ -6,8 +6,10 @@
 //
 // Коди НП (TrackingDocument.getStatusDocuments, перевірено живими ТТН 12.09): 1 — створена, не передана; 2 — видалена;
 // 3 — не знайдена; 4/41/5/6/101/104/112 — у дорозі; 7/8 — у відділенні/поштоматі; 9/10/11/106 (або RecipientDateTime) — отримана
-// (106 — «одержано і створено ЄН зворотної доставки», тобто посилку забрали); 102/103/108 — відмова одержувача: стадію не чіпаємо
-// (рішення менеджера), але ставимо позначку «Відмова» (isRefused) — власник 21.10: «так, ставити автоматично».
+// (106 — «одержано і створено ЄН зворотної доставки», тобто посилку забрали); 102/103/108 — відмова одержувача: позначка
+// «Відмова» (isRefused — власник 21.10: «так, ставити автоматично») і, з 04.11, перенос у «Не забрав на пошті».
+// Стадії за кодами (04.11, Олексій): 4–6… → «Відправлено» (ТТН від постачальника спершу лишає «оформлене в постачальника»),
+// 7/8 → «Посилка зберігається на пошті», 102/103/108 → «Не забрав на пошті», забрав → «Клієнт забрав на пошті».
 const { db } = require('@crm/db');
 const logger = require('@crm/logger');
 const { findStage } = require('./orderOps');
@@ -38,11 +40,11 @@ async function npStatuses(apiKey, ttns, timeoutMs = 8000) {
   return out;
 }
 
-/** Що означає статус НП для стадії: picked | arrived | moving | null (створена/видалена/не знайдена/відмова — стадію не рухаємо). */
+/** Що означає статус НП для стадії: picked | arrived | moving | refused | null (створена/видалена/не знайдена — стадію не рухаємо). */
 const REFUSED_CODES = ['102', '103', '108'];
 function npOutcome(d) {
   const code = String(d && d.StatusCode || '');
-  if (REFUSED_CODES.includes(code)) return null;
+  if (REFUSED_CODES.includes(code)) return 'refused';
   if ((d.RecipientDateTime && String(d.RecipientDateTime).trim()) || ['9', '10', '11', '106'].includes(code)) return 'picked';
   if (['7', '8'].includes(code)) return 'arrived';
   if (['4', '41', '5', '6', '101', '104', '112'].includes(code)) return 'moving';
@@ -61,14 +63,18 @@ function npDate(v) {
 
 // Кінцеві стадії — статус НП ще оновлюємо (клієнт може спитати), але стадію не чіпаємо. Звідки рухаємо — лише вперед за змістом.
 const FINAL = (n) => /забрав\s+на\s+пошті|отрима|поверн|обмін|заверш|викона|скасов|^відмов|не\s+відписали|cancel|complete|return/.test(n) && !/не\s+забрав/.test(n);
-const RANK = { moving: 1, arrived: 2, picked: 3 };
-const rankOf = (n) => (/клієнт\s+забрав|^забрав|отрима/.test(n) && !/не\s+забрав/.test(n) ? 3 : /не\s+забрав/.test(n) ? 2 : /відправлен/.test(n) && !/не\s+відправ/.test(n) ? 1 : 0);
+// Ступінь просування за назвою стадії: 0 — до відправлення (в т.ч. «оформлене в постачальника»), 1 — відправлено, 2 — зберігається на пошті,
+// 3 — не забрав (відмова), 4 — забрав. Нова посилка в «Не забрав» тепер означає лише відмову (2026-11-04, Олексій), прибуття у відділення — своя стадія.
+const RANK = { moving: 1, arrived: 2, refused: 3, picked: 4 };
+const rankOf = (n) => (/клієнт\s+забрав|^забрав|отрима/.test(n) && !/не\s+забрав/.test(n) ? 4 : /не\s+забрав/.test(n) ? 3 : /зберігаєть/.test(n) ? 2 : /відправлен/.test(n) && !/не\s+відправ/.test(n) ? 1 : 0);
 
 async function outcomeStages(tenantId) {
   const pipelines = await db.pipeline.findMany({ where: { tenantId }, include: { stages: true } });
   const all = pipelines.flatMap((p) => p.stages);
   const by = (re, not) => all.find((s) => { const n = String(s.name || '').trim().toLowerCase(); return re.test(n) && !(not && not.test(n)); }) || null;
-  return { moving: await findStage(tenantId, 'shipped'), arrived: by(/не\s+забрав/), picked: by(/клієнт\s+забрав|^забрав|отримав/, /не\s+забрав/) };
+  const refusedStage = by(/не\s+забрав/);
+  // Стадії «Посилка зберігається на пошті» ще нема в магазині — прибуття лишається там, де було (і НЕ кладемо в «Не забрав»).
+  return { moving: await findStage(tenantId, 'shipped'), arrived: await findStage(tenantId, 'stored'), refused: refusedStage, picked: by(/клієнт\s+забрав|^забрав|отримав/, /не\s+забрав/), refusedStage };
 }
 
 /**
@@ -100,15 +106,18 @@ async function syncTtnStatuses(tenantId, opts = {}) {
     const outcome = npOutcome(d);
     const cur = String((o.stage && o.stage.name) || '').trim().toLowerCase();
     const target = stages && outcome ? stages[outcome] : null;
-    if (target && target.id !== o.stageId && !FINAL(cur) && RANK[outcome] > rankOf(cur)) {
+    const who = (o.buyer && o.buyer.fullName) || o.contactName || null;
+    // Раніше «прибув у відділення» клало замовлення в «Не забрав на пошті» — виправляємо, якщо посилка ще чекає клієнта (не відмова).
+    const stuckInRefused = outcome === 'arrived' && !o.isRefused && !REFUSED_CODES.includes(String(d.StatusCode || '')) && RANK.refused === rankOf(cur);
+    if (target && target.id !== o.stageId && !FINAL(cur) && (RANK[outcome] > rankOf(cur) || stuckInRefused)) {
       data.stageId = target.id;
-      res.moved.push({ orderId: o.id, ttn, to: outcome, stage: target.name, name: (o.buyer && o.buyer.fullName) || o.contactName || null });
+      res.moved.push({ orderId: o.id, ttn, to: outcome, stage: target.name, name: who });
     }
     // Відмова за НП зараз (не липка позначка isRefused — клієнт міг потім забрати) + замовлення стоїть у «Повернення/обмін» (туди його
     // переносив POST /returns, коли бот реєстрував обмін після відмови) → повертаємо в «Не забрав на пошті» (Edits Олексія, 31.10).
-    else if (stages && stages.arrived && REFUSED_CODES.includes(String(d.StatusCode || '')) && /поверн|обмін/.test(cur) && stages.arrived.id !== o.stageId) {
-      data.stageId = stages.arrived.id;
-      res.moved.push({ orderId: o.id, ttn, to: 'refused', stage: stages.arrived.name, name: (o.buyer && o.buyer.fullName) || o.contactName || null });
+    else if (stages && stages.refused && outcome === 'refused' && /поверн|обмін/.test(cur) && stages.refused.id !== o.stageId) {
+      data.stageId = stages.refused.id;
+      res.moved.push({ orderId: o.id, ttn, to: 'refused', stage: stages.refused.name, name: who });
     }
     await db.order.update({ where: { id: o.id }, data });
     res.updated++;

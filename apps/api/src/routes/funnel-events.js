@@ -52,6 +52,25 @@ router.post('/funnel-events', asyncHandler(async (req, res) => {
   res.status(201).json({ ok: true, data: row, orderId: card ? card.id : null });
 }));
 
+// Вартість ШІ-бота по розмовах (2026-11-04, Олексій: витрати на токени — у «Щоденну аналітику»). Flows раз на пів години рахує токени з журналу
+// викликів і шле ПОВНУ суму по кожній розмові {items:[{sessionId, costUsd}]} — перезапис, а не додавання, тож повтор безпечний.
+// Розмови без картки в CRM пропускаємо (її ще не створено); відповідь каже, скільки оновлено.
+router.post('/funnel-events/ai-cost', asyncHandler(async (req, res) => {
+  const items = Array.isArray((req.body || {}).items) ? req.body.items.slice(0, 2000) : null;
+  if (!items) throw new ValidationError('items має бути масивом [{sessionId, costUsd}]');
+  const valid = items.filter((i) => i && i.sessionId && Number.isFinite(Number(i.costUsd)) && Number(i.costUsd) >= 0 && Number(i.costUsd) < 1000);
+  let updated = 0;
+  for (let i = 0; i < valid.length; i += 100) {
+    const chunk = valid.slice(i, i + 100);
+    const results = await db.$transaction(chunk.map((it) => db.order.updateMany({
+      where: { tenantId: req.tenant.id, funnelSessionId: String(it.sessionId) },
+      data: { aiCostUsd: Math.round(Number(it.costUsd) * 1e6) / 1e6 },
+    })));
+    updated += results.reduce((s, r) => s + r.count, 0);
+  }
+  res.json({ ok: true, data: { received: items.length, valid: valid.length, updated } });
+}));
+
 // §9 Дашборд «Воронка» — по кожному етапу: унікальних сесій, % конверсії від попереднього
 // етапу і % від самого першого. Сортування — за stageOrder (задає автор ноди у Flows).
 router.get('/funnel-events/summary', asyncHandler(async (req, res) => {

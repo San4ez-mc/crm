@@ -130,6 +130,7 @@ export const api = {
   analyticsUpsells: (params = {}) => get(`/analytics/upsells?${new URLSearchParams(params)}`),
   analyticsTimeToPurchase: (params = {}) => get(`/analytics/time-to-purchase?${new URLSearchParams(params)}`),
   analyticsDaily: (params = {}) => get(`/analytics/daily?${new URLSearchParams(params)}`),
+  setDayForecast: (data) => req('PUT', '/analytics/daily-forecast', data),
   analyticsProductDaily: (params = {}) => get(`/analytics/product-daily?${new URLSearchParams(params)}`),
 
   // База знань

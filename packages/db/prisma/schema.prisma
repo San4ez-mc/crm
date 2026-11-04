@@ -36,9 +36,14 @@ model Tenant {
   prepaymentAmount    Decimal? @db.Decimal(12, 2) // передоплата за часткової оплати, грн (бот називає її клієнту; CRM — сума за замовчуванням)
   expectedRefusalPct  Decimal? @db.Decimal(5, 2) // очікувані відмови+повернення, % (за замовчуванням 23: 20 відмов на пошті + 3 повернення) — «з відмовами» у звіті реклами (Edits 537c402a)
   shippingTerms       String? // терміни відправки словами: «Відправка — до 5 робочих днів з моменту оформлення (субота й неділя — вихідні)»
+  // 2026-11-04 (Олексій, Edits 03.11): прогноз відмов і повернень для «Щоденної аналітики» — за замовчуванням для всіх днів (порожньо = 20 і 3),
+  // окремо для дня — DayForecast. Свіжі дні показують 0% відмов, бо посилка їде кілька днів, тож «маржинальний прибуток із прогнозом» множить на (1 − відмови − повернення).
+  forecastRefusalPct  Decimal? @db.Decimal(5, 2)
+  forecastReturnPct   Decimal? @db.Decimal(5, 2)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  dayForecasts     DayForecast[]
   categories       Category[]
   suppliers        Supplier[]
   products         Product[]
@@ -444,6 +449,9 @@ model Order {
   // Менеджер може змінити («Змінити дату»: прийняв у пʼятницю ввечері — оформив у понеділок). null — картка розмови без покупця.
   placedAt         DateTime?
   placedBy         String? // хто оформив: «Бот», імʼя менеджера (вхід у CRM / EasyDrop) — Edits 15b533ae «Хто оформив»
+  // 2026-11-04 (Олексій): скільки коштує ШІ-бот у цій розмові, USD — Flows раз на пів години рахує токени з журналу викликів і присилає
+  // повну суму (не приріст), «Щоденна аналітика» додає їх у витрати дня розмови. Лише для карток розмов воронки.
+  aiCostUsd        Decimal?  @db.Decimal(12, 6)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -723,4 +731,18 @@ model CrmCheck {
   updatedAt    DateTime  @updatedAt
 
   @@index([tenantId, status])
+}
+
+// 2026-11-04 (Олексій): прогноз відмов/повернень на конкретний день «Щоденної аналітики» — власник вписує в клітинку дня.
+// Немає запису — діє значення за замовчуванням з Tenant.forecastRefusalPct/forecastReturnPct (null усередині запису = теж за замовчуванням).
+model DayForecast {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  date       DateTime @db.Date // київська доба
+  refusalPct Decimal? @db.Decimal(5, 2)
+  returnPct  Decimal? @db.Decimal(5, 2)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, date])
 }

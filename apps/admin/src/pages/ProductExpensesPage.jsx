@@ -40,7 +40,7 @@ export default function ProductExpensesPage() {
             <thead className="border-b border-slate-800 text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3">Товар</th><th className="px-4 py-3">Ціна постачальника</th><th className="px-4 py-3">Менеджер (фікс)</th>
-                <th className="px-4 py-3">Менеджер (%)</th><th className="px-4 py-3">Реклама</th><th className="px-4 py-3">Маржа</th>
+                <th className="px-4 py-3">Менеджер (%)</th><th className="px-4 py-3">Реклама</th><th className="px-4 py-3">Маржинальний прибуток</th>
               </tr>
             </thead>
             <tbody>

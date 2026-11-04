@@ -79,6 +79,10 @@ const STAGE_MATCHERS = {
   // «Скасовано» пріоритетніше за «Відмова» (у CRM «відмова» — ще й позначка «не забрав на НП», isRefused).
   cancelled: [(n) => /скасов|cancel/.test(n), (n) => /^відмов/.test(n)],
   shipped: [(n) => /відправлен/.test(n) && !/не\s+відправ/.test(n), (n) => /^в\s+дорозі|^shipped/.test(n)],
+  // 2026-11-04 (Олексій): замовлення вже у постачальника, але посилку ще не передано Новій пошті («створена, не передана до відправки»).
+  supplier: [(n) => /оформлен\S*\s+в\s+постачальник/.test(n)],
+  // Посилка прибула у відділення/поштомат і чекає на клієнта (код НП 7/8) — окрема стадія, щоб «Не забрав на пошті» означало лише відмову.
+  stored: [(n) => /зберігаєть/.test(n)],
 };
 // Стадії ПІСЛЯ відправлення за змістом (а не за порядком: у goverla «оформлене в постачальника» стоїть у списку після
 // «Відправлено», хоча йде до нього) — ТТН замовлення з них не повертає назад у «Відправлено».
@@ -96,21 +100,25 @@ async function findStage(tenantId, kind, preferPipelineId = null) {
 }
 
 /**
- * Нова ТТН → стадія «Відправлено», якщо замовлення ще до неї не дійшло (будь-яка стадія до відправлення або без стадії).
- * Не рухаємо назад (вже «Забрав»/«Отримано»/«Повернення») і не чіпаємо скасовані — за змістом назви, не за порядком. Повертає {stageId} або {}.
+ * Нова ТТН → стадія «Замовлення оформлене в постачальника» (2026-11-04, Олексій: постачальник ще кілька днів шиє замовлення і може
+ * його скасувати — «Відправлено» ставить CRM сама, коли Нова пошта покаже, що посилка в дорозі: lib/novaPoshta.js). Немає такої стадії
+ * в магазині — як раніше, «Відправлено». Рухаємо лише вперед, за змістом назви, не за порядком: не чіпаємо замовлення, що вже
+ * «Відправлено»/«Зберігається»/«Забрав»/«Повернення»/скасовані. Повертає {stageId} або {}.
  */
 async function shippedStagePatch(tenantId, order, oldTtn, newTtn) {
   const added = newTtn.filter((t) => !(oldTtn || []).includes(t));
   if (!added.length) return {};
   const current = order.stageId ? await db.stage.findUnique({ where: { id: order.stageId } }) : null;
-  const shipped = await findStage(tenantId, 'shipped', current?.pipelineId || null);
-  if (!shipped || (current && current.id === shipped.id)) return {};
+  const pipelineId = current?.pipelineId || null;
+  const target = (await findStage(tenantId, 'supplier', pipelineId)) || (await findStage(tenantId, 'shipped', pipelineId));
+  if (!target || (current && current.id === target.id)) return {};
   if (current) {
     const cancelled = await findStage(tenantId, 'cancelled', current.pipelineId);
     if (cancelled && cancelled.id === current.id) return {};
-    if (AFTER_SHIPPED(String(current.name || '').trim().toLowerCase())) return {};
+    const cur = String(current.name || '').trim().toLowerCase();
+    if (AFTER_SHIPPED(cur) || (/відправлен/.test(cur) && !/не\s+відправ/.test(cur)) || /зберігаєть/.test(cur)) return {};
   }
-  return { stageId: shipped.id };
+  return { stageId: target.id };
 }
 
 // ── Покупець із форми замовлення ─────────────────────────────────────────
