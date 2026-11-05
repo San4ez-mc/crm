@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { PageHeader, Card, Field, Input, Textarea, Button, ErrorBanner, formatDateTime } from '../components/common/Common';
 import SizeFitEditor, { fitChartToRows } from '../components/common/SizeFitEditor';
+import apiDocsTemplate from '../docs/crm-api.md?raw';
 
 // Код для HTML лендінгу (2026-11-05): одна функція sendFinekoOrder(...) — шле замовлення в CRM цього магазину.
 const API_ORIGIN = 'https://pcrm.fineko.space';
@@ -175,6 +176,20 @@ export default function SettingsGeneralPage() {
     try { const { data } = await api.regenerateApiKey(); setTenant({ ...tenant, apiKey: data.apiKey }); } catch (e) { setError(e.message); }
   }
 
+  // Файл документації для розробників і ШІ-агентів (apps/admin/src/docs/crm-api.md). Ключів у файл НЕ підставляємо — його передають іншим людям і ШІ.
+  function downloadDocs() {
+    const text = apiDocsTemplate
+      .split('{{ORIGIN}}').join(API_ORIGIN)
+      .split('{{SHOP}}').join(tenant?.name || '')
+      .split('{{DATE}}').join(new Date().toLocaleDateString('uk-UA'));
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `fineko-crm-api-${String(tenant?.name || 'shop').replace(/[^\w.-]+/g, '_')}.md`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
   async function regeneratePublic() {
     if (tenant.publicKey && !confirm('Перегенерувати відкритий ключ? Лендінги зі старим ключем перестануть створювати замовлення, поки не вставите новий код.')) return;
     try { const { data } = await api.regeneratePublicKey(); setTenant({ ...tenant, publicKey: data.publicKey }); } catch (e) { setError(e.message); }
@@ -209,7 +224,10 @@ export default function SettingsGeneralPage() {
           </div>
 
           <div className="mt-6 border-t border-slate-800 pt-5">
-            <h3 className="mb-1 text-sm font-semibold">Доступні запити (API)</h3>
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold">Доступні запити (API)</h3>
+              <Button variant="secondary" onClick={downloadDocs}>⬇ Завантажити документацію</Button>
+            </div>
             <p className="mb-3 text-xs text-slate-500">
               Адреса: <code className="text-slate-300">{API_ORIGIN}/api</code>. Кожен запит із заголовком <code className="text-slate-300">Authorization: Bearer &lt;API-ключ&gt;</code>.
               Відповідь — <code className="text-slate-300">{'{ ok, data }'}</code> або <code className="text-slate-300">{'{ ok:false, error }'}</code>.
@@ -233,7 +251,7 @@ export default function SettingsGeneralPage() {
             <Field label="Приклади (curl, JavaScript, PHP)">
               <textarea readOnly rows={22} value={apiExamples(API_ORIGIN, showKey ? tenant.apiKey : '<API-ключ>')} onFocus={(e) => e.target.select()} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 font-mono text-xs text-slate-300" />
             </Field>
-            <p className="text-xs text-slate-500">Ключ у прикладах підставляється, коли натиснути «Показати» над цим блоком.</p>
+            <p className="text-xs text-slate-500">Ключ у прикладах підставляється, коли натиснути «Показати» над цим блоком. У файл документації ключі не потрапляють — там стоїть <code>&lt;API_KEY&gt;</code>; файл безпечно передавати розробнику чи ШІ-агенту, ключ дайте окремо.</p>
           </div>
 
           <div className="mt-6 border-t border-slate-800 pt-5">
