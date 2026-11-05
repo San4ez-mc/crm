@@ -75,6 +75,9 @@ app.use('/api', mcpRouter, mcpEditRouter);
 // Онбординг нових tenant — окремо, superadmin-only, без прив'язки до конкретного tenantId.
 app.use('/api', tenantsAdminRouter);
 
+// Замовлення з лендінгу — відкритий вхід за Tenant.publicKey (лише створення замовлення), без resolveTenant.
+app.use('/api', require('./routes/public-orders'));
+
 // Бізнес-роути — усі під спільним resolveTenant (Bearer tenant.apiKey АБО SSO-сесія+tenantId).
 app.use('/api', resolveTenant,
   tenantSettingsRouter,

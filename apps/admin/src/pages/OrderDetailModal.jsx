@@ -101,7 +101,8 @@ function AttributionSection({ order, onSaved, onError }) {
             <div><span className="text-slate-500">Останній дотик: </span><AdLine ad={last} /></div>
           </>
         ) : (
-          <div><AdLine ad={first || last} /></div>
+          // Замовлення не з реклами, але джерело відоме (лендінг, ручне) — показуємо його замість «не вказано».
+          <div>{!(first || last) && order.sourceName ? <span>{order.sourceName}</span> : <AdLine ad={first || last} />}</div>
         )}
       </div>
       {open && (

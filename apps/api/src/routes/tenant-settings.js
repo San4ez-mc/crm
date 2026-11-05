@@ -17,7 +17,7 @@ router.get('/tenant', asyncHandler(async (req, res) => {
   res.json({
     ok: true,
     data: {
-      id: t.id, name: t.name, apiKey: t.apiKey, ssoOrgId: t.ssoOrgId, novaPoshtaApiKey: t.novaPoshtaApiKey,
+      id: t.id, name: t.name, apiKey: t.apiKey, publicKey: t.publicKey || null, ssoOrgId: t.ssoOrgId, novaPoshtaApiKey: t.novaPoshtaApiKey,
       usdExchangeRate: t.usdExchangeRate, usdExchangeRateUpdatedAt: t.usdExchangeRateUpdatedAt,
       dailyFixedCosts: t.dailyFixedCosts, dailyPayrollCosts: t.dailyPayrollCosts,
       fitChart: t.fitChart || null, sizeRules: Array.isArray(t.sizeRules) ? t.sizeRules : [],
@@ -109,6 +109,12 @@ router.get('/integrations/zernio-status', asyncHandler(async (req, res) => {
 }));
 
 // Перегенерація — стару воронку/MCP-конектор доведеться оновити новим ключем (попередження в UI).
+// Відкритий ключ для форми замовлення на лендінгу (створює лише замовлення). Перший виклик створює, наступні — замінюють (старий лендінг перестане працювати).
+router.post('/tenant/regenerate-public-key', asyncHandler(async (req, res) => {
+  const tenant = await db.tenant.update({ where: { id: req.tenant.id }, data: { publicKey: 'pk_' + crypto.randomUUID().replace(/-/g, '') } });
+  res.json({ ok: true, data: { id: tenant.id, publicKey: tenant.publicKey } });
+}));
+
 router.post('/tenant/regenerate-key', asyncHandler(async (req, res) => {
   const tenant = await db.tenant.update({ where: { id: req.tenant.id }, data: { apiKey: crypto.randomUUID() } });
   res.json({ ok: true, data: { id: tenant.id, apiKey: tenant.apiKey } });

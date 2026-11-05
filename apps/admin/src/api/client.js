@@ -172,6 +172,7 @@ export const api = {
   getStaff: () => get('/staff'), // люди з доступом до CRM магазину (SSO) — «Хто оформив»
   updateTenantSettings: (data) => patch('/tenant', data),
   regenerateApiKey: () => post('/tenant/regenerate-key'),
+  regeneratePublicKey: () => post('/tenant/regenerate-public-key'),
   refreshExchangeRate: () => post('/tenant/refresh-exchange-rate'),
   zernioStatus: () => get('/integrations/zernio-status'),
   uploadFile,

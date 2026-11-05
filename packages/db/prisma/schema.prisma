@@ -17,6 +17,9 @@ model Tenant {
   id        String   @id @default(uuid())
   name      String
   apiKey    String   @unique @default(uuid()) // Bearer для воронки/MCP/Flows-автоматизацій цього tenant
+  // 2026-11-05: відкритий ключ для форми замовлення на лендінгу — його можна вставити в HTML сторінки. Дозволяє ЛИШЕ створити
+  // замовлення (POST /api/public/landing-order), нічого не читає. Повний apiKey у сторінку вставляти не можна.
+  publicKey String?  @unique
   ssoOrgId  String? // звʼязок з обліковим записом у SSO-панелі FINEKO
   novaPoshtaApiKey String? // §9.17 — ключ для крон-Flows, що опитує статуси ТТН
   // ДОПОВНЕННЯ 2026-08-31 — ручні фінансові параметри для щоденного аналітичного зведення

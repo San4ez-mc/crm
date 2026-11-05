@@ -7,6 +7,28 @@ import { api } from '../api/client';
 import { PageHeader, Card, Field, Input, Textarea, Button, ErrorBanner, formatDateTime } from '../components/common/Common';
 import SizeFitEditor, { fitChartToRows } from '../components/common/SizeFitEditor';
 
+// Код для HTML лендінгу (2026-11-05): одна функція sendFinekoOrder(...) — шле замовлення в CRM цього магазину.
+const API_ORIGIN = 'https://pcrm.fineko.space';
+function landingSnippet(publicKey) {
+  return `<script>
+// Відправка замовлення в CRM. Приклад виклику з форми:
+// sendFinekoOrder({ name: 'Імʼя', phone: '0671234567', city: 'Київ', warehouse: 'Відділення №5',
+//   items: [{ name: 'Худі оверсайз', price: 1290, quantity: 1, properties: [{ name: 'Розмір', value: 'L' }] }] })
+//   .then(function () { alert('Дякуємо! Ми вам зателефонуємо'); })
+//   .catch(function (e) { alert(e.message); });
+function sendFinekoOrder(data) {
+  var utm = {};
+  new URLSearchParams(location.search).forEach(function (v, k) { if (/^utm_|^fbclid$/.test(k)) utm[k] = v; });
+  return fetch('${API_ORIGIN}/api/public/landing-order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ key: '${publicKey}', source: location.hostname + location.pathname, utm: utm }, data))
+  }).then(function (r) { return r.json().catch(function () { return {}; }); })
+    .then(function (j) { if (!j.ok) throw new Error((j.error && j.error.message) || 'Не вдалося відправити, спробуйте ще раз'); return j.data; });
+}
+</script>`;
+}
+
 export default function SettingsGeneralPage() {
   const [tenant, setTenant] = useState(null);
   const [name, setName] = useState('');
@@ -84,6 +106,11 @@ export default function SettingsGeneralPage() {
     try { const { data } = await api.regenerateApiKey(); setTenant({ ...tenant, apiKey: data.apiKey }); } catch (e) { setError(e.message); }
   }
 
+  async function regeneratePublic() {
+    if (tenant.publicKey && !confirm('Перегенерувати відкритий ключ? Лендінги зі старим ключем перестануть створювати замовлення, поки не вставите новий код.')) return;
+    try { const { data } = await api.regeneratePublicKey(); setTenant({ ...tenant, publicKey: data.publicKey }); } catch (e) { setError(e.message); }
+  }
+
   if (!tenant) return null;
 
   return (
@@ -106,6 +133,25 @@ export default function SettingsGeneralPage() {
               </div>
             </Field>
             <Button variant="danger" onClick={regenerate}>Перегенерувати ключ</Button>
+          </div>
+
+          <div className="mt-6 border-t border-slate-800 pt-5">
+            <h3 className="mb-1 text-sm font-semibold">Замовлення з лендінгу</h3>
+            <p className="mb-3 text-xs text-slate-500">
+              Відкритий ключ можна вставляти в HTML лендінгу: він уміє лише створити замовлення в цьому магазині (нічого не читає). Замовлення
+              потрапляє на першу стадію воронки, у «Джерело» пишеться «Лендінг: адреса сторінки». Повний API-ключ вище в лендінг вставляти не можна.
+            </p>
+            {tenant.publicKey ? (
+              <>
+                <Field label="Відкритий ключ для лендінгу"><Input readOnly value={tenant.publicKey} onFocus={(e) => e.target.select()} /></Field>
+                <Field label="Код для сторінки (вставити перед </body>)">
+                  <textarea readOnly rows={9} value={landingSnippet(tenant.publicKey)} onFocus={(e) => e.target.select()} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 font-mono text-xs text-slate-300" />
+                </Field>
+                <Button variant="danger" onClick={regeneratePublic}>Перегенерувати відкритий ключ</Button>
+              </>
+            ) : (
+              <Button variant="secondary" onClick={regeneratePublic}>Створити відкритий ключ</Button>
+            )}
           </div>
         </Card>
 
