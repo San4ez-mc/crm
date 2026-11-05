@@ -74,7 +74,27 @@ curl -X POST "${origin}/api/orders" \\
 
 // Те саме з JavaScript (лише на сервері — ключ повний, у браузер сторінки його класти не можна)
 const res = await fetch('${origin}/api/orders?take=20', { headers: { Authorization: 'Bearer ${key}' } });
-const { ok, data, error } = await res.json();`;
+const { ok, data, error } = await res.json();
+
+// PHP: замовлення з форми лендінгу (виконується на сервері сайту, ключ у браузер не потрапляє)
+<?php
+$order = [
+  'buyer' => ['phone' => $_POST['phone'], 'fullName' => $_POST['name']],
+  'items' => [['name' => 'Худі оверсайз', 'price' => 1290, 'quantity' => 1]],
+  'shipping' => ['city' => $_POST['city'] ?? '', 'warehouse' => $_POST['warehouse'] ?? ''],
+  'sourceName' => 'Лендінг: ' . $_SERVER['HTTP_HOST'],
+  'placedBy' => 'Лендінг',
+  'paymentType' => 'cod',
+  'managerComment' => $_POST['comment'] ?? '',
+];
+$ch = curl_init('${origin}/api/orders');
+curl_setopt_array($ch, [
+  CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15,
+  CURLOPT_HTTPHEADER => ['Authorization: Bearer ${key}', 'Content-Type: application/json'],
+  CURLOPT_POSTFIELDS => json_encode($order, JSON_UNESCAPED_UNICODE),
+]);
+$res = json_decode(curl_exec($ch), true);
+if (empty($res['ok'])) { /* помилка: $res['error']['message'] */ }`;
 }
 
 export default function SettingsGeneralPage() {
@@ -209,8 +229,8 @@ export default function SettingsGeneralPage() {
                 </details>
               ))}
             </div>
-            <Field label="Приклади (curl і JavaScript)">
-              <textarea readOnly rows={13} value={apiExamples(API_ORIGIN, showKey ? tenant.apiKey : '<API-ключ>')} onFocus={(e) => e.target.select()} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 font-mono text-xs text-slate-300" />
+            <Field label="Приклади (curl, JavaScript, PHP)">
+              <textarea readOnly rows={22} value={apiExamples(API_ORIGIN, showKey ? tenant.apiKey : '<API-ключ>')} onFocus={(e) => e.target.select()} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 font-mono text-xs text-slate-300" />
             </Field>
             <p className="text-xs text-slate-500">Ключ у прикладах підставляється, коли натиснути «Показати» над цим блоком.</p>
           </div>
