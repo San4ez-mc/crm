@@ -29,6 +29,54 @@ function sendFinekoOrder(data) {
 </script>`;
 }
 
+// Довідка «Доступні запити» (2026-11-05, власник: у вільному місці під ключем показати запити й приклади). Кожен запит — з Bearer <API-ключ>,
+// відповідь завжди { ok, data } або { ok:false, error:{ code, message } }. Лише те, що реально використовують воронка, Flows і зовнішні скрипти.
+const API_DOCS = [
+  ['Замовлення', [
+    ['GET', '/orders?take=100&skip=0&q=…&stageId=…&ftFrom=2026-11-01&ftTo=2026-11-05', 'Список замовлень (пошук за телефоном, ТТН, нікнеймом; фільтр за стадією й датою оформлення)'],
+    ['GET', '/orders/:id', 'Одне замовлення з позиціями, оплатами, рекламою'],
+    ['POST', '/orders', 'Створити замовлення: { buyer:{phone,fullName}, items:[{name,price,quantity}], shipping:{city,warehouse}, sourceName?, paymentType? }'],
+    ['PATCH', '/orders/:id', 'Змінити частину полів: { stageId, shipping, managerComment, ttn, sourceName, paymentType } — лише передані'],
+    ['PUT', '/orders/:id/items', 'Замінити позиції замовлення'],
+    ['POST', '/orders/:id/cancel', 'Скасувати замовлення'],
+    ['GET', '/orders/lookup-client?ig=…&phone=…', 'Останнє замовлення клієнта за нікнеймом чи телефоном (для бота)'],
+    ['GET', '/orders/summary', 'Кількість і сума замовлень по статусах'],
+    ['GET', '/orders/export.xlsx', 'Excel із замовленнями за тими самими фільтрами'],
+  ]],
+  ['Покупці, оплати, повернення', [
+    ['GET', '/buyers?q=…', 'Список покупців'],
+    ['POST', '/buyers/find-or-create', 'Знайти покупця за телефоном або створити'],
+    ['PATCH', '/buyers/:id', 'Змінити покупця (імʼя, виміри, збережена доставка)'],
+    ['GET', '/payments', 'Оплати'],
+    ['POST', '/payments', 'Записати оплату до замовлення'],
+    ['GET', '/returns', 'Повернення й обміни'],
+    ['POST', '/returns', 'Створити повернення'],
+  ]],
+  ['Каталог і воронка', [
+    ['GET', '/products?q=…', 'Товари (з кольорами й розмірами)'],
+    ['GET', '/products/:id', 'Один товар'],
+    ['GET', '/pipelines', 'Воронки продажів зі стадіями'],
+    ['POST', '/funnel-events', 'Подія воронки бота (картка розмови на дошці)'],
+    ['GET', '/funnel-events/summary', 'Конверсія по етапах воронки'],
+    ['GET', '/knowledge/search?q=…', 'Пошук у базі знань'],
+  ]],
+];
+
+function apiExamples(origin, key) {
+  return `# Список останніх замовлень
+curl -H "Authorization: Bearer ${key}" \\
+  "${origin}/api/orders?take=20"
+
+# Створити замовлення (JSON краще класти у файл: curl -d @order.json)
+curl -X POST "${origin}/api/orders" \\
+  -H "Authorization: Bearer ${key}" -H "Content-Type: application/json" \\
+  -d '{"buyer":{"phone":"0671234567","fullName":"Іван"},"items":[{"name":"Худі","price":1290,"quantity":1}],"sourceName":"Скрипт"}'
+
+// Те саме з JavaScript (лише на сервері — ключ повний, у браузер сторінки його класти не можна)
+const res = await fetch('${origin}/api/orders?take=20', { headers: { Authorization: 'Bearer ${key}' } });
+const { ok, data, error } = await res.json();`;
+}
+
 export default function SettingsGeneralPage() {
   const [tenant, setTenant] = useState(null);
   const [name, setName] = useState('');
@@ -133,6 +181,38 @@ export default function SettingsGeneralPage() {
               </div>
             </Field>
             <Button variant="danger" onClick={regenerate}>Перегенерувати ключ</Button>
+            <p className="mt-3 text-xs text-slate-500">
+              Цей ключ <b>повний</b>: ним працюють воронка, Flows і MCP — він читає й змінює все в магазині. Тримайте його лише на серверах,
+              у код сторінок (лендінги) не вставляйте — для лендінгу є відкритий ключ нижче.
+            </p>
+          </div>
+
+          <div className="mt-6 border-t border-slate-800 pt-5">
+            <h3 className="mb-1 text-sm font-semibold">Доступні запити (API)</h3>
+            <p className="mb-3 text-xs text-slate-500">
+              Адреса: <code className="text-slate-300">{API_ORIGIN}/api</code>. Кожен запит із заголовком <code className="text-slate-300">Authorization: Bearer &lt;API-ключ&gt;</code>.
+              Відповідь — <code className="text-slate-300">{'{ ok, data }'}</code> або <code className="text-slate-300">{'{ ok:false, error }'}</code>.
+            </p>
+            <div className="space-y-2">
+              {API_DOCS.map(([group, rows]) => (
+                <details key={group} className="rounded-lg border border-slate-800 px-3 py-2">
+                  <summary className="cursor-pointer text-sm text-slate-200">{group} <span className="text-xs text-slate-500">· {rows.length}</span></summary>
+                  <div className="mt-2 space-y-1.5">
+                    {rows.map(([method, path, note]) => (
+                      <div key={method + path} className="text-xs">
+                        <span className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center font-mono text-[10px] ${method === 'GET' ? 'bg-sky-500/15 text-sky-300' : method === 'POST' ? 'bg-emerald-500/15 text-emerald-300' : method === 'DELETE' ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>{method}</span>
+                        <code className="break-all text-slate-300">{path}</code>
+                        <div className="ml-14 text-slate-500">{note}</div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+            <Field label="Приклади (curl і JavaScript)">
+              <textarea readOnly rows={13} value={apiExamples(API_ORIGIN, showKey ? tenant.apiKey : '<API-ключ>')} onFocus={(e) => e.target.select()} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 font-mono text-xs text-slate-300" />
+            </Field>
+            <p className="text-xs text-slate-500">Ключ у прикладах підставляється, коли натиснути «Показати» над цим блоком.</p>
           </div>
 
           <div className="mt-6 border-t border-slate-800 pt-5">
