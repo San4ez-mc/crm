@@ -91,7 +91,9 @@ router.post('/public/landing-order', asyncHandler(async (req, res) => {
   if (dup) return void res.status(200).json({ ok: true, data: { orderId: dup.id, duplicate: true } });
 
   const pipeline = await db.pipeline.findFirst({ where: { tenantId: tenant.id }, orderBy: { createdAt: 'asc' }, include: { stages: { orderBy: { order: 'asc' }, take: 1 } } });
-  const stageId = pipeline?.stages?.[0]?.id || null;
+  // Замовлення з лендінгу вже оформлене клієнтом → одразу «Замовлення прийняте» (перша стадія воронки — «Презентація товару», це розмова бота).
+  const accepted = pipeline ? await db.stage.findFirst({ where: { pipelineId: pipeline.id, name: 'Замовлення прийняте' }, select: { id: true } }) : null;
+  const stageId = accepted?.id || pipeline?.stages?.[0]?.id || null;
 
   const ptype = ['cod', 'partial', 'full'].includes(b.paymentType) ? b.paymentType : 'cod';
   const payFields = paymentFields({ paymentType: ptype }, itemsTotal(items), null, tenant.prepaymentAmount);

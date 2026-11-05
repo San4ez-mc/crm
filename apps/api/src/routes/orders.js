@@ -178,7 +178,13 @@ router.post('/orders', asyncHandler(async (req, res) => {
     }).catch(() => {});
   }
 
-  const stageId = b.stageId || await defaultStageId(req.tenant.id);
+  // stageName — стадія за назвою (зручно для зовнішніх скриптів, напр. PHP лендінгу: «Замовлення прийняте»); не знайшли → перша стадія.
+  let stageId = b.stageId || null;
+  if (!stageId && b.stageName) {
+    const st = await db.stage.findFirst({ where: { name: String(b.stageName), pipeline: { tenantId: req.tenant.id } }, select: { id: true }, orderBy: { order: 'asc' } });
+    stageId = st ? st.id : null;
+  }
+  stageId = stageId || await defaultStageId(req.tenant.id);
 
   // 2026-09-09: картка цієї розмови вже є на дошці (створена з /funnel-events) → доповнюємо її, а не дублюємо.
   if (b.funnelSessionId) {

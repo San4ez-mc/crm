@@ -84,6 +84,7 @@ $order = [
   'shipping' => ['city' => $_POST['city'] ?? '', 'warehouse' => $_POST['warehouse'] ?? ''],
   'sourceName' => 'Лендінг: ' . $_SERVER['HTTP_HOST'],
   'placedBy' => 'Лендінг',
+  'stageName' => 'Замовлення прийняте',
   'paymentType' => 'cod',
   'managerComment' => $_POST['comment'] ?? '',
 ];
