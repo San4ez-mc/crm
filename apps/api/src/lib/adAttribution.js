@@ -93,7 +93,7 @@ async function touchFromCard(tenantId, ig, before) {
   if (!nick) return {};
   const t = before || new Date();
   const card = await db.order.findFirst({
-    where: { tenantId, funnelSessionId: { not: null }, firstTouchAdId: { not: null }, contactIg: { equals: nick, mode: 'insensitive' }, createdAt: { gte: new Date(t.getTime() - 14 * 86400e3), lte: t } },
+    where: { tenantId, deletedAt: null, funnelSessionId: { not: null }, firstTouchAdId: { not: null }, contactIg: { equals: nick, mode: 'insensitive' }, createdAt: { gte: new Date(t.getTime() - 14 * 86400e3), lte: t } },
     orderBy: { createdAt: 'desc' },
     select: { firstTouchAdId: true, firstTouchAt: true, lastTouchAdId: true, lastTouchAt: true },
   });

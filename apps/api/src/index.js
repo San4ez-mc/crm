@@ -50,6 +50,7 @@ app.use(helmet({
       imgSrc: ["'self'", 'data:', 'https:'], // фото товарів — частина лишається на зовнішньому KeyCRM CDN (див. migrate-keycrm.js)
       connectSrc: ["'self'"],
       frameAncestors: ["'none'"],
+      formAction: ["'self'", 'https://secure.wayforpay.com'], // кнопка «Оплатити» відправляє форму на сторінку оплати WayForPay
       objectSrc: ["'none'"],
     },
   },
@@ -78,6 +79,9 @@ app.use('/api', tenantsAdminRouter);
 // Замовлення з лендінгу — відкритий вхід за Tenant.publicKey (лише створення замовлення), без resolveTenant.
 app.use('/api', require('./routes/public-orders'));
 
+// Оплата підписки: сповіщення від WayForPay і повернення клієнта після оплати — без входу (свій підпис + перевірка статусу всередині).
+app.use('/api', require('./routes/billing').publicRouter);
+
 // Бізнес-роути — усі під спільним resolveTenant (Bearer tenant.apiKey АБО SSO-сесія+tenantId).
 app.use('/api', resolveTenant,
   tenantSettingsRouter,
@@ -98,6 +102,7 @@ app.use('/api', resolveTenant,
   funnelEventsRouter,
   knowledgeRouter,
   crmChecksRouter,
+  require('./routes/billing').router,
 );
 
 // Продакшн: зібраний admin SPA (yarn build:admin → public/admin) роздається тим самим

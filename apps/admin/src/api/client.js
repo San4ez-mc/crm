@@ -1,6 +1,7 @@
 // Тонкий fetch-wrapper — той самий патерн, що platform/apps/admin/src/api/client.js.
 // tenantId підставляється автоматично з authStore (SSO-сесія скоупиться по вибраному магазину).
 import { useAuthStore } from '../stores/authStore';
+import { toast } from '../components/common/Toast';
 
 function withTenant(path) {
   const tenantId = useAuthStore.getState().currentTenantId;
@@ -9,20 +10,47 @@ function withTenant(path) {
   return `${path}${sep}tenantId=${encodeURIComponent(tenantId)}`;
 }
 
+// Сповіщення справа знизу після змін (Toast.jsx): успіх — «Збережено/Створено/Видалено», помилка — червоним. GET мовчить.
+// Тихі запити (службові, не дія користувача) — SILENT.
+const SILENT = [/^\/tours/, /^\/billing\/(checkout|payments)/, /^\/billing\/status/];
+const DONE_TEXT = [
+  [/^\/orders\/[^/]+\/restore/, 'Замовлення відновлено'],
+  [/^\/orders\/[^/]+$/, { DELETE: 'Замовлення видалено', default: 'Замовлення збережено' }],
+  [/^\/orders\/[^/]+\/ttn-refresh/, 'Статус Нової пошти оновлено'],
+  [/^\/orders(\?|$)/, 'Замовлення створено'],
+];
+function doneText(method, path) {
+  const clean = path.split('?')[0];
+  for (const [re, text] of DONE_TEXT) {
+    if (re.test(clean)) return typeof text === 'string' ? text : (text[method] || text.default);
+  }
+  return method === 'POST' ? 'Створено' : method === 'DELETE' ? 'Видалено' : 'Збережено';
+}
+const isMutation = (method) => method !== 'GET';
+
 async function req(method, path, body) {
-  const res = await fetch(`/api${withTenant(path)}`, {
-    method,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`/api${withTenant(path)}`, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    if (isMutation(method)) toast.error('Немає зʼєднання із сервером. Зміни не збережено.');
+    throw e;
+  }
   const json = await res.json().catch(() => ({ ok: false, error: { message: 'Invalid JSON response' } }));
+  const quiet = SILENT.some((re) => re.test(path));
   if (!json.ok) {
     const err = new Error(json.error?.message || `HTTP ${res.status}`);
     err.code = json.error?.code;
     err.context = json.error?.context;
+    if (isMutation(method) && !quiet) toast.error(err.message);
     throw err;
   }
+  if (isMutation(method) && !quiet) toast.success(doneText(method, path));
   return json;
 }
 
@@ -112,7 +140,7 @@ export const api = {
   updateOrder: (id, data) => patch(`/orders/${id}`, data),
   setOrderAttribution: (id, data) => patch(`/orders/${id}/attribution`, data),
   replaceOrderItems: (id, items) => put(`/orders/${id}/items`, { items }),
-  cancelOrder: (id) => post(`/orders/${id}/cancel`),
+  restoreOrder: (id) => post(`/orders/${id}/restore`),
   refreshOrderTtn: (id) => post(`/orders/${id}/ttn-refresh`),
   deleteOrder: (id) => del(`/orders/${id}`),
 
@@ -168,6 +196,13 @@ export const api = {
   updateCrmCheck: (id, data) => patch(`/crm-checks/${id}`, data),
 
   // Налаштування
+  // Тариф, оплата (WayForPay), підказки-тури
+  billingStatus: () => get('/billing/status'),
+  billingCheckout: (data) => post('/billing/checkout', data),
+  billingPayment: (ref) => get(`/billing/payments/${encodeURIComponent(ref)}`),
+  toursSeen: () => get('/tours'),
+  tourMarkSeen: (key) => post(`/tours/${encodeURIComponent(key)}/seen`),
+
   getTenantSettings: () => get('/tenant'),
   getStaff: () => get('/staff'), // люди з доступом до CRM магазину (SSO) — «Хто оформив»
   updateTenantSettings: (data) => patch('/tenant', data),

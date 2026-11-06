@@ -42,7 +42,7 @@ async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, u
         id: true, createdAt: true, placedAt: true, isRefused: true, ttn: true, ttnStatus: true, stage: { select: { name: true } }, firstTouchAdId: true, funnelSessionId: true, contactIg: true, contactName: true,
         buyer: { select: { fullName: true, igUsername: true, phone: true } },
         returns: { select: { id: true } },
-        items: { select: { productId: true, name: true, price: true, quantity: true, product: { select: { name: true } } } },
+        items: { select: { productId: true, name: true, price: true, quantity: true, components: true, product: { select: { name: true } } } },
       },
       orderBy: { placedAt: 'desc' },
     }),
@@ -478,7 +478,7 @@ router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
     db.adSpendDaily.findMany({ where: { adId: ad.id, ...(dateWhere ? { date: dayRange(dateWhere) } : {}) }, select: { date: true, amount: true, currency: true } }),
     db.order.findMany({
       where: { tenantId: req.tenant.id, firstTouchAdId: ad.id, ...(dateWhere ? { placedAt: dateWhere } : {}), ...REAL_SALE_ORDER_WHERE },
-      select: { createdAt: true, placedAt: true, items: { select: { productId: true, price: true, quantity: true } } },
+      select: { createdAt: true, placedAt: true, items: { select: { productId: true, price: true, quantity: true, components: true } } },
     }),
   ]);
   const dayKey = kyivDayKey; // 2026-09-12: групування по днях за Києвом, не UTC (аудит аналітики)

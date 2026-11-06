@@ -260,23 +260,18 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
   async function toggleRefused() {
     try { const r = await api.updateOrder(order.id, { isRefused: !order.isRefused }); merge(r.data); onChanged(); } catch (e) { setError(e.message); }
   }
-  // 2026-10-18 (Олексій: «видалити/скасувати»): скасування — стадія «Скасовано», замовлення лишається в історії й аналітиці;
-  // видалення — лише помилково створене замовлення без платежів, ТТН і повернень (сервер перевіряє те саме).
-  async function cancelOrder() {
-    if (!confirm('Скасувати замовлення? Воно перейде в стадію «Скасовано» і лишиться в історії.')) return;
-    try { const r = await api.cancelOrder(order.id); setOrder({ ...order, ...r.data }); onChanged(); } catch (e) { setError(e.message); }
-  }
-  const deleteBlockers = [
-    payments && payments.length ? 'є платежі' : '',
-    order.ttn?.length ? 'є ТТН' : '',
-    order.returns?.length ? 'є повернення' : '',
-  ].filter(Boolean);
+  // 2026-11-06 (Олексій): одна кнопка «Видалити» навіть для оформленого (клієнт оплатив і передумав / постачальник скасував). Видалене зникає
+  // зі списку й усіх звітів, у базі лишається з платежами та ТТН; повернути можна кнопкою «Відновити» (фільтр «Видалені» у списку).
   async function deleteOrder() {
-    if (!confirm('Видалити замовлення назавжди? Це для замовлень, створених помилково, — відновити не вийде.')) return;
+    const hasMoney = (payments && payments.length) || order.ttn?.length;
+    if (!confirm(hasMoney
+      ? 'Видалити замовлення? У ньому є оплата або ТТН. Воно зникне зі списку й усіх звітів (прибуток, статистика), але лишиться в базі — його можна відновити.'
+      : 'Видалити замовлення? Воно зникне зі списку й усіх звітів. Його можна відновити.')) return;
     try { await api.deleteOrder(order.id); onChanged(); onClose(); } catch (e) { setError(e.message); }
   }
-  const currentStage = stages.find((s) => s.id === order.stageId);
-  const isCancelled = /скасов|cancel/i.test(currentStage?.name || '');
+  async function restoreOrder() {
+    try { const r = await api.restoreOrder(order.id); merge({ deletedAt: null, deletedBy: null }); onChanged(); } catch (e) { setError(e.message); }
+  }
   const itemsTotal = (order.items || []).reduce((s, it) => s + Number(it.price) * it.quantity, 0);
   const igName = order.buyer?.igUsername || order.contactIg;
   const measurements = order.buyer?.knownMeasurements && Object.keys(order.buyer.knownMeasurements).length ? Object.entries(order.buyer.knownMeasurements) : [];
@@ -396,10 +391,9 @@ export default function OrderDetailModal({ order: initialOrder, pipelines, onClo
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="secondary" onClick={() => onOpenReturn(order)}>Оформити повернення/обмін</Button>
-            {!isCancelled && <Button variant="secondary" onClick={cancelOrder}>Скасувати замовлення</Button>}
-            {payments !== null && (deleteBlockers.length
-              ? <span className="text-xs text-slate-500" title="Видаляти можна лише помилково створені замовлення">Видалити не можна: {deleteBlockers.join(', ')}</span>
-              : <button onClick={deleteOrder} className="px-2 text-sm text-red-400 hover:text-red-300">Видалити</button>)}
+            {order.deletedAt
+              ? <Button variant="secondary" onClick={restoreOrder}>Відновити замовлення</Button>
+              : <button onClick={deleteOrder} className="px-2 text-sm text-red-400 hover:text-red-300">Видалити</button>}
           </div>
           <Button variant="secondary" onClick={onClose}>Закрити</Button>
         </div>

@@ -64,9 +64,11 @@ router.get('/me', asyncHandler(async (req, res) => {
   const identity = await ssoClient.introspect(token);
   if (!identity.active) throw new AuthError('Сесія недійсна');
   const perms = await ssoClient.getPermissions(identity.sub);
+  // plan/planEndsAt/isDemo — для блоку «Тариф» внизу меню (lib/plans.js planStatus рахує дні до кінця й стан на боці адмінки через /billing/status).
+  const sel = { id: true, name: true, plan: true, planEndsAt: true, isDemo: true };
   const tenants = perms.role === 'superadmin'
-    ? await db.tenant.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
-    : await db.tenant.findMany({ where: { id: { in: perms.projectIds } }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
+    ? await db.tenant.findMany({ select: sel, orderBy: { name: 'asc' } })
+    : await db.tenant.findMany({ where: { id: { in: perms.projectIds } }, select: sel, orderBy: { name: 'asc' } });
   // pageIds — щоб адмінка показала лише дозволені розділи ([] = усі); сервер перевіряє те саме в resolveTenant.
   res.json({ ok: true, data: { user: { id: identity.sub, email: identity.email, name: identity.name }, role: perms.role, tenants, pageIds: perms.role === 'superadmin' ? [] : (Array.isArray(perms.pageIds) ? perms.pageIds : []), canEdit: perms.canEdit !== false } });
 }));

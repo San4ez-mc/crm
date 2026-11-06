@@ -4,9 +4,61 @@
 // дублювати в новому per-оголошення звіті (routes/ads.js).
 const { db } = require('@crm/db');
 
+// Мапа productId → ProductExpense. Додатково на неї навішено (2026-11-06, Edits Олексія «комплект не віднімає дроп-ціну»):
+//   .skuToId — артикул товару → productId (склад комплекту в замовленні часто лише з артикулом);
+//   .setDefs — productId комплекту → [{componentProductId, qty}] (склад комплекту з каталогу).
+// Комплект не має власної ціни постачальника: його собівартість = сума собівартостей речей усередині (itemUnitCost нижче).
 async function loadExpenseMap(tenantId) {
-  const rows = await db.productExpense.findMany({ where: { tenantId } });
-  return new Map(rows.map((r) => [r.productId, r]));
+  const [rows, products, setRows] = await Promise.all([
+    db.productExpense.findMany({ where: { tenantId } }),
+    db.product.findMany({ where: { tenantId }, select: { id: true, sku: true } }),
+    db.productSetComponent.findMany({ where: { parent: { tenantId } }, select: { parentProductId: true, componentProductId: true, qty: true } }),
+  ]);
+  const map = new Map(rows.map((r) => [r.productId, r]));
+  map.skuToId = new Map(products.filter((p) => p.sku).map((p) => [String(p.sku).trim().toLowerCase(), p.id]));
+  map.setDefs = new Map();
+  for (const s of setRows) {
+    const arr = map.setDefs.get(s.parentProductId) || [];
+    arr.push({ productId: s.componentProductId, qty: s.qty || 1 });
+    map.setDefs.set(s.parentProductId, arr);
+  }
+  return map;
+}
+
+// Склад позиції-комплекту: спершу те, що записано в самій позиції замовлення (менеджер/бот міг змінити склад),
+// інакше склад комплекту з каталогу. Порожньо — це звичайний товар.
+function setParts(item, expenseByProduct) {
+  const own = Array.isArray(item.components) ? item.components : [];
+  const parts = [];
+  for (const c of own) {
+    const id = (c && c.productId) || (c && c.sku && expenseByProduct.skuToId && expenseByProduct.skuToId.get(String(c.sku).trim().toLowerCase())) || null;
+    if (id) parts.push({ productId: id, qty: Math.max(1, parseInt(c.qty, 10) || 1) });
+  }
+  if (parts.length) return parts;
+  const def = item.productId && expenseByProduct.setDefs ? expenseByProduct.setDefs.get(item.productId) : null;
+  return def && def.length ? def : [];
+}
+
+/**
+ * Собівартість і ставки менеджера ОДНІЄЇ штуки позиції на дату замовлення.
+ * Звичайний товар — його ProductExpense. Комплект — сума по речах всередині (кожна за своєю ціною постачальника на дату); якщо
+ * речі не мають витрат (сума 0), лишається власний рядок витрат комплекту. Фікс менеджера комплекту = сума фіксів речей;
+ * % менеджера = середній по речах, зважений на їхню собівартість (поровну, якщо собівартості нема).
+ */
+function itemUnit(item, expenseByProduct, atDate) {
+  const own = item.productId ? expenseByProduct.get(item.productId) : null;
+  const parts = setParts(item, expenseByProduct);
+  if (parts.length) {
+    let cogs = 0; let fixed = 0; let pctWeighted = 0; let weight = 0; let pctPlain = 0;
+    for (const p of parts) {
+      const e = expenseByProduct.get(p.productId);
+      const c = cogsAt(e, atDate) * p.qty;
+      cogs += c; fixed += Number(e?.managerCostFixed || 0) * p.qty;
+      pctWeighted += Number(e?.managerCostPercent || 0) * c; weight += c; pctPlain += Number(e?.managerCostPercent || 0);
+    }
+    if (cogs > 0) return { cogs, fixed, percent: weight > 0 ? pctWeighted / weight : pctPlain / parts.length };
+  }
+  return { cogs: cogsAt(own, atDate), fixed: Number(own?.managerCostFixed || 0), percent: Number(own?.managerCostPercent || 0) };
 }
 
 // ДОПОВНЕННЯ 2026-09-07 (фідбек власника): ціна постачальника міняється в часі —
@@ -39,13 +91,13 @@ function cogsAt(exp, atDate) {
 // atDate — дата замовлення (для date-aware cogsHistory); якщо не передано явно, пробуємо
 // взяти item.order.createdAt (зручно, коли item прийшов із include: {order}).
 function marginPerOrderItem(item, expenseByProduct, isRefused = false, atDate = null) {
-  const exp = item.productId ? expenseByProduct.get(item.productId) : null;
-  const cogs = cogsAt(exp, atDate || item.order?.createdAt || null);
+  const unit = itemUnit(item, expenseByProduct, atDate || item.order?.createdAt || null);
+  const cogs = unit.cogs;
   const revenue = Number(item.price) * item.quantity;
   const cogsTotal = cogs * item.quantity;
   if (isRefused) return revenue - cogsTotal;
-  const managerCostFixed = Number(exp?.managerCostFixed || 0);
-  const managerCostPercent = Number(exp?.managerCostPercent || 0);
+  const managerCostFixed = unit.fixed;
+  const managerCostPercent = unit.percent;
   const markup = revenue - cogsTotal; // націнка, база для % менеджера — не вся виручка
   const managerCost = managerCostFixed * item.quantity + (markup * managerCostPercent) / 100;
   return revenue - cogsTotal - managerCost;
@@ -66,12 +118,12 @@ function marginPerOrderItem(item, expenseByProduct, isRefused = false, atDate = 
 //   ORDER_PLACED_WHERE   — оформлене замовлення (є покупець), включно з відмовами (знаменник «% відмов»);
 //   REAL_SALE_ORDER_WHERE — фактичний продаж: оформлене, не відмова, без повернення, не скасоване;
 //   LEAD_WHERE           — розмова з воронки (картка; стає замовленням у тому ж рядку) — «контакти/повідомлення» для CPL і конверсії.
-const ORDER_PLACED_WHERE = { buyerId: { not: null } };
-// Скасоване вручну (2026-10-18: кнопка «Скасувати» переводить у стадію «Скасовано», замовлення лишається в історії) — не продаж.
-const REAL_SALE_ORDER_WHERE = { ...ORDER_PLACED_WHERE, isRefused: false, returns: { none: {} }, NOT: { stage: { is: { name: { contains: 'скасов', mode: 'insensitive' } } } } };
-const LEAD_WHERE = { funnelSessionId: { not: null } };
+// Видалені/скасовані менеджером (Order.deletedAt, 2026-11-06) не рахуються ніде: це одне місце, звідки його беруть усі звіти.
+const ORDER_PLACED_WHERE = { buyerId: { not: null }, deletedAt: null };
+const REAL_SALE_ORDER_WHERE = { ...ORDER_PLACED_WHERE, isRefused: false, returns: { none: {} } };
+const LEAD_WHERE = { funnelSessionId: { not: null }, deletedAt: null };
 // Дата замовлення в звітах (2026-10-26, Edits c4fc2dcd) — дата ОФОРМЛЕННЯ (placedAt); createdAt замовлення з розмови — початок розмови.
 // Для карток розмов (LEAD_WHERE) лишається createdAt. placedAt заповнено для всіх замовлень (міграція 20261026010000).
 const placedAtOf = (o) => (o && (o.placedAt || o.createdAt)) || null;
 
-module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf };
+module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt, itemUnit, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf };

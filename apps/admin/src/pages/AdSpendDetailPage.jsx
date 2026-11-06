@@ -94,10 +94,21 @@ function ResultChart({ data, on, toggle, toCur }) {
   const profitPts = data.map((d, i) => `${xOf(i)},${scaleY(toCur(d.profit))}`).join(' ');
   const roiPts = data.map((d, i) => (d.roi !== null && d.roi !== undefined ? `${xOf(i)},${scaleR(d.roi)}` : null)).filter(Boolean).join(' ');
 
+  // Шкала зліва з цифрами зі знаком (Edits 05–06.11: «не показує цифри, яким був прибуток, і від'ємні числа» — збиткові дні/реклама): верх, нуль, низ.
+  const fmtAxis = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(1).replace(/\.0$/, '')}k` : Math.round(Math.abs(v))}`;
+  const ticks = [maxV, ...(minV < 0 ? [0, minV] : [0])];
+  const signed = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('uk-UA', { maximumFractionDigits: 0 })}`;
+
   return (
     <div>
       <div className="overflow-x-auto">
         <svg width={W} height={H + 30} className="min-w-full">
+          {ticks.map((t) => (
+            <g key={t}>
+              <line x1={padL} y1={scaleY(t)} x2={W - padR} y2={scaleY(t)} stroke="#1e293b" strokeWidth="1" />
+              <text x={padL - 6} y={scaleY(t) + 3} textAnchor="end" fontSize="10" fill={t < 0 ? '#f87171' : '#94a3b8'}>{fmtAxis(t)}</text>
+            </g>
+          ))}
           <line x1={padL} y1={zeroY} x2={W - padR} y2={zeroY} stroke="#334155" strokeWidth="1" />
           {on.roi && <text x={W - padR + 4} y={scaleR(1) + 3} fontSize="9" fill="#f59e0b">×1</text>}
           {on.roi && <line x1={padL} y1={scaleR(1)} x2={W - padR} y2={scaleR(1)} stroke="#f59e0b" strokeDasharray="3 4" strokeWidth="1" opacity="0.4" />}
@@ -112,7 +123,15 @@ function ResultChart({ data, on, toggle, toCur }) {
             );
           })}
           {on.profit && <polyline points={profitPts} fill="none" stroke="#1d4ed8" strokeWidth="2" />}
-          {on.profit && data.map((d, i) => <circle key={'p' + d.date} cx={xOf(i)} cy={scaleY(toCur(d.profit))} r="3.5" fill="#1d4ed8" />)}
+          {on.profit && data.map((d, i) => {
+            const v = toCur(d.profit); const neg = v < 0;
+            return (
+              <g key={'p' + d.date}>
+                <circle cx={xOf(i)} cy={scaleY(v)} r="3.5" fill={neg ? '#ef4444' : '#1d4ed8'}><title>{signed(v)}</title></circle>
+                <text x={xOf(i)} y={scaleY(v) + (neg ? 15 : -8)} textAnchor="middle" fontSize="10" fontWeight="600" fill={neg ? '#f87171' : '#93c5fd'}>{signed(v)}</text>
+              </g>
+            );
+          })}
           {on.roi && roiPts && <polyline points={roiPts} fill="none" stroke="#f59e0b" strokeWidth="2" />}
           {on.roi && data.map((d, i) => (d.roi !== null && d.roi !== undefined ? <circle key={'r' + d.date} cx={xOf(i)} cy={scaleR(d.roi)} r="3" fill="#f59e0b"><title>×{d.roi.toFixed(2)}</title></circle> : null))}
         </svg>

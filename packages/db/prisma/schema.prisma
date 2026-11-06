@@ -43,9 +43,15 @@ model Tenant {
   // окремо для дня — DayForecast. Свіжі дні показують 0% відмов, бо посилка їде кілька днів, тож «маржинальний прибуток із прогнозом» множить на (1 − відмови − повернення).
   forecastRefusalPct  Decimal? @db.Decimal(5, 2)
   forecastReturnPct   Decimal? @db.Decimal(5, 2)
+  // 2026-11-06: тарифний план магазину. plan: 'start' | 'plus' | 'ai' (lib/plans.js); planEndsAt — до коли оплачено (null = без обмеження за часом).
+  // isDemo — спільний демо-магазин для показу: оплата з нього створює НОВУ компанію оплатившому, а не продовжує демо.
+  plan       String?
+  planEndsAt DateTime?
+  isDemo     Boolean   @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  billingPayments  BillingPayment[]
   dayForecasts     DayForecast[]
   categories       Category[]
   suppliers        Supplier[]
@@ -455,6 +461,11 @@ model Order {
   // 2026-11-04 (Олексій): скільки коштує ШІ-бот у цій розмові, USD — Flows раз на пів години рахує токени з журналу викликів і присилає
   // повну суму (не приріст), «Щоденна аналітика» додає їх у витрати дня розмови. Лише для карток розмов воронки.
   aiCostUsd        Decimal?  @db.Decimal(12, 6)
+  // 2026-11-06 (Олексій): «Видалити» навіть для оформленого замовлення (клієнт оплатив і передумав / постачальник скасував) і «скасовані досі в статистиці».
+  // Замість стадії «Скасовано» — м'яке видалення: рядок лишається в базі (платежі, ТТН, історія), але зникає зі списку, дошки, експорту і всіх звітів
+  // (lib/margin ORDER_PLACED_WHERE / LEAD_WHERE). Повернути можна, зайшовши за посиланням на замовлення і натиснувши «Відновити».
+  deletedAt        DateTime?
+  deletedBy        String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -745,7 +756,53 @@ model DayForecast {
   date       DateTime @db.Date // київська доба
   refusalPct Decimal? @db.Decimal(5, 2)
   returnPct  Decimal? @db.Decimal(5, 2)
+  // 2026-11-06 (Олексій): курс і витрати вносить вручну; значення, введене в день D, діє і на наступні дні, поки не задано нове
+  // (звіт бере останнє задане на дату ≤ дня, інакше — значення з налаштувань магазину).
+  fixedCosts   Decimal? @db.Decimal(12, 2) // постійні витрати, грн/добу
+  payrollCosts Decimal? @db.Decimal(12, 2) // витрати на оплату праці, грн/добу
+  usdRate      Decimal? @db.Decimal(10, 4) // курс долара, грн
   updatedAt  DateTime @updatedAt
 
   @@unique([tenantId, date])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Оплата підписки на CRM через WayForPay (2026-11-06). Рядок створюється при натисканні «Оплатити» (pending), стає paid лише після
+// перевірки статусу в WayForPay (CHECK_STATUS), а не з самого лише запиту від браузера. Якщо платить демо-магазин (Tenant.isDemo),
+// після оплати створюється нова компанія оплатившого — її id у newTenantId.
+// ─────────────────────────────────────────────────────────────
+model BillingPayment {
+  id              String    @id @default(uuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId          String?
+  userEmail       String?
+  userName        String?
+  companyName     String?
+  plan            String
+  months          Int       @default(1)
+  amountUsd       Decimal   @db.Decimal(10, 2)
+  amount          Decimal   @db.Decimal(12, 2) // сума, що йде у WayForPay, у currency
+  currency        String
+  orderReference  String    @unique
+  status          String    @default("pending") // pending | paid | failed
+  providerStatus  String?
+  providerPayload Json?
+  newTenantId     String?
+  paidAt          DateTime?
+  appliedAt       DateTime? // коли оплата застосована (тариф продовжено / створена компанія)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([tenantId])
+}
+
+// Які підказки-тури вже бачив користувач (id з SSO) — показуємо один раз кожному.
+model UserTour {
+  id      String   @id @default(uuid())
+  userId  String
+  tourKey String
+  seenAt  DateTime @default(now())
+
+  @@unique([userId, tourKey])
 }

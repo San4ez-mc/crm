@@ -40,6 +40,7 @@ export default function OrdersPage() {
   const _daysAgoStr = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
   const [ftFrom, setFtFrom] = useState(_daysAgoStr(7));
   const [ftTo, setFtTo] = useState(_todayStr());
+  const [showDeleted, setShowDeleted] = useState(false); // «Видалені»: окремий перегляд, щоб відновити помилково видалене
   const [error, setError] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   // ?edit=1 у посиланні з Telegram («✏️ Редагувати замовлення») — картка відкривається одразу в режимі редагування.
@@ -63,6 +64,7 @@ export default function OrdersPage() {
     if (adId === '__none') params.noAd = '1'; else if (adId) params.adId = adId;
     if (ftFrom) params.ftFrom = ftFrom;
     if (ftTo) params.ftTo = ftTo;
+    if (showDeleted) params.deleted = '1';
     return params;
   }
 
@@ -74,7 +76,7 @@ export default function OrdersPage() {
   // Зведення й фільтр по статусу — лише для таблиці (4.11, Олексій: «в канбані цього не треба»); у дошці стадії — це самі колонки.
   const [stageFilter, setStageFilter] = useState('');
   const activeStage = view === 'table' ? stageFilter : '';
-  useEffect(() => { if (view === 'table') loadSummary(); }, [view, q, adId, ftFrom, ftTo]);
+  useEffect(() => { if (view === 'table') loadSummary(); }, [view, q, adId, ftFrom, ftTo, showDeleted]);
 
   const [exporting, setExporting] = useState(false);
   async function exportXlsx() {
@@ -90,6 +92,7 @@ export default function OrdersPage() {
       if (adId === '__none') params.noAd = '1'; else if (adId) params.adId = adId;
       if (ftFrom) params.ftFrom = ftFrom;
       if (ftTo) params.ftTo = ftTo;
+      if (showDeleted) params.deleted = '1';
       if (activeStage) params.stageId = activeStage;
       const [o, p] = await Promise.all([api.listOrders(params), api.listPipelines()]);
       setOrders(o.data);
@@ -97,7 +100,7 @@ export default function OrdersPage() {
       setPipelineId((prev) => (prev && p.data.some((pl) => pl.id === prev) ? prev : p.data[0]?.id || ''));
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [q, adId, ftFrom, ftTo, activeStage]);
+  useEffect(() => { load(); }, [q, adId, ftFrom, ftTo, activeStage, showDeleted]);
 
   const currentPipeline = pipelines.find((p) => p.id === pipelineId);
   const stages = currentPipeline?.stages || [];
@@ -118,6 +121,7 @@ export default function OrdersPage() {
       if (adId === '__none') params.noAd = '1'; else if (adId) params.adId = adId;
       if (ftFrom) params.ftFrom = ftFrom;
       if (ftTo) params.ftTo = ftTo;
+      if (showDeleted) params.deleted = '1';
       const results = await Promise.all(stageList.map((s) => api.listOrders({ ...params, stageId: s.id, take: 200 })));
       const next = {};
       stageList.forEach((s, i) => { next[s.id] = results[i].data; });
@@ -128,7 +132,7 @@ export default function OrdersPage() {
     if (view !== 'board') return;
     loadBoard(stages);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, pipelineId, q, adId, ftFrom, ftTo, stages.map((s) => s.id).join(',')]);
+  }, [view, pipelineId, q, adId, ftFrom, ftTo, showDeleted, stages.map((s) => s.id).join(',')]);
 
   // 31.10 (менеджери: «ТТН зникає після закриття картки»): дошка — вигляд за замовчуванням і вантажиться ОКРЕМО від таблиці. Картка
   // оновлювала лише таблицю (load), а дошка лишалась зі старими замовленнями — після збереження ТТН (і коментаря, дати, «Хто оформив»,
@@ -166,6 +170,9 @@ export default function OrdersPage() {
                 </button>
               ))}
             </div>
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-700 px-3 text-xs text-slate-400 hover:text-slate-200" title="Показати видалені замовлення (їх можна відновити в картці)">
+              <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} /> Видалені
+            </label>
             <Button variant="secondary" onClick={exportXlsx} disabled={exporting} title="Excel за обраними фільтрами (пошук, реклама, дата): аркуші «Замовлення» і «Позиції» — що саме замовили">
               <span className="inline-flex items-center gap-1.5">
                 <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16.5h13" /></svg>

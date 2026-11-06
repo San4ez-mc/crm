@@ -31,7 +31,7 @@ router.get('/buyers', asyncHandler(async (req, res) => {
   const [items, total] = await Promise.all([
     db.buyer.findMany({
       where,
-      include: { orders: { select: { id: true, createdAt: true, items: { select: { price: true, quantity: true } } } } },
+      include: { orders: { where: { deletedAt: null }, select: { id: true, createdAt: true, items: { select: { price: true, quantity: true } } } } },
       orderBy: { createdAt: 'desc' },
       take: Number(take),
       skip: Number(skip),

@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { PageHeader, Card, Input, Select, ErrorBanner, TrendChart, money, formatDate, kyivDateStr } from '../components/common/Common';
+import { useCurrency, CurrencyToggle } from '../components/common/Currency';
 
 // 2026-09-12 (аудит аналітики): "сьогодні" — за київським часом, не UTC (toISOString()).
 function periodPreset(preset) {
@@ -29,16 +30,26 @@ function fmtDay(v) { return `${new Date(v).toLocaleDateString('uk-UA', { weekday
 // rows: [{ label, get:(d)=>string, highlight?, sep? }] — sep=true малює товсту риску НАД цим рядком
 // (межа секції, як раніше було <div className="my-2 border-t"/> між групами показників).
 // Клітинка прогнозу відмов/повернень: власник вписує свій % для дня (Enter або вихід з поля зберігає); порожнє поле — знову за замовчуванням.
+// Поля, які власник вписує вручну. Курс і витрати (2026-11-06, Олексій) діють і на наступні дні, поки не вписано нове: бекенд бере останнє задане.
+const EDIT_FIELDS = {
+  refusalPct: { custom: 'forecastRefusalCustom', value: 'forecastRefusalPct', suffix: '%', max: 99.99, width: 'w-14' },
+  returnPct: { custom: 'forecastReturnCustom', value: 'forecastReturnPct', suffix: '%', max: 99.99, width: 'w-14' },
+  fixedCosts: { custom: 'fixedCostsCustom', value: 'dailyFixedCosts', suffix: '₴', max: 10000000, width: 'w-20', hint: 'Введене тут діє і на наступні дні, поки не впишете нове.' },
+  payrollCosts: { custom: 'payrollCostsCustom', value: 'dailyPayrollCosts', suffix: '₴', max: 10000000, width: 'w-20', hint: 'Введене тут діє і на наступні дні, поки не впишете нове.' },
+  usdRate: { custom: 'usdRateCustom', value: 'usdExchangeRate', suffix: '₴/$', max: 1000, width: 'w-16', hint: 'Курс, який ви вписали, діє і на наступні дні, поки не впишете новий. Порожньо — курс НБУ.' },
+};
 function ForecastCell({ day, field, onSaved }) {
-  const custom = day[field === 'refusalPct' ? 'forecastRefusalCustom' : 'forecastReturnCustom'];
-  const value = day[field === 'refusalPct' ? 'forecastRefusalPct' : 'forecastReturnPct'];
+  const cfg = EDIT_FIELDS[field];
+  const custom = day[cfg.custom];
+  const value = day[cfg.value];
   const [text, setText] = useState(String(value ?? ''));
   const [busy, setBusy] = useState(false);
   useEffect(() => { setText(String(value ?? '')); }, [value]);
   const save = async () => {
-    const clean = text.trim().replace(',', '.');
+    const clean = text.trim().replace(/\s/g, '').replace(',', '.');
     if (clean === String(value ?? '') && custom) return; // нічого не змінилось
-    if (clean !== '' && !(Number(clean) >= 0 && Number(clean) < 100)) { setText(String(value ?? '')); return; }
+    if (clean === String(value ?? '') && !custom) return; // показано перенесене/типове значення, свого не вписано
+    if (clean !== '' && !(Number(clean) >= 0 && Number(clean) <= cfg.max)) { setText(String(value ?? '')); return; }
     setBusy(true);
     try { await api.setDayForecast({ date: day.date, [field]: clean === '' ? null : Number(clean) }); onSaved(); }
     catch (e) { setText(String(value ?? '')); } finally { setBusy(false); }
@@ -49,18 +60,25 @@ function ForecastCell({ day, field, onSaved }) {
         value={text}
         disabled={busy}
         inputMode="decimal"
-        title={custom ? 'Ваше значення для цього дня. Очистіть поле — повернеться значення за замовчуванням.' : 'Значення за замовчуванням (Налаштування → Загальні). Впишіть своє для цього дня.'}
+        title={custom ? `Ваше значення для цього дня. Очистіть поле — повернеться значення за замовчуванням. ${cfg.hint || ''}` : `Значення за замовчуванням або перенесене з попереднього дня. Впишіть своє. ${cfg.hint || ''}`}
         onChange={(e) => setText(e.target.value)}
         onBlur={save}
         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-        className={`w-14 rounded-md border bg-slate-950 px-1.5 py-0.5 text-right text-xs outline-none focus:border-brand ${custom ? 'border-brand/60 text-brand-light' : 'border-slate-700 text-slate-200'}`}
+        className={`${cfg.width} rounded-md border bg-slate-950 px-1.5 py-0.5 text-right text-xs outline-none focus:border-brand ${custom ? 'border-brand/60 text-brand-light' : 'border-slate-700 text-slate-200'}`}
       />
-      <span className="text-slate-500">%</span>
+      <span className="text-slate-500">{cfg.suffix}</span>
     </span>
   );
 }
 
-function MetricsTable({ days, rows, onSaved }) {
+// Грошовий рядок у вибраній валюті: сервер дає гривні, у $ ділимо на курс ЦЬОГО дня (він може бути вписаний вручну).
+function moneyCell(v, d, cur) {
+  if (v === null || v === undefined || Number.isNaN(v)) return '—';
+  const rate = Number(d.usdExchangeRate);
+  return cur === 'USD' && rate > 0 ? fmt(Number(v) / rate) : fmt(v);
+}
+
+function MetricsTable({ days, rows, onSaved, cur = 'UAH' }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
       <table className="text-sm">
@@ -75,12 +93,15 @@ function MetricsTable({ days, rows, onSaved }) {
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} className={row.sep ? 'border-t-4 border-t-slate-950' : ''}>
-              <td className={`sticky left-0 z-10 border-r border-slate-800 bg-slate-900 px-3 py-1.5 text-xs whitespace-nowrap ${row.highlight ? 'font-semibold text-brand-light' : 'text-slate-400'}`}>{row.label}</td>
-              {days.map((d) => (
-                <td key={d.date} className={`px-3 py-1.5 text-right text-xs whitespace-nowrap ${row.highlight ? 'font-semibold text-brand-light' : 'text-slate-200'}`}>
-                  {row.edit ? <ForecastCell day={d} field={row.edit} onSaved={onSaved} /> : row.get(d)}
-                </td>
-              ))}
+              <td className={`sticky left-0 z-10 border-r border-slate-800 bg-slate-900 px-3 py-1.5 text-xs whitespace-nowrap ${row.highlight ? 'font-semibold text-brand-light' : 'text-slate-400'}`}>{row.money && cur === 'USD' ? row.label.replace(', грн', ', $') : row.label}</td>
+              {days.map((d) => {
+                const raw = row.money ? row.val(d) : null;
+                return (
+                  <td key={d.date} className={`px-3 py-1.5 text-right text-xs whitespace-nowrap ${row.highlight ? 'font-semibold text-brand-light' : 'text-slate-200'} ${row.money && Number(raw) < 0 ? '!text-red-400' : ''}`}>
+                    {row.edit ? <ForecastCell day={d} field={row.edit} onSaved={onSaved} /> : row.money ? moneyCell(raw, d, cur) : row.get(d)}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
@@ -93,39 +114,41 @@ function MetricsTable({ days, rows, onSaved }) {
 // конвертується з $ по курсу НБУ на бекенді — lib/currency.js) — лейбли раніше помилково
 // казали "$"/"дол", хоча цифри під ними завжди були грн (окрім рекламного бюджету, який
 // справді був $ до цього фіксу). adSpendUsd — сирий $ з Meta, лише для довідки/звірки.
+// money: true — рядок у гривнях, що перемикається на $ за курсом дня (val повертає число в грн); edit — клітинка, яку вписує власник.
 const SUMMARY_ROWS = [
-  { label: 'Маржинальний прибуток ср. без відмов, грн', get: (d) => fmt(d.marginAvgNonRefused) },
-  { label: 'Маржинальний прибуток ср. з відмовами, грн', get: (d) => fmt(d.marginAvgWithRefused) },
-  { label: 'Ціна замовлення, грн', get: (d) => fmt(d.orderPrice) },
-  { label: 'Прибуток з клієнта без ЗП, грн', get: (d) => fmt(d.profitPerClientNoPayroll) },
-  { label: 'Прибуток з клієнта із ЗП, грн', get: (d) => fmt(d.profitPerClientWithPayroll) },
-  { label: 'Ціна повідомлення, грн', get: (d) => fmt(d.messagePrice) },
+  { label: 'Маржинальний прибуток ср. без відмов, грн', money: true, val: (d) => d.marginAvgNonRefused },
+  { label: 'Маржинальний прибуток ср. з відмовами, грн', money: true, val: (d) => d.marginAvgWithRefused },
+  { label: 'Ціна замовлення, грн', money: true, val: (d) => d.orderPrice },
+  { label: 'Прибуток з клієнта без ЗП, грн', money: true, val: (d) => d.profitPerClientNoPayroll },
+  { label: 'Прибуток з клієнта із ЗП, грн', money: true, val: (d) => d.profitPerClientWithPayroll },
+  { label: 'Ціна повідомлення, грн', money: true, val: (d) => d.messagePrice },
   { label: 'Конверсія у продаж, %', get: (d) => pct(d.conversionToSale !== null ? d.conversionToSale * 100 : null) },
-  { label: 'Маржинальний прибуток всього, грн', get: (d) => fmt(d.marginTotal), sep: true },
-  { label: 'Маржинальний прибуток всього із прогнозованими відмовами, грн', get: (d) => fmt(d.marginTotalForecast), highlight: true },
-  { label: 'Рекламний бюджет, грн', get: (d) => fmt(d.adSpend) },
+  { label: 'Маржинальний прибуток всього, грн', money: true, val: (d) => d.marginTotal, sep: true },
+  { label: 'Маржинальний прибуток всього із прогнозованими відмовами, грн', money: true, val: (d) => d.marginTotalForecast, highlight: true },
+  { label: 'Рекламний бюджет, грн', money: true, val: (d) => d.adSpend },
   { label: 'Рекламний бюджет, $ (як з Meta)', get: (d) => (d.adSpendUsd === null ? '—' : `$${fmt(d.adSpendUsd)}`) },
   { label: 'Нові контакти в повідомленнях', get: (d) => d.newMessages },
+  { label: 'Замовлень, к-сть', get: (d) => d.ordersCount },
   { label: 'Продано товарів, к-сть', get: (d) => d.qtySold },
   { label: 'Повторно продані товари', get: (d) => d.qtyRepeat },
   { label: 'Кліки', get: (d) => d.clicks },
   { label: 'Покази', get: (d) => d.impressions },
   { label: 'Окупність', get: (d) => fmt(d.roi), highlight: true, sep: true },
   { label: 'Окупність із прогнозованими відмовами', get: (d) => fmt(d.roiForecast), highlight: true },
-  { label: 'Очікуваний прибуток, грн', get: (d) => fmt(d.expectedProfit), highlight: true },
-  { label: 'Курс долара, грн', get: (d) => fmt(d.usdExchangeRate, 2), sep: true },
+  { label: 'Очікуваний прибуток, грн', money: true, val: (d) => d.expectedProfit, highlight: true },
+  { label: 'Курс долара, грн', edit: 'usdRate', sep: true },
   { label: 'Відсоток відмов, %', get: (d) => pct(d.refusalRate) },
   { label: 'Відсоток відмов прогнозований, %', edit: 'refusalPct' },
   { label: 'Відсоток повернень, %', get: (d) => pct(d.returnRate) },
   { label: 'Відсоток повернень прогнозований, %', edit: 'returnPct' },
-  { label: 'Постійні витрати, грн', get: (d) => fmt(d.dailyFixedCosts) },
-  { label: 'Витрати на оплату праці, грн', get: (d) => fmt(d.dailyPayrollCosts) },
-  { label: 'Витрати на токени Claude, грн', get: (d) => fmt(d.aiCost) },
-  { label: 'Прибуток без ЗП, грн', get: (d) => fmt(d.profitNoPayroll) },
-  { label: 'Ціна клієнта нового, грн', get: (d) => fmt(d.newCustomerCost) },
-  { label: 'CPC (ціна за клік)', get: (d) => fmt(d.cpc) },
+  { label: 'Постійні витрати, грн', edit: 'fixedCosts' },
+  { label: 'Витрати на оплату праці, грн', edit: 'payrollCosts' },
+  { label: 'Витрати на токени Claude, грн', money: true, val: (d) => d.aiCost },
+  { label: 'Прибуток без ЗП, грн', money: true, val: (d) => d.profitNoPayroll },
+  { label: 'Ціна клієнта нового, грн', money: true, val: (d) => d.newCustomerCost },
+  { label: 'CPC (ціна за клік)', money: true, val: (d) => d.cpc },
   { label: 'CTR (кліків зі 100 показів)', get: (d) => pct(d.ctr) },
-  { label: 'CPM (ціна 1000 показів)', get: (d) => fmt(d.cpm) },
+  { label: 'CPM (ціна 1000 показів)', money: true, val: (d) => d.cpm },
   { label: 'Повторних продажів, %', get: (d) => pct(d.repeatSalesRate) },
 ];
 
@@ -153,6 +176,7 @@ export default function DailyAnalyticsPage() {
   const [productId, setProductId] = useState('');
   const [productDaily, setProductDaily] = useState(null);
   const [error, setError] = useState('');
+  const [cur, setCur] = useCurrency(); // грн/$ (Edits 06.11: «додати перемикач гривні-долари»); вибір пам'ятається в браузері
 
   useEffect(() => { api.listProducts().then((r) => setProducts(r.data)).catch(() => {}); }, []);
 
@@ -174,7 +198,8 @@ export default function DailyAnalyticsPage() {
       <PageHeader
         title="Щоденна аналітика"
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {tab === 'summary' && <CurrencyToggle cur={cur} setCur={setCur} usdRate={summary && summary.length ? summary[summary.length - 1].usdExchangeRate : null} />}
             {['summary', 'product'].map((t) => (
               <button key={t} onClick={() => setTab(t)} className={`rounded-lg px-3 py-1.5 text-xs ${tab === t ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300'}`}>
                 {t === 'summary' ? 'Загальне зведення' : 'По товару'}
@@ -207,17 +232,22 @@ export default function DailyAnalyticsPage() {
           {summaryDays.length > 1 && (
             <Card className="mb-4 p-4">
               <h3 className="mb-3 text-sm font-semibold">Прибуток по днях <span className="font-normal text-slate-500">(тренд за обраний період)</span></h3>
-              <TrendChart data={summary} valueKey="expectedProfit" formatValue={(v) => money(v)} />
+              <TrendChart
+                data={summary.map((d) => ({ ...d, shownProfit: cur === 'USD' && Number(d.usdExchangeRate) > 0 ? d.expectedProfit / Number(d.usdExchangeRate) : d.expectedProfit }))}
+                valueKey="shownProfit"
+                formatValue={(v) => (cur === 'USD' ? `${v < 0 ? '−' : ''}$${Math.abs(v).toFixed(2)}` : money(v))}
+              />
             </Card>
           )}
           {summaryDays.length === 0 ? (
             <Card className="p-5 text-sm text-slate-500">Даних за період немає.</Card>
           ) : (
             <>
-              <MetricsTable days={summaryDays} rows={SUMMARY_ROWS} onSaved={load} />
+              <MetricsTable days={summaryDays} rows={SUMMARY_ROWS} onSaved={load} cur={cur} />
               <p className="mt-2 text-xs text-slate-500">
                 «З прогнозованими відмовами» = маржинальний прибуток мінус ще не відбуті відмови й повернення: прогноз дня (клітинка, за замовчуванням — з «Налаштування → Загальні») × замовлень дня мінус ті відмови, що вже є.
                 Витрати на токени — вартість ШІ-бота в розмовах, що почались цього дня (за тарифами моделей).
+                Курс, постійні витрати та оплату праці можна вписати в клітинках рядка: значення діє і на наступні дні, поки не впишете нове. Скасовані та видалені замовлення в звіт не потрапляють.
               </p>
             </>
           )}

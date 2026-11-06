@@ -7,7 +7,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
 const { igOrNull, igSearchTerm, normalizeInstagram } = require('../lib/instagram');
-const { itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList, shippedStagePatch, applyBuyerEdit, cancelOrder, deleteOrder } = require('../lib/orderOps');
+const { itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList, shippedStagePatch, applyBuyerEdit, deleteOrder, restoreOrder } = require('../lib/orderOps');
 const { syncTtnStatuses } = require('../lib/novaPoshta');
 const { buildXlsx } = require('../lib/xlsx');
 const logger = require('@crm/logger');
@@ -53,7 +53,7 @@ async function defaultStageId(tenantId) {
 // ── Список (kanban/таблиця) ──────────────────────────────────────────────
 // WHERE списку замовлень за фільтрами сторінки (пошук, реклама, дата, стадія) — один на список і на вивантаження в Excel (2026-11-04).
 function buildOrdersWhere(tenantId, query) {
-  const { stageId, from, to, ftFrom, ftTo, productId, adId, noAd, q } = query;
+  const { stageId, from, to, ftFrom, ftTo, productId, adId, noAd, q, deleted } = query;
   // q і adId — обидва OR-блоки, тому комбінуємо через AND (інакше другий спред перезаписав би
   // перший ключ "OR" в об'єкті where — знайдено під час додавання фільтра по рекламі 2026-09-04).
   const andClauses = [];
@@ -98,6 +98,8 @@ function buildOrdersWhere(tenantId, query) {
   if (noAd === '1' || noAd === 'true') andClauses.push({ buyerId: { not: null }, firstTouchAdId: null });
   return {
     tenantId,
+    // Видалені (м'яко) замовлення у списку не показуємо; `?deleted=1` — окремий перегляд, щоб відновити помилково видалене.
+    deletedAt: deleted === '1' || deleted === 'true' ? { not: null } : null,
     ...(stageId ? { stageId: String(stageId) } : {}),
     ...(from || to ? { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } } : {}),
     ...(productId ? { items: { some: { productId: String(productId) } } } : {}),
@@ -208,6 +210,7 @@ router.post('/orders', asyncHandler(async (req, res) => {
           ...(b.lastTouchAdId ? { lastTouchAdId: b.lastTouchAdId, lastTouchAt: b.lastTouchAt ? new Date(b.lastTouchAt) : new Date() } : {}),
           ...cardTouch,
           lastClientAt: new Date(),
+          deletedAt: null, deletedBy: null, // клієнт оформив замовлення після того, як картку видалили, — це нове реальне замовлення
           items: { create: itemsCreate },
         },
         include: ORDER_INCLUDE,
@@ -260,7 +263,7 @@ router.get('/orders/lookup-client', asyncHandler(async (req, res) => {
   if (ph.length === 9) or.push({ buyer: { is: { phone: { contains: ph } } } });
   if (!or.length) return void res.json({ ok: true, data: null });
   const find = () => db.order.findFirst({
-    where: { tenantId: req.tenant.id, buyerId: { not: null }, OR: or },
+    where: { tenantId: req.tenant.id, buyerId: { not: null }, deletedAt: null, OR: or },
     orderBy: { createdAt: 'desc' },
     select: { id: true, createdAt: true, ttn: true, ttnStatus: true, ttnStatusAt: true, ttnEta: true, isRefused: true, funnelSessionId: true, stage: { select: { name: true } }, items: { select: { name: true, quantity: true, product: { select: { name: true, customerName: true } } } }, returns: { select: { id: true, type: true, status: true } } },
   });
@@ -404,16 +407,17 @@ router.patch('/orders/:id', asyncHandler(async (req, res) => {
   res.json({ ok: true, data: order, ...(stagePatch.stageId ? { movedToStage: order.stage?.name || null } : {}) });
 }));
 
-// Скасувати замовлення (2026-10-18): стадія «Скасовано», замовлення лишається в історії й аналітиці.
-router.post('/orders/:id/cancel', asyncHandler(async (req, res) => {
-  const r = await cancelOrder(req.tenant.id, req.params.id);
-  const order = await db.order.findFirst({ where: { id: r.order.id }, include: ORDER_INCLUDE });
-  res.json({ ok: true, data: order, stage: { id: r.stage.id, name: r.stage.name }, unchanged: !!r.unchanged });
-}));
-
-// Видалити помилково створене замовлення (2026-10-18) — лише без платежів, ТТН і повернень (інакше ValidationError → скасувати).
+// Видалити замовлення (2026-11-06, Олексій): м'яке — зникає зі списку й усіх звітів, у базі лишається (платежі, ТТН). Працює і для оформлених.
+// POST /orders/:id/cancel лишено як синонім (старі клієнти API/MCP): «скасоване» тепер теж просто видалене зі звітів.
+const deletedBy = (req) => (req.user && req.user.name) || null;
 router.delete('/orders/:id', asyncHandler(async (req, res) => {
-  res.json({ ok: true, data: await deleteOrder(req.tenant.id, req.params.id) });
+  res.json({ ok: true, data: await deleteOrder(req.tenant.id, req.params.id, deletedBy(req)) });
+}));
+router.post('/orders/:id/cancel', asyncHandler(async (req, res) => {
+  res.json({ ok: true, data: await deleteOrder(req.tenant.id, req.params.id, deletedBy(req)) });
+}));
+router.post('/orders/:id/restore', asyncHandler(async (req, res) => {
+  res.json({ ok: true, data: await restoreOrder(req.tenant.id, req.params.id) });
 }));
 
 // Заміна позицій замовлення (2026-10-02): менеджер правит склад у картці замовлення («Редагувати» з Telegram), а Flows

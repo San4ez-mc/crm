@@ -78,4 +78,20 @@ async function listProjectUsers(projectId) {
   return value;
 }
 
-module.exports = { authorizeUrl, exchangeCodeForToken, introspect, getPermissions, listProjectUsers, SSO_URL, PRODUCT };
+// Доступ власнику нового магазину після оплати (SSO /oauth/provision-shop-owner): створює акаунт за email, якщо його нема, додає магазин
+// до його проєктів у продукті crm, новому акаунту шле лист зі встановленням пароля. Помилка → кидаємо (оплата лишається «не застосованою»,
+// повторюється при наступній перевірці).
+async function provisionShopOwner({ email, displayName, projectId }) {
+  const res = await fetch(`${SSO_URL}/oauth/provision-shop-owner`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, email, displayName, projectId }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`SSO provision-shop-owner HTTP ${res.status}: ${j.error || ''}`);
+  permCache.clear(); // права цього користувача змінились
+  return j;
+}
+
+module.exports = { authorizeUrl, exchangeCodeForToken, introspect, getPermissions, listProjectUsers, provisionShopOwner, SSO_URL, PRODUCT };

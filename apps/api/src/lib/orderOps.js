@@ -153,35 +153,30 @@ async function applyBuyerEdit(tenantId, order, input) {
 }
 
 // ── Скасування / видалення ───────────────────────────────────────────────
-/** Скасувати: замовлення переходить у стадію «Скасовано» (лишається в історії й аналітиці). */
-async function cancelOrder(tenantId, orderId) {
-  const order = await db.order.findFirst({ where: { id: orderId, tenantId }, include: { stage: true } });
+/**
+ * Видалити замовлення (2026-11-06, Олексій: кнопка «Видалити» навіть для оформленого — клієнт оплатив і передумав, або постачальник скасував).
+ * Завжди м'яке: рядок лишається в базі разом з платежами, ТТН і повʼязаним покупцем, але зникає зі списку, дошки, Excel і ВСІХ звітів
+ * (lib/margin ORDER_PLACED_WHERE / LEAD_WHERE). Раніше було дві дії — «Скасувати» (стадія «Скасовано», яка лишалась у статистиці) і жорстке
+ * видалення (заборонене, якщо є ТТН/оплата); обидві замінені цією однією. Відновити можна (restoreOrder).
+ */
+async function deleteOrder(tenantId, orderId, by = null) {
+  const order = await db.order.findFirst({ where: { id: orderId, tenantId }, select: { id: true, deletedAt: true } });
   if (!order) throw new NotFoundError('Order', orderId);
-  const stage = await findStage(tenantId, 'cancelled', order.stage?.pipelineId || null);
-  if (!stage) throw new ValidationError('У воронці немає стадії «Скасовано» — додайте її на сторінці «Воронки» і повторіть');
-  if (order.stageId === stage.id) return { order, stage, unchanged: true };
-  const updated = await db.order.update({ where: { id: order.id }, data: { stageId: stage.id } });
-  return { order: updated, stage };
+  if (order.deletedAt) return { id: order.id, deleted: true, unchanged: true };
+  await db.order.update({ where: { id: order.id }, data: { deletedAt: new Date(), deletedBy: by ? String(by).slice(0, 80) : null } });
+  return { id: order.id, deleted: true };
 }
 
-/**
- * Видалити помилково створене замовлення — лише якщо по ньому не було жодного руху грошей чи посилки:
- * немає платежів у журналі, ТТН і повернень. Інакше — скасування (історія лишається).
- */
-async function deleteOrder(tenantId, orderId) {
-  const order = await db.order.findFirst({ where: { id: orderId, tenantId }, include: { _count: { select: { payments: true, returns: true } } } });
+/** Повернути видалене замовлення на дошку й у звіти. */
+async function restoreOrder(tenantId, orderId) {
+  const order = await db.order.findFirst({ where: { id: orderId, tenantId }, select: { id: true } });
   if (!order) throw new NotFoundError('Order', orderId);
-  const reasons = [];
-  if (order._count.payments > 0) reasons.push('є платежі');
-  if ((order.ttn || []).length > 0) reasons.push('є ТТН');
-  if (order._count.returns > 0) reasons.push('є повернення');
-  if (reasons.length) throw new ValidationError(`Замовлення не можна видалити (${reasons.join(', ')}) — скасуйте його, щоб лишилось в історії`, { payments: order._count.payments, ttn: order.ttn, returns: order._count.returns });
-  await db.order.delete({ where: { id: order.id } });
-  return { id: order.id, deleted: true };
+  await db.order.update({ where: { id: order.id }, data: { deletedAt: null, deletedBy: null } });
+  return { id: order.id, deleted: false };
 }
 
 module.exports = {
   PAYMENT_TYPES, PAYMENT_TYPE_LABEL, DEFAULT_PREPAYMENT,
   itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList,
-  findStage, shippedStagePatch, applyBuyerEdit, cancelOrder, deleteOrder,
+  findStage, shippedStagePatch, applyBuyerEdit, deleteOrder, restoreOrder,
 };

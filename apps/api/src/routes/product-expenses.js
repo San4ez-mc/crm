@@ -9,7 +9,7 @@ const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { NotFoundError, ValidationError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, placedAtOf } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, cogsAt, itemUnit, REAL_SALE_ORDER_WHERE, placedAtOf } = require('../lib/margin');
 const { ensureFreshUsdRate, adSpendUAHByProduct } = require('../lib/currency');
 const { logProductChange } = require('../lib/changeLog');
 
@@ -55,10 +55,14 @@ router.get('/product-expenses', asyncHandler(async (req, res) => {
     const exp = p.productExpense;
     const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, placedAtOf(it.order)), 0);
     const margin = marginBeforeAdSpend - adSpend;
+    // Комплект: ціна постачальника береться сумою по речах всередині (lib/margin itemUnit), власного рядка не потрібно.
+    const parts = p.isSet ? itemUnit({ productId: p.id, components: null }, expenseByProduct, null) : null;
     return {
       productId: p.id,
       name: p.name,
       sku: p.sku,
+      isSet: !!p.isSet,
+      partsCogs: parts && parts.cogs > 0 ? parts.cogs : null, // сума по комплектуючих (поточна)
       cogs: cogsAt(exp, null), // поточна діюча ціна постачальника
       cogsHistory: Array.isArray(exp?.cogsHistory) ? exp.cogsHistory : [],
       managerCostFixed: Number(exp?.managerCostFixed || 0),

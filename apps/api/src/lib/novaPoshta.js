@@ -86,7 +86,7 @@ async function syncTtnStatuses(tenantId, opts = {}) {
   const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { novaPoshtaApiKey: true } });
   const apiKey = String((tenant && tenant.novaPoshtaApiKey) || '').trim();
   if (!apiKey) return { checked: 0, updated: 0, moved: [], skipped: 'немає ключа Нової пошти в налаштуваннях магазину' };
-  const where = { tenantId, buyerId: { not: null }, ttn: { isEmpty: false }, createdAt: { gt: new Date(Date.now() - LOOKBACK_DAYS * 864e5) } };
+  const where = { tenantId, buyerId: { not: null }, deletedAt: null, ttn: { isEmpty: false }, createdAt: { gt: new Date(Date.now() - LOOKBACK_DAYS * 864e5) } };
   if (Array.isArray(opts.orderIds)) where.id = { in: opts.orderIds };
   if (opts.maxAgeMs) where.OR = [{ ttnStatusAt: null }, { ttnStatusAt: { lt: new Date(Date.now() - opts.maxAgeMs) } }];
   const orders = await db.order.findMany({ where, select: { id: true, ttn: true, ttnStatus: true, isRefused: true, stageId: true, stage: { select: { name: true } }, contactName: true, buyer: { select: { fullName: true } } } });

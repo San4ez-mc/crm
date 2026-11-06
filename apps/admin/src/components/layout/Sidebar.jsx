@@ -2,6 +2,8 @@ import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuthStore } from '../../stores/authStore';
 import { canSeePath } from '../../lib/pageAccess';
+import { planInfo, fmtEnd, daysWord } from '../../lib/plan';
+import { useTourStore } from '../common/Tour';
 
 const SECTIONS = [
   { title: 'Каталог', items: [
@@ -33,6 +35,27 @@ const SECTIONS = [
     { to: '/automations', label: 'Автоматизації' },
   ] },
 ];
+
+function PlanBlock({ tenant, onClose }) {
+  const info = planInfo(tenant);
+  const tone = info.state === 'expired' ? 'border-red-800 bg-red-950/40 text-red-200' : info.state === 'soon' ? 'border-amber-700 bg-amber-950/40 text-amber-100' : 'border-slate-800 bg-slate-950/40 text-slate-300';
+  return (
+    <NavLink to="/billing" data-tour="/billing" onClick={onClose} className={clsx('mx-3 mb-3 block rounded-lg border px-3 py-2 text-xs leading-snug transition-colors hover:border-brand', tone)}>
+      <div className="text-[10px] font-semibold uppercase tracking-wider opacity-70">Тариф</div>
+      {info.state === 'none' ? (
+        <div className="mt-0.5">Не вказано. <span className="underline">Обрати тариф</span></div>
+      ) : (
+        <>
+          <div className="mt-0.5 font-semibold">{info.name}{tenant?.isDemo ? ' · демо' : ''}</div>
+          {info.state === 'unlimited' && <div className="opacity-70">без дати закінчення</div>}
+          {info.state === 'ok' && <div className="opacity-80">до {fmtEnd(info.endsAt)} ({info.daysLeft} {daysWord(info.daysLeft)})</div>}
+          {info.state === 'soon' && <div className="font-medium">Лишилось {info.daysLeft} {daysWord(info.daysLeft)} (до {fmtEnd(info.endsAt)}). <span className="underline">Оплатити</span></div>}
+          {info.state === 'expired' && <div className="font-medium">Закінчився {fmtEnd(info.endsAt)}. <span className="underline">Оплатити</span></div>}
+        </>
+      )}
+    </NavLink>
+  );
+}
 
 function linkClass({ isActive }) {
   return clsx(
@@ -85,16 +108,22 @@ export default function Sidebar({ mobileOpen = false, onClose = () => {} }) {
               <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">{section.title}</div>
               <div className="space-y-0.5">
                 {section.items.map((item) => (
-                  <NavLink key={item.to} to={item.to} className={linkClass} onClick={onClose}>{item.label}</NavLink>
+                  <NavLink key={item.to} to={item.to} data-tour={item.to} className={linkClass} onClick={onClose}>{item.label}</NavLink>
                 ))}
               </div>
             </div>
           ))}
         </nav>
 
+        {/* Поточний тариф і до коли оплачено (2026-11-06): ≤ 7 днів — жовтим, закінчився — червоним, клік веде на сторінку оплати. */}
+        <PlanBlock tenant={tenants.find((t) => t.id === currentTenantId)} onClose={onClose} />
+
         <div className="border-t border-slate-800 px-4 py-3">
           <div className="truncate text-xs text-slate-500">{user?.email}</div>
-          <button onClick={logout} className="mt-1 text-xs text-slate-400 hover:text-slate-200">Вийти</button>
+          <div className="mt-1 flex items-center gap-3">
+            <button onClick={logout} className="text-xs text-slate-400 hover:text-slate-200">Вийти</button>
+            <button onClick={() => { useTourStore.getState().start(); onClose(); }} className="text-xs text-slate-400 hover:text-slate-200">Підказки</button>
+          </div>
         </div>
       </aside>
     </>

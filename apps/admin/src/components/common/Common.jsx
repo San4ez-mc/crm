@@ -198,27 +198,45 @@ export function TrendChart({ data, valueKey, labelKey = 'date', height = 112, fo
   const values = data.map((d) => Number(d[valueKey]) || 0);
   const hasNegative = values.some((v) => v < 0);
   const maxAbs = Math.max(1, ...values.map((v) => Math.abs(v)));
+  // Шкала з цифрами зі знаком (2026-11-06, Олексій: «шкала із цифрами, і з плюсом, і з мінусом — бувають збиткові дні»): верх, нуль, низ;
+  // над кожним стовпцем — його значення, якщо днів небагато (інакше лише у підказці).
+  const signed = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v) >= 1000 ? `${(Math.abs(v) / 1000).toFixed(1).replace(/\.0$/, '')}k` : Math.round(Math.abs(v))}`;
+  const showValues = data.length <= 14;
+  const maxV = Math.max(0, ...values); const minV = Math.min(0, ...values);
   return (
-    <div>
-      <div className="relative flex items-stretch gap-0.5" style={{ height }}>
-        {hasNegative && <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-slate-700" />}
-        {data.map((d, i) => {
-          const v = values[i];
-          const positive = v >= 0;
-          const pct = hasNegative ? (Math.abs(v) / maxAbs) * 50 : (Math.abs(v) / maxAbs) * 100;
-          return (
-            <div key={d[labelKey] ?? i} className="relative flex-1" title={`${fmtChartDate(d[labelKey])}: ${formatValue(v)}`}>
-              <div
-                className={`absolute inset-x-0 rounded-sm ${positive ? positiveColor : negativeColor}`}
-                style={hasNegative ? { height: `${pct}%`, ...(positive ? { bottom: '50%' } : { top: '50%' }) } : { height: `${pct}%`, bottom: 0 }}
-              />
-            </div>
-          );
-        })}
+    <div className="flex gap-2">
+      <div className="relative w-10 shrink-0 text-right text-[10px] text-slate-500" style={{ height }}>
+        <span className="absolute right-0 top-0">{signed(hasNegative ? maxV : maxAbs)}</span>
+        {hasNegative && <span className="absolute right-0 top-1/2 -translate-y-1/2">0</span>}
+        <span className={`absolute bottom-0 right-0 ${hasNegative ? 'text-red-400' : ''}`}>{hasNegative ? signed(minV) : '0'}</span>
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-slate-600">
-        <span>{fmtChartDate(data[0][labelKey])}</span>
-        <span>{fmtChartDate(data[data.length - 1][labelKey])}</span>
+      <div className="min-w-0 flex-1">
+        <div className="relative flex items-stretch gap-0.5" style={{ height }}>
+          {hasNegative && <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-slate-700" />}
+          {data.map((d, i) => {
+            const v = values[i];
+            const positive = v >= 0;
+            const pct = hasNegative ? (Math.abs(v) / maxAbs) * 50 : (Math.abs(v) / maxAbs) * 100;
+            return (
+              <div key={d[labelKey] ?? i} className="relative flex-1" title={`${fmtChartDate(d[labelKey])}: ${formatValue(v)}`}>
+                <div
+                  className={`absolute inset-x-0 rounded-sm ${positive ? positiveColor : negativeColor}`}
+                  style={hasNegative ? { height: `${pct}%`, ...(positive ? { bottom: '50%' } : { top: '50%' }) } : { height: `${pct}%`, bottom: 0 }}
+                />
+                {showValues && (
+                  <span
+                    className={`absolute inset-x-0 text-center text-[9px] leading-none ${positive ? 'text-slate-300' : 'text-red-400'}`}
+                    style={hasNegative ? (positive ? { bottom: `calc(50% + ${pct}%)` } : { top: `calc(50% + ${pct}%)` }) : { bottom: `${pct}%` }}
+                  >{signed(v)}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-1 flex justify-between text-[10px] text-slate-600">
+          <span>{fmtChartDate(data[0][labelKey])}</span>
+          <span>{fmtChartDate(data[data.length - 1][labelKey])}</span>
+        </div>
       </div>
     </div>
   );

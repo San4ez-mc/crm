@@ -6,7 +6,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { parseFrom, parseTo, kyivDayKey, dayRange } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem, cogsAt, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, cogsAt, itemUnit, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf } = require('../lib/margin');
 const { ensureFreshUsdRate, rowToUAH, adSpendUAHByProduct } = require('../lib/currency');
 const { ValidationError } = require('@crm/errors');
 
@@ -148,8 +148,8 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     const adSpend = adSpendByProduct.get(p.id) || 0;
     // Собівартість за ціною постачальника, що діяла на дату КОЖНОГО замовлення (не поточною) —
     // той самий принцип, що marginPerOrderItem, щоб managerCost-residual нижче був коректним.
-    const exp = expenseByProduct.get(p.id);
-    const cogsTotal = p.orderItems.reduce((s, it) => s + cogsAt(exp, placedAtOf(it.order)) * it.quantity, 0);
+    // Комплект: ціна постачальника = сума по речах усередині (lib/margin itemUnit), а не власний (порожній) рядок витрат комплекту.
+    const cogsTotal = p.orderItems.reduce((s, it) => s + itemUnit(it, expenseByProduct, placedAtOf(it.order)).cogs * it.quantity, 0);
     // ЗП менеджера — per-item через спільну формулу (10% від націнки, 0 за відмову),
     // не флет-формула по всій виручці товару (2026-09-05, правило власника).
     const marginBeforeAdSpend = p.orderItems.reduce((s, it) => s + marginPerOrderItem(it, expenseByProduct, it.order.isRefused, placedAtOf(it.order)), 0);
@@ -169,8 +169,8 @@ router.get('/analytics/managers', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
   const orders = await db.order.findMany({
-    where: { tenantId: req.tenant.id, ...ORDER_PLACED_WHERE, NOT: { stage: { is: { name: { contains: 'скасов', mode: 'insensitive' } } } }, ...placedWhere(from, to) },
-    select: { placedBy: true, isRefused: true, placedAt: true, createdAt: true, returns: { select: { id: true } }, items: { select: { productId: true, price: true, quantity: true } } },
+    where: { tenantId: req.tenant.id, ...ORDER_PLACED_WHERE, ...placedWhere(from, to) },
+    select: { placedBy: true, isRefused: true, placedAt: true, createdAt: true, returns: { select: { id: true } }, items: { select: { productId: true, price: true, quantity: true, components: true } } },
   });
   const rows = new Map();
   for (const o of orders) {
@@ -183,7 +183,7 @@ router.get('/analytics/managers', asyncHandler(async (req, res) => {
       const at = placedAtOf(o);
       for (const it of o.items) {
         const revenue = Number(it.price) * it.quantity;
-        const cogs = cogsAt(it.productId ? expenseByProduct.get(it.productId) : null, at) * it.quantity;
+        const cogs = itemUnit(it, expenseByProduct, at).cogs * it.quantity;
         const margin = marginPerOrderItem(it, expenseByProduct, false, at);
         r.revenue += revenue; r.margin += margin; r.managerPay += revenue - cogs - margin;
       }
@@ -268,7 +268,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   const expenseByProduct = await loadExpenseMap(tenant.id);
 
   const [forecastRows, orders, spendRows, leadRows, returns] = await Promise.all([
-    db.dayForecast.findMany({ where: { tenantId: tenant.id, ...(from || to ? { date: dayRange(from, to) } : {}) } }),
+    // Усі записи до кінця періоду, а не лише всередині: курс і витрати «переходять» на наступні дні, тож потрібне останнє значення ДО початку.
+    db.dayForecast.findMany({ where: { tenantId: tenant.id, ...(to ? { date: { lte: dayRange(from, to).lte } } : {}) }, orderBy: { date: 'asc' } }),
     db.order.findMany({
       where: { tenantId: tenant.id, ...placedWhere(from, to), ...ORDER_PLACED_WHERE },
       include: { items: true, buyer: { select: { id: true } }, returns: { select: { id: true } } },
@@ -281,7 +282,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 
   // Для "новий/повторний клієнт" потрібна історія покупця ДО цього замовлення — рахуємо по всій базі, не тільки в періоді.
   const firstOrderAtByBuyer = new Map();
-  for (const o of await db.order.findMany({ where: { tenantId: tenant.id, buyerId: { not: null } }, select: { buyerId: true, createdAt: true, placedAt: true }, orderBy: { placedAt: 'asc' } })) {
+  for (const o of await db.order.findMany({ where: { tenantId: tenant.id, ...ORDER_PLACED_WHERE }, select: { buyerId: true, createdAt: true, placedAt: true }, orderBy: { placedAt: 'asc' } })) {
     if (!firstOrderAtByBuyer.has(o.buyerId)) firstOrderAtByBuyer.set(o.buyerId, placedAtOf(o));
   }
 
@@ -321,12 +322,22 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     const isNewBuyer = !order.buyerId || (firstOrderAtByBuyer.get(order.buyerId)?.getTime() === at.getTime());
     if (isRealSale && isNewBuyer) b.newBuyerOrders += 1;
   }
+  // Ручні значення по днях (2026-11-06, Олексій: «окремі поля Курс і Фіксовані витрати, щоб введене сьогодні переносилось на наступний день»):
+  // для дня беремо останнє ЗАДАНЕ значення на дату ≤ цього дня, інакше — з налаштувань магазину. Рядок дня без «своєї» цифри
+  // (лише прогноз відмов) значення не змінює.
+  const manualRows = forecastRows.map((f) => ({ key: f.date.toISOString().slice(0, 10), f }));
+  const manualFor = (key, field) => {
+    let val = null;
+    for (const r of manualRows) { if (r.key > key) break; if (r.f[field] != null) val = Number(r.f[field]); }
+    return val;
+  };
+  const rateFor = (key) => { const v = manualFor(key, 'usdRate'); return v != null && v > 0 ? v : usdRate; };
   for (const spend of spendRows) {
     const b = bucket(dayKey(spend.date));
     // Meta пише суму у $ (spend.currency==='USD') — конвертуємо в грн одразу тут, ОДИН раз,
     // щоб усі похідні показники нижче (прибуток/ROI/CPA/CPL/CPC/CPM) вже рахувались в одній
-    // валюті з виручкою/маржею (2026-09-07, фідбек власника: "тут теж витрати в доларі").
-    b.adSpend = (b.adSpend || 0) + rowToUAH(spend.amount, spend.currency, usdRate);
+    // валюті з виручкою/маржею (2026-09-07, фідбек власника: "тут теж витрати в доларі"). Курс — ручний для цього дня, якщо заданий.
+    b.adSpend = (b.adSpend || 0) + rowToUAH(spend.amount, spend.currency, rateFor(dayKey(spend.date)));
     if (spend.currency === 'USD') b.adSpendUsd = (b.adSpendUsd || 0) + Number(spend.amount);
     b.impressions = (b.impressions || 0) + Number(spend.impressions || 0);
     b.platformClicks = (b.platformClicks || 0) + Number(spend.clicks || 0);
@@ -341,14 +352,19 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     b.returnsCount = (b.returnsCount || 0) + 1;
   }
 
-  const fixedCosts = Number(tenant.dailyFixedCosts || 0);
-  const payrollCosts = Number(tenant.dailyPayrollCosts || 0);
+  const tenantFixed = Number(tenant.dailyFixedCosts || 0);
+  const tenantPayroll = Number(tenant.dailyPayrollCosts || 0);
   const defRefusal = tenant.forecastRefusalPct != null ? Number(tenant.forecastRefusalPct) : DEFAULT_FORECAST_REFUSAL;
   const defReturn = tenant.forecastReturnPct != null ? Number(tenant.forecastReturnPct) : DEFAULT_FORECAST_RETURN;
   const forecastByDay = new Map(forecastRows.map((f) => [f.date.toISOString().slice(0, 10), f]));
 
   const data = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
-    const adSpend = d.adSpend || 0; // вже в грн (сконвертовано вище з $ по курсу НБУ)
+    const adSpend = d.adSpend || 0; // вже в грн (сконвертовано вище: курс дня — ручний, інакше НБУ)
+    const fixedManual = manualFor(date, 'fixedCosts');
+    const payrollManual = manualFor(date, 'payrollCosts');
+    const fixedCosts = fixedManual != null ? fixedManual : tenantFixed;
+    const payrollCosts = payrollManual != null ? payrollManual : tenantPayroll;
+    const dayRate = rateFor(date);
     const messages = d.messages || 0;
     const impressions = d.impressions || 0;
     const platformClicks = d.platformClicks || 0;
@@ -362,7 +378,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     const avgGoodMargin = goodOrders > 0 ? d.marginNonRefusedTotal / goodOrders : 0;
     const pendingLoss = Math.max(0, (fRefusal / 100) * d.ordersCount - d.refusedCount) + Math.max(0, (fReturn / 100) * d.ordersCount - (d.returnOrders || 0));
     const marginForecast = Math.max(0, d.marginNonRefusedTotal - avgGoodMargin * pendingLoss);
-    const aiCost = (d.aiCostUsd || 0) * (usdRate || 0); // токени ШІ-бота, грн
+    const aiCost = (d.aiCostUsd || 0) * (dayRate || 0); // токени ШІ-бота, грн
     const profitExpected = marginForecast - adSpend - fixedCosts - payrollCosts - aiCost;
     const profitNoPayroll = marginForecast - adSpend - fixedCosts - aiCost;
     return {
@@ -392,7 +408,10 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
       impressions,
       roi: adSpend > 0 ? d.marginNonRefusedTotal / adSpend : null, // "Окупність"
       expectedProfit: profitExpected,
-      usdExchangeRate: usdRate || null,
+      usdExchangeRate: dayRate || null,
+      // Ручні поля дня: custom = «введено саме на цей день», інакше показується перенесене з попередніх днів / із налаштувань.
+      fixedCostsCustom: !!(fc && fc.fixedCosts != null), payrollCostsCustom: !!(fc && fc.payrollCosts != null), usdRateCustom: !!(fc && fc.usdRate != null),
+      usdRateDefault: usdRate || null,
       refusalRate: d.ordersCount > 0 ? (d.refusedCount / d.ordersCount) * 100 : null,
       returnRate: d.ordersCount > 0 ? ((d.returnsCount || 0) / d.ordersCount) * 100 : null,
       dailyFixedCosts: fixedCosts,
@@ -425,14 +444,28 @@ router.put('/analytics/daily-forecast', asyncHandler(async (req, res) => {
   };
   const refusalPct = parsePct(req.body.refusalPct, 'Відсоток відмов');
   const returnPct = parsePct(req.body.returnPct, 'Відсоток повернень');
+  // Постійні витрати, оплата праці (грн/добу) і курс долара — вручну; діють і на наступні дні, поки не задано нове. null/'' — прибрати своє значення дня.
+  const parseNum = (v, label, max) => {
+    if (v === undefined) return undefined;
+    if (v === null || v === '') return null;
+    const n = Number(String(v).replace(/\s/g, '').replace(',', '.'));
+    if (!(n >= 0 && n <= max)) throw new ValidationError(`${label}: число від 0 до ${max}`);
+    return Math.round(n * 10000) / 10000;
+  };
+  const fixedCosts = parseNum(req.body.fixedCosts, 'Постійні витрати', 10000000);
+  const payrollCosts = parseNum(req.body.payrollCosts, 'Витрати на оплату праці', 10000000);
+  const usdRate = parseNum(req.body.usdRate, 'Курс долара', 1000);
   const day = new Date(date + 'T00:00:00.000Z');
-  const data = { ...(refusalPct !== undefined ? { refusalPct } : {}), ...(returnPct !== undefined ? { returnPct } : {}) };
+  const data = {
+    ...(refusalPct !== undefined ? { refusalPct } : {}), ...(returnPct !== undefined ? { returnPct } : {}),
+    ...(fixedCosts !== undefined ? { fixedCosts } : {}), ...(payrollCosts !== undefined ? { payrollCosts } : {}), ...(usdRate !== undefined ? { usdRate } : {}),
+  };
   const row = await db.dayForecast.upsert({
     where: { tenantId_date: { tenantId: req.tenant.id, date: day } },
     update: data,
     create: { tenantId: req.tenant.id, date: day, ...data },
   });
-  res.json({ ok: true, data: { date, refusalPct: row.refusalPct, returnPct: row.returnPct } });
+  res.json({ ok: true, data: { date, refusalPct: row.refusalPct, returnPct: row.returnPct, fixedCosts: row.fixedCosts, payrollCosts: row.payrollCosts, usdRate: row.usdRate } });
 }));
 
 // ── Щоденний звіт по одному товару (скріншот "Артикул") ─────────────────
