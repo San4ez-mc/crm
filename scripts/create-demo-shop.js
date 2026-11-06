@@ -115,7 +115,7 @@ const KNOWLEDGE = [
     const setProd = await db.product.create({ data: { tenantId: tid, name: SET.name, customerName: SET.name, sku: SET.sku, price: SET.price, categoryId: cats[1].id, supplierId: sups[0].id, isSet: true, sizes: ['S', 'M', 'L', 'XL'], presentationText: `${SET.name}. Ціна ${SET.price} грн (дешевше, ніж окремо).` } });
     await db.offer.create({ data: { productId: setProd.id, sku: 'DEMO-SET1-1', availableSizes: ['S', 'M', 'L', 'XL'], properties: [{ name: 'Колір', value: 'Сірий + білий' }], sortOrder: 0 } });
     await db.productExpense.create({ data: { tenantId: tid, productId: setProd.id, cogs: SET.cogs, managerCostPercent: 8, managerCostFixed: 0 } });
-    for (let i = 0; i < SET.components.length; i++) await db.productSetComponent.create({ data: { parentId: setProd.id, componentId: created[SET.components[i]].id, quantity: 1 } }).catch((e) => console.log('  (склад комплекту пропущено:', e.message.slice(0, 80) + ')'));
+    for (let i = 0; i < SET.components.length; i++) await db.productSetComponent.create({ data: { parentProductId: setProd.id, componentProductId: created[SET.components[i]].id, qty: 1 } }).catch((e) => console.log('  (склад комплекту пропущено:', e.message.slice(0, 80) + ')'));
     for (const k of KNOWLEDGE) await db.knowledgeEntry.create({ data: { tenantId: tid, ...k, scope: 'shop', source: 'manual' } });
     console.log('Довідники створено: товарів', PRODUCTS.length + 1, ', постачальників', SUPPLIERS.length, ', записів бази знань', KNOWLEDGE.length);
   } else console.log('Довідники вже є');
