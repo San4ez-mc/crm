@@ -12,7 +12,7 @@ async function loadExpenseMap(tenantId) {
   const [rows, products, setRows] = await Promise.all([
     db.productExpense.findMany({ where: { tenantId } }),
     db.product.findMany({ where: { tenantId }, select: { id: true, sku: true } }),
-    db.productSetComponent.findMany({ where: { parent: { tenantId } }, select: { parentProductId: true, componentProductId: true, qty: true } }),
+    db.productSetComponent.findMany({ where: { parentProduct: { tenantId } }, select: { parentProductId: true, componentProductId: true, qty: true } }),
   ]);
   const map = new Map(rows.map((r) => [r.productId, r]));
   map.skuToId = new Map(products.filter((p) => p.sku).map((p) => [String(p.sku).trim().toLowerCase(), p.id]));
