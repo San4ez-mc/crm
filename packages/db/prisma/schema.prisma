@@ -48,6 +48,9 @@ model Tenant {
   plan       String?
   planEndsAt DateTime?
   isDemo     Boolean   @default(false)
+  // 2026-11-09 (Олексій: «хіба % менеджера не однаковий для всіх?»): загальний % ЗП менеджера від НАЦІНКИ; діє для товарів, у яких
+  // у «Витрати по товару» не вказано ні свого %, ні фіксу (lib/margin itemUnit). Порожньо — як раніше (0%).
+  managerCostPercentDefault Decimal? @db.Decimal(5, 2)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

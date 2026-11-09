@@ -22,7 +22,7 @@ router.get('/tenant', asyncHandler(async (req, res) => {
       dailyFixedCosts: t.dailyFixedCosts, dailyPayrollCosts: t.dailyPayrollCosts,
       fitChart: t.fitChart || null, sizeRules: Array.isArray(t.sizeRules) ? t.sizeRules : [],
       shopDescription: t.shopDescription || '', prepaymentAmount: t.prepaymentAmount, shippingTerms: t.shippingTerms || '', expectedRefusalPct: t.expectedRefusalPct,
-      forecastRefusalPct: t.forecastRefusalPct, forecastReturnPct: t.forecastReturnPct,
+      forecastRefusalPct: t.forecastRefusalPct, forecastReturnPct: t.forecastReturnPct, managerCostPercentDefault: t.managerCostPercentDefault,
     },
   });
 }));
@@ -49,8 +49,8 @@ router.get('/tenant/size-fit', asyncHandler(async (req, res) => {
 }));
 
 router.patch('/tenant', asyncHandler(async (req, res) => {
-  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts, fitChart, sizeRules, shopDescription, prepaymentAmount, shippingTerms, expectedRefusalPct, forecastRefusalPct, forecastReturnPct } = req.body || {};
-  for (const [v, label] of [[forecastRefusalPct, 'Прогноз відмов'], [forecastReturnPct, 'Прогноз повернень']]) {
+  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts, fitChart, sizeRules, shopDescription, prepaymentAmount, shippingTerms, expectedRefusalPct, forecastRefusalPct, forecastReturnPct, managerCostPercentDefault } = req.body || {};
+  for (const [v, label] of [[forecastRefusalPct, 'Прогноз відмов'], [forecastReturnPct, 'Прогноз повернень'], [managerCostPercentDefault, 'ЗП менеджера за замовчуванням']]) {
     if (v !== undefined && v !== null && v !== '' && !(Number(v) >= 0 && Number(v) < 100)) throw new ValidationError(label + ' — від 0 до 99 %');
   }
   if (expectedRefusalPct !== undefined && expectedRefusalPct !== null && expectedRefusalPct !== '' && !(Number(expectedRefusalPct) >= 0 && Number(expectedRefusalPct) < 100)) throw new ValidationError('Очікувані відмови — від 0 до 99 %');
@@ -74,6 +74,7 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
       ...(expectedRefusalPct !== undefined ? { expectedRefusalPct: expectedRefusalPct === null || expectedRefusalPct === '' ? null : Number(expectedRefusalPct) } : {}),
       ...(forecastRefusalPct !== undefined ? { forecastRefusalPct: forecastRefusalPct === null || forecastRefusalPct === '' ? null : Number(forecastRefusalPct) } : {}),
       ...(forecastReturnPct !== undefined ? { forecastReturnPct: forecastReturnPct === null || forecastReturnPct === '' ? null : Number(forecastReturnPct) } : {}),
+      ...(managerCostPercentDefault !== undefined ? { managerCostPercentDefault: managerCostPercentDefault === null || managerCostPercentDefault === '' ? null : Number(managerCostPercentDefault) } : {}),
       ...(shippingTerms !== undefined ? { shippingTerms: String(shippingTerms || '').trim() || null } : {}),
     },
   });
@@ -85,7 +86,7 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
       dailyFixedCosts: tenant.dailyFixedCosts, dailyPayrollCosts: tenant.dailyPayrollCosts,
       fitChart: tenant.fitChart || null, sizeRules: Array.isArray(tenant.sizeRules) ? tenant.sizeRules : [],
       shopDescription: tenant.shopDescription || '', prepaymentAmount: tenant.prepaymentAmount, shippingTerms: tenant.shippingTerms || '', expectedRefusalPct: tenant.expectedRefusalPct,
-      forecastRefusalPct: tenant.forecastRefusalPct, forecastReturnPct: tenant.forecastReturnPct,
+      forecastRefusalPct: tenant.forecastRefusalPct, forecastReturnPct: tenant.forecastReturnPct, managerCostPercentDefault: tenant.managerCostPercentDefault,
     },
   });
 }));

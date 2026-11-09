@@ -10,6 +10,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { NotFoundError, ValidationError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem, cogsAt, itemUnit, REAL_SALE_ORDER_WHERE, placedAtOf } = require('../lib/margin');
+const { unlinkedRow } = require('../lib/unlinkedRow');
 const { ensureFreshUsdRate, adSpendUAHByProduct } = require('../lib/currency');
 const { logProductChange } = require('../lib/changeLog');
 
@@ -75,6 +76,12 @@ router.get('/product-expenses', asyncHandler(async (req, res) => {
     };
   });
 
+  // Позиції без товару й реклама без товару — окремим рядком (лише для читання), щоб Σ збігалась із «Щоденною аналітикою» (аудит 09.11).
+  const un = await unlinkedRow(req.tenant.id, {
+    placedWhereObj: fromDate || toDate ? { placedAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {},
+    adRange: fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : null, usdRate, expenseByProduct, adSpendByProduct,
+  });
+  if (un) data.push({ ...un, cogsHistory: [], managerCostFixed: 0, managerCostPercent: 0 });
   res.json({ ok: true, data });
 }));
 

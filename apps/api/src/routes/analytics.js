@@ -8,6 +8,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { parseFrom, parseTo, kyivDayKey, dayRange } = require('../lib/dateRange');
 const { loadExpenseMap, marginPerOrderItem, cogsAt, itemUnit, itemPieces, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf } = require('../lib/margin');
 const { ensureFreshUsdRate, rowToUAH, adSpendUAHByProduct } = require('../lib/currency');
+const { unlinkedRow } = require('../lib/unlinkedRow');
 const { ValidationError } = require('@crm/errors');
 
 const router = express.Router();
@@ -157,7 +158,11 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     const margin = marginBeforeAdSpend - adSpend;
     return { productId: p.id, name: p.name, sku: p.sku, revenue, qty, adSpend, cogs: cogsTotal, managerCost, margin, marginPercent: revenue > 0 ? (margin / revenue) * 100 : null };
   });
-  res.json({ ok: true, data: data.filter((r) => r.qty > 0).sort((a, b) => b.margin - a.margin) });
+  const rows = data.filter((r) => r.qty > 0).sort((a, b) => b.margin - a.margin);
+  // Позиції без товару й реклама без товару — окремим рядком, щоб Σ по товарах збігалась із «Щоденною» (аудит 09.11).
+  const un = await unlinkedRow(req.tenant.id, { placedWhereObj: placedWhere(from, to), adRange: fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : null, usdRate, expenseByProduct, adSpendByProduct });
+  if (un) rows.push(un);
+  res.json({ ok: true, data: rows });
 }));
 
 // ── Менеджери: хто скільки оформив, % відмов, маржа, ЗП за формулою (31.10) ─────────────────────────────────────────────
@@ -393,7 +398,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
       aiCost,
       aiCostUsd: d.aiCostUsd || 0,
       date,
-      marginAvgNonRefused: d.ordersCount - d.refusedCount > 0 ? d.marginNonRefusedTotal / (d.ordersCount - d.refusedCount) : null,
+      // Середня маржа ВДАЛОГО замовлення: ділимо на замовлення, що не відмова і не повернення (їхня маржа й є в marginTotal) — раніше повернені лишались у знаменнику (Edits 09.11, аудит).
+      marginAvgNonRefused: goodOrders > 0 ? d.marginNonRefusedTotal / goodOrders : null,
       marginAvgWithRefused: d.ordersCount > 0 ? d.marginNonRefusedTotal / d.ordersCount : null,
       orderPrice: d.ordersCount > 0 ? adSpend / d.ordersCount : null, // "Ціна замовлення" = CPA
       profitPerClientNoPayroll: d.ordersCount > 0 ? profitNoPayroll / d.ordersCount : null,
@@ -415,7 +421,9 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
       fixedCostsCustom: !!(fc && fc.fixedCosts != null), payrollCostsCustom: !!(fc && fc.payrollCosts != null), usdRateCustom: !!(fc && fc.usdRate != null),
       usdRateDefault: usdRate || null,
       refusalRate: d.ordersCount > 0 ? (d.refusedCount / d.ordersCount) * 100 : null,
-      returnRate: d.ordersCount > 0 ? ((d.returnsCount || 0) / d.ordersCount) * 100 : null,
+      // «Відсоток повернень» — за ДНЕМ ЗАМОВЛЕННЯ, як і відмови (раніше — за днем, коли оформили повернення: 14 з 15 повернень листопада
+      // стосувались замовлень з інших днів, і день показував 0% при двох поверненнях його замовлень). returnsCount лишається довідково.
+      returnRate: d.ordersCount > 0 ? ((d.returnOrders || 0) / d.ordersCount) * 100 : null,
       dailyFixedCosts: fixedCosts,
       dailyPayrollCosts: payrollCosts,
       profitNoPayroll,

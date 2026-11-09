@@ -106,7 +106,7 @@ export default function SettingsGeneralPage() {
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
-  const [finance, setFinance] = useState({ usdExchangeRate: '', dailyFixedCosts: '', dailyPayrollCosts: '', forecastRefusalPct: '', forecastReturnPct: '' });
+  const [finance, setFinance] = useState({ usdExchangeRate: '', dailyFixedCosts: '', dailyPayrollCosts: '', forecastRefusalPct: '', forecastReturnPct: '', managerCostPercentDefault: '' });
   const [financeSaved, setFinanceSaved] = useState(false);
   const [refreshingRate, setRefreshingRate] = useState(false);
   const [fitRows, setFitRows] = useState([]);
@@ -125,6 +125,7 @@ export default function SettingsGeneralPage() {
         dailyPayrollCosts: data.dailyPayrollCosts ?? '',
         forecastRefusalPct: data.forecastRefusalPct ?? '',
         forecastReturnPct: data.forecastReturnPct ?? '',
+        managerCostPercentDefault: data.managerCostPercentDefault ?? '',
       });
       setFitRows(fitChartToRows(data.fitChart)); setSizeRules(Array.isArray(data.sizeRules) ? data.sizeRules : []);
       setShop({ shopDescription: data.shopDescription || '', prepaymentAmount: data.prepaymentAmount ?? '', shippingTerms: data.shippingTerms || '' });
@@ -153,6 +154,7 @@ export default function SettingsGeneralPage() {
         dailyPayrollCosts: finance.dailyPayrollCosts === '' ? null : Number(finance.dailyPayrollCosts),
         forecastRefusalPct: finance.forecastRefusalPct === '' ? null : Number(finance.forecastRefusalPct),
         forecastReturnPct: finance.forecastReturnPct === '' ? null : Number(finance.forecastReturnPct),
+        managerCostPercentDefault: finance.managerCostPercentDefault === '' ? null : Number(finance.managerCostPercentDefault),
       });
       setFinanceSaved(true);
     } catch (e) { setError(e.message); }
@@ -296,7 +298,8 @@ export default function SettingsGeneralPage() {
           <Field label="Витрати на оплату праці за добу, грн"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
           <Field label="Прогноз відмов на пошті, % (за замовчуванням для всіх днів; порожньо = 20)"><Input type="number" step="0.1" min="0" max="99" value={finance.forecastRefusalPct} onChange={(e) => setFinance({ ...finance, forecastRefusalPct: e.target.value })} /></Field>
           <Field label="Прогноз повернень, % (порожньо = 3)"><Input type="number" step="0.1" min="0" max="99" value={finance.forecastReturnPct} onChange={(e) => setFinance({ ...finance, forecastReturnPct: e.target.value })} /></Field>
-          <p className="text-xs text-slate-500">Для кожного дня окремо значення можна вписати в «Щоденній аналітиці».</p>
+          <Field label="ЗП менеджера, % від націнки (для товарів, де в «Витрати по товару» не вказано свого %)"><Input type="number" step="0.1" min="0" max="99" value={finance.managerCostPercentDefault} onChange={(e) => setFinance({ ...finance, managerCostPercentDefault: e.target.value })} /></Field>
+          <p className="text-xs text-slate-500">Для кожного дня окремо значення можна вписати в «Щоденній аналітиці». Власний % товару в «Витрати по товару» має пріоритет над загальним.</p>
           <div className="mt-2 flex items-center gap-2">
             <Button onClick={saveFinance}>Зберегти</Button>
             {financeSaved && <span className="text-xs text-emerald-400">Збережено</span>}

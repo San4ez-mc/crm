@@ -9,12 +9,14 @@ const { db } = require('@crm/db');
 //   .setDefs — productId комплекту → [{componentProductId, qty}] (склад комплекту з каталогу).
 // Комплект не має власної ціни постачальника: його собівартість = сума собівартостей речей усередині (itemUnitCost нижче).
 async function loadExpenseMap(tenantId) {
-  const [rows, products, setRows] = await Promise.all([
+  const [rows, products, setRows, tenant] = await Promise.all([
     db.productExpense.findMany({ where: { tenantId } }),
     db.product.findMany({ where: { tenantId }, select: { id: true, sku: true } }),
     db.productSetComponent.findMany({ where: { parentProduct: { tenantId } }, select: { parentProductId: true, componentProductId: true, qty: true } }),
+    db.tenant.findUnique({ where: { id: tenantId }, select: { managerCostPercentDefault: true } }),
   ]);
   const map = new Map(rows.map((r) => [r.productId, r]));
+  map.defaultPct = tenant && tenant.managerCostPercentDefault != null ? Number(tenant.managerCostPercentDefault) : 0; // загальний % ЗП менеджера (Налаштування → Загальні)
   map.skuToId = new Map(products.filter((p) => p.sku).map((p) => [String(p.sku).trim().toLowerCase(), p.id]));
   map.setDefs = new Map();
   for (const s of setRows) {
@@ -57,6 +59,9 @@ function itemPieces(item, expenseByProduct) {
  */
 function itemUnit(item, expenseByProduct, atDate) {
   const own = item.productId ? expenseByProduct.get(item.productId) : null;
+  // Свій % товару має пріоритет; немає ні % ні фіксу — загальний % магазину (Tenant.managerCostPercentDefault, 2026-11-09).
+  const dflt = expenseByProduct.defaultPct || 0;
+  const pctFor = (e) => (e && (Number(e.managerCostPercent) > 0 || Number(e.managerCostFixed) > 0) ? Number(e.managerCostPercent || 0) : dflt);
   const parts = setParts(item, expenseByProduct);
   if (parts.length) {
     let cogs = 0; let fixed = 0; let pctWeighted = 0; let weight = 0; let pctPlain = 0;
@@ -64,11 +69,11 @@ function itemUnit(item, expenseByProduct, atDate) {
       const e = expenseByProduct.get(p.productId);
       const c = cogsAt(e, atDate) * p.qty;
       cogs += c; fixed += Number(e?.managerCostFixed || 0) * p.qty;
-      pctWeighted += Number(e?.managerCostPercent || 0) * c; weight += c; pctPlain += Number(e?.managerCostPercent || 0);
+      pctWeighted += pctFor(e) * c; weight += c; pctPlain += pctFor(e);
     }
     if (cogs > 0) return { cogs, fixed, percent: weight > 0 ? pctWeighted / weight : pctPlain / parts.length };
   }
-  return { cogs: cogsAt(own, atDate), fixed: Number(own?.managerCostFixed || 0), percent: Number(own?.managerCostPercent || 0) };
+  return { cogs: cogsAt(own, atDate), fixed: Number(own?.managerCostFixed || 0), percent: pctFor(own) };
 }
 
 // ДОПОВНЕННЯ 2026-09-07 (фідбек власника): ціна постачальника міняється в часі —

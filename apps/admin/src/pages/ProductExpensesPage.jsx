@@ -47,14 +47,20 @@ export default function ProductExpensesPage() {
               {items.map((row) => (
                 <tr key={row.productId} className={`border-b border-slate-800/60 last:border-0 ${saving === row.productId ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3">{row.name}<div className="text-xs text-slate-500">{row.sku}</div></td>
-                  <td className="px-4 py-3">
-                    <button type="button" className="text-left hover:underline" onClick={() => setHistoryRow(row)}>
-                      {money(row.cogs)}
-                      <div className="text-[11px] text-slate-500">{row.cogsHistory?.length > 1 ? `${row.cogsHistory.length} цін в історії` : 'редагувати →'}</div>
-                    </button>
-                  </td>
-                  <td className="px-4 py-3"><EditableNumber value={row.managerCostFixed} onCommit={(v) => saveField(row, 'managerCostFixed', v)} /></td>
-                  <td className="px-4 py-3"><EditableNumber value={row.managerCostPercent} suffix="%" onCommit={(v) => saveField(row, 'managerCostPercent', v)} /></td>
+                  {row.isUnlinked ? (
+                    <td colSpan={3} className="px-4 py-3 text-xs text-slate-500">Позиції замовлень без товару в каталозі й реклама, не привʼязана до товару. Щоб вони потрапили до свого товару, привʼяжіть оголошення або позицію до товару.</td>
+                  ) : (
+                    <>
+                      <td className="px-4 py-3">
+                        <button type="button" className="text-left hover:underline" onClick={() => setHistoryRow(row)}>
+                          {money(row.partsCogs != null && !row.cogs ? row.partsCogs : row.cogs)}
+                          <div className="text-[11px] text-slate-500">{row.partsCogs != null && !row.cogs ? 'за складом комплекту' : row.cogsHistory?.length > 1 ? `${row.cogsHistory.length} цін в історії` : 'редагувати →'}</div>
+                        </button>
+                      </td>
+                      <td className="px-4 py-3"><EditableNumber value={row.managerCostFixed} onCommit={(v) => saveField(row, 'managerCostFixed', v)} /></td>
+                      <td className="px-4 py-3"><EditableNumber value={row.managerCostPercent} suffix="%" onCommit={(v) => saveField(row, 'managerCostPercent', v)} /></td>
+                    </>
+                  )}
                   <td className="px-4 py-3 text-slate-400">{money(row.adSpend)}</td>
                   <td className={`px-4 py-3 ${row.margin < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{money(row.margin)} ({row.marginPercent?.toFixed(0) ?? '—'}%)</td>
                 </tr>

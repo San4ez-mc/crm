@@ -53,7 +53,9 @@ export default function AnalyticsPage() {
     try {
       const params = { from: range.from, to: range.to };
       const prevRange = previousPeriod(range);
-      const [top, prevTop, ads, margin, upsells, ttp, daily, prevDaily, managers] = await Promise.all([
+      // Плитка «Виручка» — уся виручка (з допродажами), як і маржа поруч; галочка «включно з допродажами» стосується лише таблиці товарів (аудит 09.11:
+      // без допродажів виручка була на 4,5% менша за ту, з якої рахується маржа).
+      const [top, prevTop, ads, margin, upsells, ttp, daily, prevDaily, managers, topAll, prevTopAll] = await Promise.all([
         api.analyticsTopProducts({ ...params, includeUpsells }),
         api.analyticsTopProducts({ ...prevRange, includeUpsells }),
         api.analyticsAdsConversion(params),
@@ -63,10 +65,12 @@ export default function AnalyticsPage() {
         api.analyticsDaily(params),
         api.analyticsDaily(prevRange),
         api.analyticsManagers(params),
+        api.analyticsTopProducts({ ...params, includeUpsells: true }),
+        api.analyticsTopProducts({ ...prevRange, includeUpsells: true }),
       ]);
 
-      const revenue = top.data.reduce((s, t) => s + t.revenue, 0);
-      const prevRevenue = prevTop.data.reduce((s, t) => s + t.revenue, 0);
+      const revenue = topAll.data.reduce((s, t) => s + t.revenue, 0);
+      const prevRevenue = prevTopAll.data.reduce((s, t) => s + t.revenue, 0);
       const cur = sumDaily(daily.data);
       const prev = sumDaily(prevDaily.data);
       const roi = cur.adSpend > 0 ? cur.margin / cur.adSpend : null;
