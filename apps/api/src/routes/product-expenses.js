@@ -68,6 +68,9 @@ router.get('/product-expenses', asyncHandler(async (req, res) => {
       cogsHistory: Array.isArray(exp?.cogsHistory) ? exp.cogsHistory : [],
       managerCostFixed: Number(exp?.managerCostFixed || 0),
       managerCostPercent: Number(exp?.managerCostPercent || 0),
+      // У товару нема ні свого %, ні фіксу → у марж береться загальний % магазину (Налаштування → Загальні); показуємо це, щоб сторінка не брехала «0%».
+      usesDefaultPercent: !p.isSet && !(Number(exp?.managerCostPercent || 0) > 0 || Number(exp?.managerCostFixed || 0) > 0) && (expenseByProduct.defaultPct || 0) > 0,
+      defaultPercent: expenseByProduct.defaultPct || 0,
       adSpend,
       qty,
       revenue,

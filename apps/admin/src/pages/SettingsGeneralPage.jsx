@@ -295,7 +295,7 @@ export default function SettingsGeneralPage() {
             )}
           </Field>
           <Field label="Постійні витрати за добу, грн"><Input type="number" step="0.01" value={finance.dailyFixedCosts} onChange={(e) => setFinance({ ...finance, dailyFixedCosts: e.target.value })} /></Field>
-          <Field label="Витрати на оплату праці за добу, грн"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
+          <Field label="Витрати на оплату праці за добу, грн (фіксована ставка; якщо менеджерам платять лише % від націнки, лишіть порожнім, щоб ЗП не рахувалась двічі)"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
           <Field label="Прогноз відмов на пошті, % (за замовчуванням для всіх днів; порожньо = 20)"><Input type="number" step="0.1" min="0" max="99" value={finance.forecastRefusalPct} onChange={(e) => setFinance({ ...finance, forecastRefusalPct: e.target.value })} /></Field>
           <Field label="Прогноз повернень, % (порожньо = 3)"><Input type="number" step="0.1" min="0" max="99" value={finance.forecastReturnPct} onChange={(e) => setFinance({ ...finance, forecastReturnPct: e.target.value })} /></Field>
           <Field label="ЗП менеджера, % від націнки (для товарів, де в «Витрати по товару» не вказано свого %)"><Input type="number" step="0.1" min="0" max="99" value={finance.managerCostPercentDefault} onChange={(e) => setFinance({ ...finance, managerCostPercentDefault: e.target.value })} /></Field>

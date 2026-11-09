@@ -58,7 +58,10 @@ export default function ProductExpensesPage() {
                         </button>
                       </td>
                       <td className="px-4 py-3"><EditableNumber value={row.managerCostFixed} onCommit={(v) => saveField(row, 'managerCostFixed', v)} /></td>
-                      <td className="px-4 py-3"><EditableNumber value={row.managerCostPercent} suffix="%" onCommit={(v) => saveField(row, 'managerCostPercent', v)} /></td>
+                      <td className="px-4 py-3">
+                        <EditableNumber value={row.managerCostPercent} suffix="%" onCommit={(v) => saveField(row, 'managerCostPercent', v)} />
+                        {row.usesDefaultPercent && <div className="mt-0.5 text-[11px] text-sky-400" title="Свого % у товару нема, тому береться загальний із Налаштування → Загальні">діє загальний {row.defaultPercent}%</div>}
+                      </td>
                     </>
                   )}
                   <td className="px-4 py-3 text-slate-400">{money(row.adSpend)}</td>
