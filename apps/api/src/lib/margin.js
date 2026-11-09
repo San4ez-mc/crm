@@ -40,6 +40,16 @@ function setParts(item, expenseByProduct) {
 }
 
 /**
+ * Скільки ШТУК товару в позиції (Edits 08–09.11, Олексій: «кількість товарів — уся кількість, незалежно комплект чи ні»).
+ * Звичайний товар: його кількість. Комплект: сума штук по складу (у комплекті не обовʼязково 2 речі) × кількість комплектів.
+ */
+function itemPieces(item, expenseByProduct) {
+  const qty = Number(item.quantity) || 1;
+  const parts = setParts(item, expenseByProduct);
+  return parts.length ? parts.reduce((s, p) => s + (Number(p.qty) || 1), 0) * qty : qty;
+}
+
+/**
  * Собівартість і ставки менеджера ОДНІЄЇ штуки позиції на дату замовлення.
  * Звичайний товар — його ProductExpense. Комплект — сума по речах всередині (кожна за своєю ціною постачальника на дату); якщо
  * речі не мають витрат (сума 0), лишається власний рядок витрат комплекту. Фікс менеджера комплекту = сума фіксів речей;
@@ -126,4 +136,4 @@ const LEAD_WHERE = { funnelSessionId: { not: null }, deletedAt: null };
 // Для карток розмов (LEAD_WHERE) лишається createdAt. placedAt заповнено для всіх замовлень (міграція 20261026010000).
 const placedAtOf = (o) => (o && (o.placedAt || o.createdAt)) || null;
 
-module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt, itemUnit, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf };
+module.exports = { loadExpenseMap, marginPerOrderItem, cogsAt, itemUnit, itemPieces, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf };

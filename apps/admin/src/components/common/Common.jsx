@@ -141,11 +141,11 @@ export function ErrorBanner({ message }) {
 // KPI-картка з дельтою до попереднього періоду (2026-09-02, редизайн аналітики).
 // deltaGood='up' — зростання зелене (виручка/маржа/прибуток), 'down' — зростання червоне
 // (напр. рекламний бюджет як витрата: більше не завжди краще, тому '=' не фарбуємо взагалі).
-export function KpiCard({ label, value, delta, deltaGood = 'up' }) {
+export function KpiCard({ label, value, delta, deltaGood = 'up', hint }) {
   const hasDelta = delta !== null && delta !== undefined && Number.isFinite(delta);
   const colorClass = !hasDelta ? '' : deltaGood === 'neutral' ? 'text-slate-400' : (deltaGood === 'up' ? delta >= 0 : delta <= 0) ? 'text-emerald-400' : 'text-red-400';
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4" title={hint || undefined}>
       <div className="text-xs text-slate-500">{label}</div>
       <div className="mt-1 text-xl font-semibold text-slate-100">{value}</div>
       {hasDelta && (

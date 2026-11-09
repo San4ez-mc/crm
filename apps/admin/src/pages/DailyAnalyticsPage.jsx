@@ -130,7 +130,7 @@ const SUMMARY_ROWS = [
   { label: 'Рекламний бюджет, $ (як з Meta)', get: (d) => (d.adSpendUsd === null ? '—' : `$${fmt(d.adSpendUsd)}`) },
   { label: 'Нові контакти в повідомленнях', get: (d) => d.newMessages },
   { label: 'Замовлень, к-сть', get: (d) => d.ordersCount },
-  { label: 'Продано товарів, к-сть', get: (d) => d.qtySold },
+  { label: 'Товарів, к-сть (штук)', get: (d) => d.qtySold },
   { label: 'Повторно продані товари', get: (d) => d.qtyRepeat },
   { label: 'Кліки', get: (d) => d.clicks },
   { label: 'Покази', get: (d) => d.impressions },

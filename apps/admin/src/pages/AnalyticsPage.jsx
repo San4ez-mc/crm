@@ -78,7 +78,7 @@ export default function AnalyticsPage() {
       const products = top.data.map((t) => ({ ...t, margin: marginByProduct.get(t.productId)?.margin ?? null, marginPercent: marginByProduct.get(t.productId)?.marginPercent ?? null }));
 
       setData({
-        kpi: { revenue, prevRevenue, ...cur, prevMargin: prev.margin, prevAdSpend: prev.adSpend, prevProfit: prev.profit, prevOrders: prev.orders, roi, prevRoi },
+        kpi: { revenue, prevRevenue, markup: margin.data.reduce((s, m) => s + (m.revenue || 0) - (m.cogs || 0), 0), ...cur, prevMargin: prev.margin, prevAdSpend: prev.adSpend, prevProfit: prev.profit, prevOrders: prev.orders, roi, prevRoi },
         trend: daily.data,
         products,
         ads: ads.data,
@@ -113,7 +113,8 @@ export default function AnalyticsPage() {
         <div className="space-y-5">
           {/* 1. Скільки заробили і чи це росте — перше, що цікавить власника */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-            <KpiCard label="Виручка" value={money(data.kpi.revenue)} delta={deltaPct(data.kpi.revenue, data.kpi.prevRevenue)} deltaGood="up" />
+            {/* При наведенні — націнка (виручка мінус ціна постачальника): Edits 08.11, власник просив не виносити її на видне місце. */}
+            <KpiCard label="Виручка" value={money(data.kpi.revenue)} delta={deltaPct(data.kpi.revenue, data.kpi.prevRevenue)} deltaGood="up" hint={`Сума націнок за період: ${money(data.kpi.markup)} (виручка мінус ціна постачальника)`} />
             <KpiCard label="Маржинальний прибуток" value={money(data.kpi.margin)} delta={deltaPct(data.kpi.margin, data.kpi.prevMargin)} deltaGood="up" />
             <KpiCard label="Рекламний бюджет" value={money(data.kpi.adSpend)} delta={deltaPct(data.kpi.adSpend, data.kpi.prevAdSpend)} deltaGood="neutral" />
             <KpiCard label="Прибуток" value={money(data.kpi.profit)} delta={deltaPct(data.kpi.profit, data.kpi.prevProfit)} deltaGood="up" />

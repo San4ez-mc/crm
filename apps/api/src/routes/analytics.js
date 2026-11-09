@@ -6,7 +6,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { parseFrom, parseTo, kyivDayKey, dayRange } = require('../lib/dateRange');
-const { loadExpenseMap, marginPerOrderItem, cogsAt, itemUnit, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf } = require('../lib/margin');
+const { loadExpenseMap, marginPerOrderItem, cogsAt, itemUnit, itemPieces, REAL_SALE_ORDER_WHERE, ORDER_PLACED_WHERE, LEAD_WHERE, placedAtOf } = require('../lib/margin');
 const { ensureFreshUsdRate, rowToUAH, adSpendUAHByProduct } = require('../lib/currency');
 const { ValidationError } = require('@crm/errors');
 
@@ -313,9 +313,11 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     let orderMargin = 0;
     for (const item of order.items) {
       orderMargin += marginPerOrderItem(item, expenseByProduct, order.isRefused, at);
-      if (isRealSale && !item.isUpsell) b.qtySold += item.quantity;
+      // «Товарів, к-сть» = усі штуки (з допродажами; комплект — за його складом), «Замовлень» — окремим рядком.
+      const pieces = itemPieces(item, expenseByProduct);
+      if (isRealSale) b.qtySold += pieces;
       const isRepeat = order.buyerId && firstOrderAtByBuyer.get(order.buyerId) && firstOrderAtByBuyer.get(order.buyerId).getTime() < at.getTime();
-      if (isRealSale && isRepeat) b.qtyRepeat += item.quantity;
+      if (isRealSale && isRepeat) b.qtyRepeat += pieces;
     }
     if (isRealSale) b.marginNonRefusedTotal += orderMargin;
 
