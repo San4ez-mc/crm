@@ -75,7 +75,8 @@ function ForecastCell({ day, field, onSaved }) {
 function moneyCell(v, d, cur) {
   if (v === null || v === undefined || Number.isNaN(v)) return '—';
   const rate = Number(d.usdExchangeRate);
-  return cur === 'USD' && rate > 0 ? fmt(Number(v) / rate) : fmt(v);
+  // Гривні без копійок (Edits 08.11: «60 копійок, звідки це?» — це десяті від 10% ЗП менеджера з націнки кожного замовлення); долари — з центами.
+  return cur === 'USD' && rate > 0 ? fmt(Number(v) / rate) : fmt(v, 0);
 }
 
 function MetricsTable({ days, rows, onSaved, cur = 'UAH' }) {
