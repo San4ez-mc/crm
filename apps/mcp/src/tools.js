@@ -67,6 +67,8 @@ const TOOLS = [
   { name: 'get_tenant', description: 'Деталі одного tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
   { name: 'update_tenant_sizes', description: 'Загальна сітка підбору розміру магазину (зріст/вага) і межі від експерта — для категорій і товарів без власних (бот: товар → категорія → магазин).', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, fitChart: { type: 'object', description: '{"S":{"height":[160,175],"weight":[55,65]},…}; null — очистити' }, sizeRules: { type: 'array', items: { type: 'object', properties: { size: { type: 'string' }, wMin: { type: 'number' }, wMax: { type: 'number' }, hMin: { type: 'number' }, hMax: { type: 'number' }, note: { type: 'string' } } }, description: 'Межі: перше правило, що збіглося, перекриває сітку' } }, required: ['tenantId'] } },
   { name: 'update_tenant_shop_profile', description: 'Умови й тип магазину для бота (те саме, що «Налаштування → Загальні → Магазин для бота»): shopDescription — хто ми для ШІ («Instagram-магазин чоловічого одягу»); prepaymentAmount — передоплата за часткової оплати, грн; shippingTerms — терміни відправки словами; expectedRefusalPct — очікувані відмови+повернення, % (звіт реклами «з відмовами», порожньо = 23).', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, shopDescription: { type: 'string' }, prepaymentAmount: { type: 'number' }, shippingTerms: { type: 'string' }, expectedRefusalPct: { type: 'number' } }, required: ['tenantId'] } },
+  { name: 'get_catalog_sync', description: 'Синхронізація каталогу магазину: з якого магазину-джерела беруться товари, чи автоматична, коли востаннє й з яким результатом.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string', description: 'магазин-приймач' } }, required: ['tenantId'] } },
+  { name: 'update_catalog_sync', description: 'Налаштувати синхронізацію каталогу (джерело → магазин tenantId): sourceTenantId (порожній = вимкнути й видалити налаштування), enabled (автоматично щогодини), syncCosts (переносити ціни постачальника й % менеджера). run:true — виконати синхронізацію одразу, dryRun:true — лише порахувати, що зміниться.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, sourceTenantId: { type: 'string' }, enabled: { type: 'boolean' }, syncCosts: { type: 'boolean' }, run: { type: 'boolean' }, dryRun: { type: 'boolean' } }, required: ['tenantId'] } },
   { name: 'new_tenant', description: 'Створити новий магазин (tenant).', inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
 
   // ── Category §4.5 ────────────────────────────────────────────────────
@@ -144,6 +146,16 @@ async function callTool(name, args = {}) {
       if (args.prepaymentAmount !== undefined && args.prepaymentAmount !== null && !(Number(args.prepaymentAmount) > 0)) throw new ValidationError('Передоплата має бути більшою за 0');
       if (args.expectedRefusalPct !== undefined && args.expectedRefusalPct !== null && !(Number(args.expectedRefusalPct) >= 0 && Number(args.expectedRefusalPct) < 100)) throw new ValidationError('Очікувані відмови — від 0 до 99 %');
       return db.tenant.update({ where: { id: args.tenantId }, data: { ...(args.expectedRefusalPct !== undefined ? { expectedRefusalPct: args.expectedRefusalPct === null ? null : Number(args.expectedRefusalPct) } : {}), ...(args.shopDescription !== undefined ? { shopDescription: String(args.shopDescription || '').trim() || null } : {}), ...(args.prepaymentAmount !== undefined ? { prepaymentAmount: args.prepaymentAmount === null ? null : Number(args.prepaymentAmount) } : {}), ...(args.shippingTerms !== undefined ? { shippingTerms: String(args.shippingTerms || '').trim() || null } : {}) }, select: { id: true, name: true, shopDescription: true, prepaymentAmount: true, shippingTerms: true } });
+    }
+    case 'get_catalog_sync':
+      return require('../../api/src/lib/catalogSync').getConfig(args.tenantId);
+    case 'update_catalog_sync': {
+      const sync = require('../../api/src/lib/catalogSync');
+      let cfg = (args.sourceTenantId !== undefined || args.enabled !== undefined || args.syncCosts !== undefined)
+        ? await sync.saveConfig(args.tenantId, { sourceTenantId: args.sourceTenantId !== undefined ? args.sourceTenantId : (await sync.getConfig(args.tenantId) || {}).sourceTenantId, enabled: args.enabled, syncCosts: args.syncCosts })
+        : await sync.getConfig(args.tenantId);
+      if (cfg && (args.run || args.dryRun)) return { config: cfg, result: await sync.runCatalogSync(args.tenantId, { dryRun: !!args.dryRun && !args.run }) };
+      return { config: cfg };
     }
     case 'new_tenant':
       if (!args.name) throw new ValidationError('name обовʼязкове');

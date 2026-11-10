@@ -73,6 +73,27 @@ model Tenant {
   knowledgeProfile KnowledgeProfile?
   productChangeLog ProductChangeLog[]
   crmChecks        CrmCheck[]
+  catalogSync      CatalogSync?
+}
+
+// ─────────────────────────────────────────────────────────────
+// 2026-11-10 (власник: «окремий магазин, а в налаштуваннях блок синхронізації, де вибрати з якого в який»).
+// Односторонній дзеркальний перенос каталогу: джерело (sourceTenantId) → цей магазин (tenantId = приймач). Переноситься категорії, постачальники,
+// товари (з кольорами, розмірами, комплектами, допродажами) і, якщо syncCosts, ціни постачальника та % менеджера. Привʼязка записів — syncSourceId
+// (id запису в джерелі) у Category/Supplier/Product/Offer; новий запис у приймачі, якого нема в джерелі, не чіпається; товар, зниклий з джерела, ховається (outOfStock).
+// ─────────────────────────────────────────────────────────────
+model CatalogSync {
+  id             String    @id @default(uuid())
+  tenantId       String    @unique
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceTenantId String
+  enabled        Boolean   @default(false) // автоматично щогодини
+  syncCosts      Boolean   @default(true) // переносити ціну постачальника і % менеджера (інакше маржа в приймачі = виручці)
+  lastRunAt      DateTime?
+  lastStatus     String? // ok | error
+  lastResult     Json? // {created,updated,hidden,errors[],durationMs}
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -118,6 +139,7 @@ model Category {
   // категорія "Взуття" → synonyms ["лофери","кросівки","туфлі","черевики","кеди"]; категорія
   // "Куртки" → synonyms ["вітровка"]). Воронка стемить name сама, тут — лише додаткові слова.
   synonyms       Json     @default("[]")
+  syncSourceId   String? // id категорії в магазині-джерелі (CatalogSync)
   // 2026-10-18 (власник: розміри — дані в CRM, однаково в категоріях і товарах; товар без своїх — бере з категорії, далі загальні
   // з воронки). fitChart — сітка підбору за зростом/вагою {"S":{"height":[160,175],"weight":[55,65]},…}; sizeRules — межі від
   // експерта [{size,wMin,wMax,hMin,hMax,note}] (перше, що збіглося, перекриває сітку); sizeChartImage/sizeChartData — картинка
@@ -162,6 +184,7 @@ model Supplier {
   // читає/пише агент/ШІ (майбутня універсальна воронка), НЕ для ручного редагування людиною
   // в UI (readOnly у формі) — саме це замінює хардкод-гілки brewdrop/easydrop-*-code.js.
   orderRecipe     String?
+  syncSourceId    String? // id постачальника в магазині-джерелі (CatalogSync)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -267,6 +290,7 @@ model Product {
   // весь цей список. Замінює offer.quantity як спосіб позначати доступність (просто
   // доступно/недоступно по розміру, не лічильник).
   sizes               String[] @default([])
+  syncSourceId        String? // id товару в магазині-джерелі (CatalogSync)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -283,6 +307,7 @@ model Product {
   @@index([tenantId])
   @@index([tenantId, categoryId])
   @@index([tenantId, supplierId])
+  @@index([tenantId, syncSourceId])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -349,6 +374,7 @@ model Offer {
   properties Json     @default("[]") // [{name,value}] — тепер переважно колір (розмір переїхав у availableSizes)
   images     String[] @default([]) // до 10 фото, перше = головне
   sortOrder  Int      @default(0)
+  syncSourceId String? // id варіанта в магазині-джерелі (CatalogSync)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

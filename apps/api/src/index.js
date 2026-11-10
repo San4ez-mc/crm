@@ -87,6 +87,7 @@ app.use('/api', require('./routes/billing').publicRouter);
 // Бізнес-роути — усі під спільним resolveTenant (Bearer tenant.apiKey АБО SSO-сесія+tenantId).
 app.use('/api', resolveTenant,
   tenantSettingsRouter,
+  require('./routes/catalog-sync'),
   categoriesRouter,
   suppliersRouter,
   productsRouter,
@@ -125,4 +126,5 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
   logger.info(`Fineko CRM API listening on :${PORT}`);
+  require('./lib/catalogSync').startCatalogSyncScheduler(); // щогодинна синхронізація каталогу між магазинами (де ввімкнено)
 });

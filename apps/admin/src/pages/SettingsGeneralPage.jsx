@@ -4,7 +4,7 @@
 // + магазин для бота (2026-10-21): тип магазину для ШІ, передоплата, терміни відправки — бот бере їх звідси, а не з коду.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Field, Input, Textarea, Button, ErrorBanner, formatDateTime } from '../components/common/Common';
+import { PageHeader, Card, Field, Input, Textarea, Select, Button, ErrorBanner, formatDateTime } from '../components/common/Common';
 import SizeFitEditor, { fitChartToRows } from '../components/common/SizeFitEditor';
 import apiDocsTemplate from '../docs/crm-api.md?raw';
 
@@ -64,6 +64,8 @@ const API_DOCS = [
     ['POST', '/categories', 'Створити категорію: { name, … }'],
     ['GET', '/public/products?key=pk_…', 'Відкритий ключ: товари для вітрини (безпечні поля; фільтри q, categoryId, sku, isSet, take, skip)'],
     ['GET', '/public/categories?key=pk_…', 'Відкритий ключ: категорії з товарами в наявності'],
+    ['GET', '/tenant/catalog-sync', 'Синхронізація каталогу: з якого магазину беруться товари, коли востаннє, результат'],
+    ['POST', '/tenant/catalog-sync/run', 'Запустити синхронізацію каталогу зараз: { dryRun? } (dryRun — лише показати, що зміниться)'],
     ['GET', '/pipelines', 'Воронки продажів зі стадіями'],
     ['POST', '/funnel-events', 'Подія воронки бота (картка розмови на дошці)'],
     ['GET', '/funnel-events/summary', 'Конверсія по етапах воронки'],
@@ -105,6 +107,105 @@ curl_setopt_array($ch, [
 ]);
 $res = json_decode(curl_exec($ch), true);
 if (empty($res['ok'])) { /* помилка: $res['error']['message'] */ }`;
+}
+
+// Синхронізація каталогу (2026-11-10): «з якого магазину в цей». Односторонній перенос: товари, категорії, постачальники, кольори/розміри, комплекти
+// і (за галочкою) ціни постачальника з %. Зміни в джерелі приходять сюди автоматично щогодини або кнопкою; правки цих товарів тут перезапишуться.
+function CatalogSyncCard({ shopName }) {
+  const [info, setInfo] = useState(null);
+  const [source, setSource] = useState('');
+  const [enabled, setEnabled] = useState(false);
+  const [syncCosts, setSyncCosts] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [preview, setPreview] = useState(null);
+  const [err, setErr] = useState('');
+
+  async function load() {
+    try {
+      const { data } = await api.catalogSync();
+      setInfo(data);
+      setSource(data.config?.sourceTenantId || ''); setEnabled(!!data.config?.enabled); setSyncCosts(data.config ? data.config.syncCosts : true);
+    } catch (e) { setErr(e.message); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function save() {
+    setErr(''); setBusy('save');
+    try { await api.saveCatalogSync({ sourceTenantId: source || null, enabled, syncCosts }); setPreview(null); await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  }
+  async function run(dryRun) {
+    setErr(''); setBusy(dryRun ? 'dry' : 'run');
+    try { const { data } = await api.runCatalogSync(dryRun); setPreview(data); if (!dryRun) await load(); }
+    catch (e) { setErr(e.message); } finally { setBusy(''); }
+  }
+
+  if (!info) return err ? <ErrorBanner message={err} /> : null;
+  const cfg = info.config;
+  const changed = !cfg || cfg.sourceTenantId !== source || cfg.enabled !== enabled || cfg.syncCosts !== syncCosts;
+  const last = cfg?.lastResult;
+  const line = (r) => `товари: ${r.products.created} нових, ${r.products.updated} оновлено${r.products.hidden ? `, ${r.products.hidden} сховано (зникли в джерелі)` : ''}; категорії: ${r.categories.created} нових; постачальники: ${r.suppliers.created} нових`;
+
+  return (
+    <Card className="p-5">
+      <h3 className="mb-1 text-sm font-semibold">Синхронізація каталогу</h3>
+      <p className="mb-4 text-xs text-slate-500">
+        Беремо товари з іншого магазину й копіюємо сюди: товари з кольорами й розмірами, комплекти, допродажі, категорії, постачальників
+        (і, якщо поставлена галочка, ціни постачальника та % менеджера — тоді маржа тут рахується правильно). Копіювання в один бік: з обраного
+        магазину в «{shopName}». Те, що ви змінили в цих товарах тут, при наступній синхронізації замінюється даними з джерела; свої товари,
+        яких нема в джерелі, не чіпаємо. Якщо товар зник у джерелі — тут він ховається (не видаляється, щоб не втратити замовлення).
+      </p>
+      <ErrorBanner message={err} />
+      {!info.canConfigure ? (
+        <p className="text-xs text-amber-300">Налаштувати синхронізацію можна лише з адмінки під своїм входом (не за ключем API).</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Field label="Звідки брати каталог (джерело)">
+              <Select value={source} onChange={(e) => setSource(e.target.value)}>
+                <option value="">— не синхронізувати —</option>
+                {info.sources.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Куди (приймач)"><Input readOnly value={shopName} /></Field>
+          </div>
+          <label className="mt-1 flex items-start gap-2 text-sm text-slate-300">
+            <input type="checkbox" className="mt-1" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+            <span>Оновлювати автоматично щогодини <span className="text-xs text-slate-500">(інакше лише кнопкою «Синхронізувати зараз»)</span></span>
+          </label>
+          <label className="mt-2 flex items-start gap-2 text-sm text-slate-300">
+            <input type="checkbox" className="mt-1" checked={syncCosts} onChange={(e) => setSyncCosts(e.target.checked)} />
+            <span>Переносити ціни постачальника і % менеджера <span className="text-xs text-slate-500">(без цього маржа в цьому магазині дорівнює виручці)</span></span>
+          </label>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Button onClick={save} disabled={!changed || busy}>{busy === 'save' ? 'Зберігаю…' : 'Зберегти'}</Button>
+            {cfg && (
+              <>
+                <Button variant="secondary" onClick={() => run(true)} disabled={!!busy || changed}>{busy === 'dry' ? 'Рахую…' : 'Подивитись, що зміниться'}</Button>
+                <Button variant="secondary" onClick={() => run(false)} disabled={!!busy || changed}>{busy === 'run' ? 'Синхронізую…' : 'Синхронізувати зараз'}</Button>
+              </>
+            )}
+          </div>
+          {cfg && changed && <p className="mt-2 text-xs text-slate-500">Спочатку збережіть зміни — тоді стануть доступні кнопки запуску.</p>}
+        </>
+      )}
+      {preview && (
+        <div className={`mt-4 rounded-lg border p-3 text-xs ${preview.errors.length ? 'border-amber-500/40 text-amber-200' : 'border-slate-700 text-slate-300'}`}>
+          <div className="mb-1 font-medium">{preview.dryRun ? 'Що буде при синхронізації (нічого не змінено)' : 'Синхронізацію виконано'} · {Math.round(preview.durationMs / 100) / 10} с</div>
+          <div>{line(preview)}</div>
+          {preview.errors.length > 0 && (
+            <ul className="mt-2 list-disc pl-4">{preview.errors.map((e, i) => <li key={i}>{e.sku}: {e.message}</li>)}</ul>
+          )}
+        </div>
+      )}
+      {cfg?.lastRunAt && (
+        <p className="mt-3 text-xs text-slate-500">
+          Остання синхронізація: {formatDateTime(cfg.lastRunAt)} — {cfg.lastStatus === 'ok' ? 'успішно' : cfg.lastStatus === 'partial' ? 'із помилками' : 'помилка'}
+          {last && last.products ? ` (${line(last)})` : last && last.error ? ` (${last.error})` : ''}
+        </p>
+      )}
+    </Card>
+  );
 }
 
 export default function SettingsGeneralPage() {
@@ -314,6 +415,8 @@ export default function SettingsGeneralPage() {
           </div>
         </Card>
       </div>
+
+      <CatalogSyncCard shopName={tenant.name} />
 
       <Card className="p-5">
         <h3 className="mb-1 text-sm font-semibold">Магазин для бота</h3>

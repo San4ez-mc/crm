@@ -209,6 +209,9 @@ export const api = {
   regenerateApiKey: () => post('/tenant/regenerate-key'),
   regeneratePublicKey: () => post('/tenant/regenerate-public-key'),
   refreshExchangeRate: () => post('/tenant/refresh-exchange-rate'),
+  catalogSync: () => get('/tenant/catalog-sync'),
+  saveCatalogSync: (data) => put('/tenant/catalog-sync', data),
+  runCatalogSync: (dryRun) => post('/tenant/catalog-sync/run', { dryRun: !!dryRun }),
   zernioStatus: () => get('/integrations/zernio-status'),
   uploadFile,
 };
