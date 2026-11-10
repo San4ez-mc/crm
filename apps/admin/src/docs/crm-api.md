@@ -174,16 +174,48 @@ CRM лише прибирає зайві символи (залишає цифр
 | `POST /returns` | `{ orderId, type: "return" \| "exchange", reason?, ttn?, exchangeFor? }`. |
 | `PATCH /returns/:id` | Змінити статус повернення. |
 
-### 3.4 Каталог, воронка, база знань
+### 3.4 Каталог, категорії, воронка, база знань
 
 | Запит | Що робить |
 |---|---|
-| `GET /products?q=…&sku=…&take=50` | Товари (ціна, кольори/розміри, фото). |
-| `GET /products/:id` | Один товар. |
+| `GET /products` | Список товарів. Фільтри: `q` (назва, артикул або токен реклами), `categoryId`, `supplierId`, `sku` (точний артикул), `isSet=true\|false` (комплекти або окремі товари), `take` (скільки, за замовчуванням 50) і `skip`. У відповіді `meta.total`. |
+| `GET /products/:id` | Один товар з усіма кольорами, розмірами, фото. |
+| `POST /products` | Створити товар: `{ name, sku, price, categoryId?, supplierId?, images?, sizes?, … }`. |
+| `PATCH /products/:id` | Змінити лише передані поля товару. |
+| `GET /categories` | Усі категорії магазину з кількістю товарів (`productsCount`). |
+| `GET /categories/:id` | Одна категорія. |
+| `POST /categories` | Створити категорію: `{ name, description?, synonyms?, requiredParams? }`. |
+| `PATCH /categories/:id` | Змінити категорію. |
 | `GET /pipelines` | Воронки зі стадіями (звідси беруть `stageId`). |
 | `POST /funnel-events` | Подія воронки бота `{ sessionId, stageName, … }` — створює/рухає картку розмови. Для сайтів не потрібна. |
 | `GET /funnel-events/summary` | Конверсія по етапах. |
 | `GET /knowledge/search?q=…` | Пошук у базі знань магазину. |
+
+#### Що є у відповіді для товару
+
+- `name` (внутрішня назва) і `displayName` (те, що бачить клієнт), `sku`, `price`, `minPrice`, `bulkPricing` (ціна за кількість, наприклад «2 шт дешевше»).
+- `category` і `supplier` (id та назва), `isSet` (комплект), `outOfStock` (товару немає).
+- `presentationText` (готовий опис для клієнта), `images`, `thumbnailUrl`.
+- `offers`: кольори. У кожного свої `images`, `effectiveSizes` (які розміри доступні саме в цьому кольорі) і `inStock` (чи є в наявності).
+- Для комплекту `setComponents`: з яких товарів складається, скільки штук і чи зафіксований колір.
+- `sizes` (розміри товару), `sizeChartData` і `sizeChartImage` (розмірна сітка), `companionProductIds` (що пропонувати до нього).
+
+**Не показуйте клієнтам на сайті** внутрішні поля: `aiNotes` (нотатки для ШІ), `productExpense` (ціна постачальника) і `supplier`. Для публічної сторінки беріть дані на сервері, відфільтруйте зайве і віддавайте браузеру лише потрібне.
+
+У категорії: `name`, `description`, `synonyms`, `requiredParams` (що питати в клієнта), `fitChart` і `sizeRules` (підбір розміру), `productsCount`.
+
+Приклад PHP: вивести товари категорії, які є в наявності.
+
+```php
+<?php
+$ch = curl_init('{{ORIGIN}}/api/products?categoryId=' . urlencode($categoryId) . '&take=100');
+curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . getenv('CRM_API_KEY')]]);
+$res = json_decode(curl_exec($ch), true);
+foreach ($res['data'] as $p) {
+    if (!empty($p['outOfStock'])) continue;
+    echo $p['displayName'], ' — ', $p['price'], " грн\n";
+}
+```
 
 ---
 
