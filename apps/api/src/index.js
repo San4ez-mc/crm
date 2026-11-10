@@ -78,6 +78,8 @@ app.use('/api', tenantsAdminRouter);
 
 // Замовлення з лендінгу — відкритий вхід за Tenant.publicKey (лише створення замовлення), без resolveTenant.
 app.use('/api', require('./routes/public-orders'));
+// Відкритий каталог для вітрини (той самий відкритий ключ, лише читання, без внутрішніх полів).
+app.use('/api', require('./routes/public-catalog'));
 
 // Оплата підписки: сповіщення від WayForPay і повернення клієнта після оплати — без входу (свій підпис + перевірка статусу всередині).
 app.use('/api', require('./routes/billing').publicRouter);

@@ -59,17 +59,7 @@ const PRODUCT_INCLUDE = {
 // sizesCustomized=false (дефолт, ніхто не чіпав) → успадковує ВСІ Product.sizes. true →
 // availableSizes вирішує напряму, і порожній масив тут — валідний стан "розпродано геть усе
 // в цьому кольорі" (не плутати з "успадковує все" — для цього окремий прапорець, не порожність).
-function offerEffectiveSizes(product, offer) {
-  return offer.sizesCustomized ? (Array.isArray(offer.availableSizes) ? offer.availableSizes : []) : (product.sizes || []);
-}
-function offerInStock(product, offer) {
-  if (product.outOfStock) return false;
-  if (product.alwaysAvailable !== false) return true;
-  // Товар ще не має майстер-списку розмірів — нема на чому звужувати, лишаємо доступним
-  // (той самий безпечний дефолт, що й раніше для quantity=null "не відстежується").
-  if (!Array.isArray(product.sizes) || product.sizes.length === 0) return true;
-  return offerEffectiveSizes(product, offer).length > 0;
-}
+const { offerEffectiveSizes, offerInStock } = require("../lib/productView");
 
 function serializeProduct(p) {
   return {
