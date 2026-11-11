@@ -32,6 +32,9 @@ export default function PipelinesPage() {
     if (!name || name === stage.name) return;
     try { await api.updateStage(stage.id, { name }); load(); } catch (e) { alert(e.message); }
   }
+  async function toggleCounts(stage) {
+    try { await api.updateStage(stage.id, { countsAsOrder: stage.countsAsOrder === false }); load(); } catch (e) { alert(e.message); }
+  }
   async function deleteStage(stage) {
     if (!confirm(`Видалити стадію «${stage.name}»?`)) return;
     try { await api.deleteStage(stage.id); load(); } catch (e) { alert(e.message); }
@@ -91,6 +94,9 @@ export default function PipelinesPage() {
                 <div key={stage.id} className="flex items-center gap-2 px-3 py-2">
                   <span className="w-4 shrink-0 text-xs text-slate-600">{i + 1}</span>
                   <button onClick={() => renameStage(stage)} className="flex-1 truncate text-left text-sm hover:text-brand-light">{stage.name}</button>
+                  <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-slate-500" title="Позначено — картка на цій стадії рахується замовленням у звітах (замовлень, маржа, відмови). Зніміть для ранніх стадій розмови («Очікуємо дані та оплату» тощо).">
+                    <input type="checkbox" checked={stage.countsAsOrder !== false} onChange={() => toggleCounts(stage)} /> замовлення
+                  </label>
                   <button disabled={i === 0} onClick={() => moveStage(stage, -1)} className="rounded bg-slate-800 px-2 py-1 text-xs disabled:opacity-30 hover:bg-slate-700">←</button>
                   <button disabled={i === current.stages.length - 1} onClick={() => moveStage(stage, 1)} className="rounded bg-slate-800 px-2 py-1 text-xs disabled:opacity-30 hover:bg-slate-700">→</button>
                   <button onClick={() => deleteStage(stage)} className="text-slate-500 hover:text-red-400">🗑️</button>

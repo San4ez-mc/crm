@@ -22,17 +22,25 @@ function periodWhere(from, to) {
   return { createdAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } };
 }
 // Оформлені замовлення — за датою оформлення (lib/margin placedAtOf); periodWhere — для карток розмов і повернень.
-function placedWhere(from, to) {
-  if (!from && !to) return {};
-  return { placedAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) } };
+// placedBy — фільтр «хто оформив» (Edits 1a01e6dd: менеджери хочуть бачити свої цифри за день); порожньо — усі.
+function placedWhere(from, to, placedBy) {
+  const by = placedBy ? { placedBy: String(placedBy).trim() } : {};
+  if (!from && !to) return by;
+  return { placedAt: { ...(from ? { gte: parseFrom(from) } : {}), ...(to ? { lte: parseTo(to) } : {}) }, ...by };
 }
+
+// Хто оформляв замовлення (для випадаючого списку «Менеджер» у звітах): імена з Order.placedBy, найактивніші зверху.
+router.get('/analytics/placed-by', asyncHandler(async (req, res) => {
+  const rows = await db.order.groupBy({ by: ['placedBy'], where: { tenantId: req.tenant.id, ...ORDER_PLACED_WHERE, placedBy: { not: null } }, _count: { _all: true } });
+  res.json({ ok: true, data: rows.filter((r) => String(r.placedBy || '').trim()).map((r) => ({ name: r.placedBy, orders: r._count._all })).sort((a, b) => b.orders - a.orders) });
+}));
 
 // ── §6.1 Топ товарів за продажами ────────────────────────────────────────
 router.get('/analytics/top-products', asyncHandler(async (req, res) => {
   const { from, to, includeUpsells } = req.query;
   const items = await db.orderItem.findMany({
     where: {
-      order: { tenantId: req.tenant.id, ...placedWhere(from, to), ...REAL_SALE_ORDER_WHERE },
+      order: { tenantId: req.tenant.id, ...placedWhere(from, to, req.query.placedBy), ...REAL_SALE_ORDER_WHERE },
       ...(includeUpsells === 'true' ? {} : { isUpsell: false }),
     },
     include: { product: { select: { id: true, name: true, sku: true } } },
@@ -66,7 +74,7 @@ router.get('/analytics/ads-conversion', asyncHandler(async (req, res) => {
   // з 9 з'єднань): пул вичерпувався, сторінка «Аналітика» падала й тягнула за собою весь CRM (тайм-аути в інших запитах).
   // Тепер — по одному агрегованому запиту на показник для всіх оголошень, далі зводимо в памʼяті. Результат той самий.
   const tenantAds = { tenantId: req.tenant.id };
-  const orderWhere = { tenantId: req.tenant.id, ...placedWhere(from, to), ...REAL_SALE_ORDER_WHERE };
+  const orderWhere = { tenantId: req.tenant.id, ...placedWhere(from, to, req.query.placedBy), ...REAL_SALE_ORDER_WHERE };
   const [clickRows, spendRows, firstRows, lastRows, revenueOrders] = await Promise.all([
     // «Кліки» (наші) = розмови, які почались із цієї реклами (картки воронки з firstTouchAdId). Раніше — порожня таблиця AdClick.
     db.order.groupBy({ by: ['firstTouchAdId'], where: { tenantId: req.tenant.id, ...periodWhere(from, to), ...LEAD_WHERE, firstTouchAdId: { not: null } }, _count: { _all: true } }).then((rows) => rows.map((r) => ({ adId: r.firstTouchAdId, _count: r._count }))),
@@ -135,7 +143,7 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
     where: { tenantId: req.tenant.id },
     include: {
       productExpense: true,
-      orderItems: { where: { order: { ...REAL_SALE_ORDER_WHERE, ...placedWhere(from, to) } }, include: { order: { select: { isRefused: true, createdAt: true, placedAt: true } } } },
+      orderItems: { where: { order: { ...REAL_SALE_ORDER_WHERE, ...placedWhere(from, to, req.query.placedBy) } }, include: { order: { select: { isRefused: true, createdAt: true, placedAt: true } } } },
     },
   });
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
@@ -160,7 +168,7 @@ router.get('/analytics/margin', asyncHandler(async (req, res) => {
   });
   const rows = data.filter((r) => r.qty > 0).sort((a, b) => b.margin - a.margin);
   // Позиції без товару й реклама без товару — окремим рядком, щоб Σ по товарах збігалась із «Щоденною» (аудит 09.11).
-  const un = await unlinkedRow(req.tenant.id, { placedWhereObj: placedWhere(from, to), adRange: fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : null, usdRate, expenseByProduct, adSpendByProduct });
+  const un = await unlinkedRow(req.tenant.id, { placedWhereObj: placedWhere(from, to, req.query.placedBy), adRange: fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : null, usdRate, expenseByProduct, adSpendByProduct });
   if (un) rows.push(un);
   res.json({ ok: true, data: rows });
 }));
@@ -174,7 +182,7 @@ router.get('/analytics/managers', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const expenseByProduct = await loadExpenseMap(req.tenant.id);
   const orders = await db.order.findMany({
-    where: { tenantId: req.tenant.id, ...ORDER_PLACED_WHERE, ...placedWhere(from, to) },
+    where: { tenantId: req.tenant.id, ...ORDER_PLACED_WHERE, ...placedWhere(from, to, req.query.placedBy) },
     select: { placedBy: true, isRefused: true, placedAt: true, createdAt: true, returns: { select: { id: true } }, items: { select: { productId: true, price: true, quantity: true, components: true } } },
   });
   const rows = new Map();
@@ -205,7 +213,7 @@ router.get('/analytics/managers', asyncHandler(async (req, res) => {
 router.get('/analytics/upsells', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const orders = await db.order.findMany({
-    where: { tenantId: req.tenant.id, ...placedWhere(from, to), ...REAL_SALE_ORDER_WHERE },
+    where: { tenantId: req.tenant.id, ...placedWhere(from, to, req.query.placedBy), ...REAL_SALE_ORDER_WHERE },
     include: { items: { include: { product: { select: { id: true, name: true } } } } },
   });
 
@@ -245,7 +253,7 @@ router.get('/analytics/upsells', asyncHandler(async (req, res) => {
 router.get('/analytics/time-to-purchase', asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const orders = await db.order.findMany({
-    where: { tenantId: req.tenant.id, firstTouchAt: { not: null }, ...placedWhere(from, to), ...REAL_SALE_ORDER_WHERE },
+    where: { tenantId: req.tenant.id, firstTouchAt: { not: null }, ...placedWhere(from, to, req.query.placedBy), ...REAL_SALE_ORDER_WHERE },
     select: { id: true, createdAt: true, placedAt: true, firstTouchAt: true, firstTouchAdId: true, items: { select: { productId: true }, take: 1 } },
   });
   const diffsMinutes = orders.map((o) => (placedAtOf(o).getTime() - o.firstTouchAt.getTime()) / 60000);
@@ -276,7 +284,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     // Усі записи до кінця періоду, а не лише всередині: курс і витрати «переходять» на наступні дні, тож потрібне останнє значення ДО початку.
     db.dayForecast.findMany({ where: { tenantId: tenant.id, ...(to ? { date: { lte: dayRange(from, to).lte } } : {}) }, orderBy: { date: 'asc' } }),
     db.order.findMany({
-      where: { tenantId: tenant.id, ...placedWhere(from, to), ...ORDER_PLACED_WHERE },
+      where: { tenantId: tenant.id, ...placedWhere(from, to, req.query.placedBy), ...ORDER_PLACED_WHERE },
       include: { items: true, buyer: { select: { id: true } }, returns: { select: { id: true } } },
     }),
     db.adSpendDaily.findMany({ where: { ad: { tenantId: tenant.id }, ...(from || to ? { date: dayRange(from, to) } : {}) } }),
@@ -295,7 +303,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   function bucket(key) {
     if (!days.has(key)) {
       days.set(key, {
-        date: key, ordersCount: 0, refusedCount: 0, marginNonRefusedTotal: 0,
+        date: key, ordersCount: 0, refusedCount: 0, marginNonRefusedTotal: 0, managerPay: 0,
         qtySold: 0, qtyRepeat: 0, newBuyerOrders: 0,
       });
     }
@@ -317,7 +325,10 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 
     let orderMargin = 0;
     for (const item of order.items) {
-      orderMargin += marginPerOrderItem(item, expenseByProduct, order.isRefused, at);
+      const itemMargin = marginPerOrderItem(item, expenseByProduct, order.isRefused, at);
+      orderMargin += itemMargin;
+      // ЗП менеджера за позицію = націнка мінус маржа після ЗП (Edits 1a01e6dd: менеджери рахують заробіток як 10% від націнки)
+      if (isRealSale) b.managerPay += Number(item.price) * item.quantity - itemUnit(item, expenseByProduct, at).cogs * item.quantity - itemMargin;
       // «Товарів, к-сть» = усі штуки (з допродажами; комплект — за його складом), «Замовлень» — окремим рядком.
       const pieces = itemPieces(item, expenseByProduct);
       if (isRealSale) b.qtySold += pieces;
@@ -385,11 +396,15 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     const avgGoodMargin = goodOrders > 0 ? d.marginNonRefusedTotal / goodOrders : 0;
     const pendingLoss = Math.max(0, (fRefusal / 100) * d.ordersCount - d.refusedCount) + Math.max(0, (fReturn / 100) * d.ordersCount - (d.returnOrders || 0));
     const marginForecast = Math.max(0, d.marginNonRefusedTotal - avgGoodMargin * pendingLoss);
+    const avgGoodPay = goodOrders > 0 ? d.managerPay / goodOrders : 0;
+    const managerPayForecast = Math.max(0, d.managerPay - avgGoodPay * pendingLoss); // як і маржа: мінус очікувані відмови/повернення
     const aiCost = (d.aiCostUsd || 0) * (dayRate || 0); // токени ШІ-бота, грн
     const profitExpected = marginForecast - adSpend - fixedCosts - payrollCosts - aiCost;
     const profitNoPayroll = marginForecast - adSpend - fixedCosts - aiCost;
     return {
       marginTotalForecast: marginForecast,
+      managerPay: d.managerPay,
+      managerPayForecast,
       roiForecast: adSpend > 0 ? marginForecast / adSpend : null,
       forecastRefusalPct: fRefusal,
       forecastReturnPct: fReturn,
@@ -489,7 +504,7 @@ router.get('/analytics/product-daily', asyncHandler(async (req, res) => {
   const [ads, orders] = await Promise.all([
     db.ad.findMany({ where: { tenantId: tenant.id, productId: String(productId) } }),
     db.order.findMany({
-      where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...placedWhere(from, to), ...ORDER_PLACED_WHERE },
+      where: { tenantId: tenant.id, items: { some: { productId: String(productId) } }, ...placedWhere(from, to, req.query.placedBy), ...ORDER_PLACED_WHERE },
       include: { items: { where: { productId: String(productId) } }, returns: { select: { id: true } } },
     }),
   ]);

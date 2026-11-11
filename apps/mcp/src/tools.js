@@ -103,8 +103,8 @@ const TOOLS = [
   // ── Pipeline / Stage §4.7 ────────────────────────────────────────────
   { name: 'list_pipelines', description: 'Воронки (pipeline) зі стадіями tenant.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
   { name: 'create_pipeline', description: 'Створити воронку зі стадіями.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, name: { type: 'string' }, stageNames: { type: 'array', items: { type: 'string' } } }, required: ['tenantId', 'name'] } },
-  { name: 'create_stage', description: 'Додати стадію в кінець воронки.', inputSchema: { type: 'object', properties: { pipelineId: { type: 'string' }, name: { type: 'string' } }, required: ['pipelineId', 'name'] } },
-  { name: 'update_stage', description: 'Перейменувати/переставити стадію.', inputSchema: { type: 'object', properties: { stageId: { type: 'string' }, name: { type: 'string' }, order: { type: 'number' } }, required: ['stageId'] } },
+  { name: 'create_stage', description: 'Додати стадію в кінець воронки.', inputSchema: { type: 'object', properties: { pipelineId: { type: 'string' }, name: { type: 'string' }, countsAsOrder: { type: 'boolean', description: 'false — рання стадія розмови: картка тут ще не вважається замовленням у звітах' } }, required: ['pipelineId', 'name'] } },
+  { name: 'update_stage', description: 'Перейменувати/переставити стадію; countsAsOrder=false — ранні стадії розмови, картка тут ще не замовлення в звітах.', inputSchema: { type: 'object', properties: { stageId: { type: 'string' }, name: { type: 'string' }, order: { type: 'number' }, countsAsOrder: { type: 'boolean' } }, required: ['stageId'] } },
   { name: 'delete_stage', description: 'Видалити стадію (лише якщо немає замовлень на ній).', inputSchema: { type: 'object', properties: { stageId: { type: 'string' } }, required: ['stageId'] } },
 
   // ── Order §4.8 — ручна робота із замовленням (2026-10-18) ───────────
@@ -295,12 +295,13 @@ async function callTool(name, args = {}) {
       });
     case 'create_stage': {
       const max = await db.stage.aggregate({ where: { pipelineId: args.pipelineId }, _max: { order: true } });
-      return db.stage.create({ data: { pipelineId: args.pipelineId, name: args.name, order: (max._max.order ?? -1) + 1 } });
+      return db.stage.create({ data: { pipelineId: args.pipelineId, name: args.name, order: (max._max.order ?? -1) + 1, ...(args.countsAsOrder !== undefined ? { countsAsOrder: !!args.countsAsOrder } : {}) } });
     }
     case 'update_stage': {
       const data = {};
       if (args.name !== undefined) data.name = args.name;
       if (args.order !== undefined) data.order = Number(args.order);
+      if (args.countsAsOrder !== undefined) data.countsAsOrder = !!args.countsAsOrder;
       return db.stage.update({ where: { id: args.stageId }, data });
     }
     case 'delete_stage': {

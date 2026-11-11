@@ -174,6 +174,7 @@ export const api = {
   analyticsManagers: (params = {}) => get(`/analytics/managers?${new URLSearchParams(params)}`),
   analyticsUpsells: (params = {}) => get(`/analytics/upsells?${new URLSearchParams(params)}`),
   analyticsTimeToPurchase: (params = {}) => get(`/analytics/time-to-purchase?${new URLSearchParams(params)}`),
+  analyticsPlacedBy: () => get('/analytics/placed-by'),
   analyticsDaily: (params = {}) => get(`/analytics/daily?${new URLSearchParams(params)}`),
   setDayForecast: (data) => req('PUT', '/analytics/daily-forecast', data),
   analyticsProductDaily: (params = {}) => get(`/analytics/product-daily?${new URLSearchParams(params)}`),

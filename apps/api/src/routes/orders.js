@@ -7,7 +7,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
 const { igOrNull, igSearchTerm, normalizeInstagram } = require('../lib/instagram');
-const { itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList, shippedStagePatch, applyBuyerEdit, deleteOrder, restoreOrder } = require('../lib/orderOps');
+const { itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList, shippedStagePatch, applyBuyerEdit, deleteOrder, restoreOrder, acceptancePatch } = require('../lib/orderOps');
 const { syncTtnStatuses } = require('../lib/novaPoshta');
 const { buildXlsx } = require('../lib/xlsx');
 const logger = require('@crm/logger');
@@ -380,12 +380,15 @@ router.patch('/orders/:id', asyncHandler(async (req, res) => {
   const ttnList = b.ttn !== undefined ? parseTtnList(b.ttn) : null;
   const stagePatch = ttnList && b.stageId === undefined ? await shippedStagePatch(req.tenant.id, existing, existing.ttn, ttnList) : {};
   const buyerPatch = b.buyer !== undefined ? await applyBuyerEdit(req.tenant.id, existing, b.buyer) : {};
+  // Перехід з ранньої стадії на стадію-замовлення (Stage.countsAsOrder) — це й є оформлення: дата оформлення = цей момент.
+  const acceptPatch = await acceptancePatch(existing.stageId, b.stageId !== undefined ? b.stageId : stagePatch.stageId, existing.buyerId || buyerPatch.buyerId);
   const order = await db.order.update({
     where: { id: existing.id },
     data: {
       ...payFields,
       ...stagePatch,
       ...buyerPatch,
+      ...acceptPatch,
       ...(b.contactName !== undefined ? { contactName: b.contactName ? String(b.contactName) : null } : {}),
       ...(b.contactIg !== undefined ? { contactIg: igOrNull(b.contactIg) } : {}),
       ...(b.stageId !== undefined ? { stageId: b.stageId } : {}),

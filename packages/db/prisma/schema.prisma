@@ -435,6 +435,9 @@ model Stage {
   pipeline   Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
   name       String
   order      Int      @default(0)
+  // 2026-11-11 (Олексій: «замовлень 15, а має бути 14»): чи вважати картку на цій стадії замовленням у звітах. false — ранні стадії
+  // розмови (презентація, чекаємо дані й оплату): картка вже має покупця, але замовленням стає лише на стадії «Замовлення прийняте» й далі.
+  countsAsOrder Boolean @default(true)
 
   orders Order[]
 

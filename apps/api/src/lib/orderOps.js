@@ -175,7 +175,34 @@ async function restoreOrder(tenantId, orderId) {
   return { id: order.id, deleted: false };
 }
 
+// ── Стадії-«замовлення» (2026-11-11) ─────────────────────────────────────────────────────────────────────────────────
+// Картка з покупцем на ранній стадії (Stage.countsAsOrder=false) ще не замовлення. Коли вона вперше потрапляє на стадію-замовлення
+// (прийняте / оформлене в постачальника), дата оформлення (placedAt) стає моментом цього переходу — так «замовлень за сьогодні»
+// не змінюється заднім числом і збігається з тим, що менеджер бачить на дошці.
+async function acceptancePatch(prevStageId, nextStageId, buyerId) {
+  if (!buyerId || !nextStageId || prevStageId === nextStageId) return {};
+  const ids = [prevStageId, nextStageId].filter(Boolean);
+  const st = await db.stage.findMany({ where: { id: { in: ids } }, select: { id: true, countsAsOrder: true } });
+  const prev = st.find((x) => x.id === prevStageId); const next = st.find((x) => x.id === nextStageId);
+  return prev && next && prev.countsAsOrder === false && next.countsAsOrder !== false ? { placedAt: new Date() } : {};
+}
+
+const PAID_STATUS_RE = /^(success|paid|ok|completed|confirmed)$/i;
+
+/** Оплата прийшла, а картка ще на ранній стадії («Очікуємо дані та оплату») → переносимо на першу стадію-замовлення тієї ж воронки.
+ *  Повертає стадію, на яку перенесли, або null. */
+async function moveToAcceptedOnPayment(order, payment) {
+  if (!order || !order.buyerId || order.deletedAt || !(Number(payment && payment.amount) > 0) || !PAID_STATUS_RE.test(String((payment && payment.status) || 'success'))) return null;
+  const cur = order.stageId ? await db.stage.findUnique({ where: { id: order.stageId }, select: { id: true, pipelineId: true, countsAsOrder: true } }) : null;
+  if (!cur || cur.countsAsOrder !== false) return null;
+  const target = await db.stage.findFirst({ where: { pipelineId: cur.pipelineId, countsAsOrder: true }, orderBy: { order: 'asc' } });
+  if (!target) return null;
+  await db.order.update({ where: { id: order.id }, data: { stageId: target.id, placedAt: new Date() } });
+  return target;
+}
+
 module.exports = {
+  acceptancePatch, moveToAcceptedOnPayment,
   PAYMENT_TYPES, PAYMENT_TYPE_LABEL, DEFAULT_PREPAYMENT,
   itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList,
   findStage, shippedStagePatch, applyBuyerEdit, deleteOrder, restoreOrder,

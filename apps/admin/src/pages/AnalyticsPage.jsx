@@ -3,6 +3,7 @@
 // що працює в рекламі), найдетальніше (допродажі, час до покупки) — внизу, воно вже
 // не для щоденного погляду, а для рідкісного глибокого аналізу.
 import { useEffect, useState } from 'react';
+import ManagerFilter from '../components/common/ManagerFilter';
 import { api } from '../api/client';
 import { PageHeader, Input, Card, ErrorBanner, KpiCard, DonutChart, HorizontalBarList, ComboTrendChart, money, kyivDateStr } from '../components/common/Common';
 
@@ -45,14 +46,16 @@ function deltaPct(cur, prev) {
 export default function AnalyticsPage() {
   const [range, setRange] = useState(periodPreset('month'));
   const [includeUpsells, setIncludeUpsells] = useState(false);
+  const [manager, setManager] = useState(''); // фільтр «хто оформив»
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
   async function load() {
     setError('');
     try {
-      const params = { from: range.from, to: range.to };
-      const prevRange = previousPeriod(range);
+      const by = manager ? { placedBy: manager } : {};
+      const params = { from: range.from, to: range.to, ...by };
+      const prevRange = { ...previousPeriod(range), ...by };
       // Плитка «Виручка» — уся виручка (з допродажами), як і маржа поруч; галочка «включно з допродажами» стосується лише таблиці товарів (аудит 09.11:
       // без допродажів виручка була на 4,5% менша за ту, з якої рахується маржа).
       const [top, prevTop, ads, margin, upsells, ttp, daily, prevDaily, managers, topAll, prevTopAll] = await Promise.all([
@@ -92,7 +95,7 @@ export default function AnalyticsPage() {
       });
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [range.from, range.to, includeUpsells]);
+  useEffect(() => { load(); }, [range.from, range.to, includeUpsells, manager]);
 
   return (
     <div>
@@ -111,7 +114,9 @@ export default function AnalyticsPage() {
         <label className="ml-2 flex items-center gap-1.5 text-xs text-slate-400">
           <input type="checkbox" checked={includeUpsells} onChange={(e) => setIncludeUpsells(e.target.checked)} /> включно з допродажами
         </label>
+        <div className="ml-2"><ManagerFilter value={manager} onChange={setManager} /></div>
       </div>
+      {manager && <p className="-mt-3 mb-4 text-xs text-amber-300/80">Показано лише замовлення менеджера «{manager}». Рекламний бюджет і постійні витрати по менеджерах не ділимо: вони лишаються загальними.</p>}
 
       {!data ? null : (
         <div className="space-y-5">

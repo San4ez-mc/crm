@@ -4,6 +4,7 @@ const express = require('express');
 const { db } = require('@crm/db');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError } = require('@crm/errors');
+const { moveToAcceptedOnPayment } = require('../lib/orderOps');
 
 const router = express.Router();
 
@@ -24,7 +25,9 @@ router.post('/payments', asyncHandler(async (req, res) => {
   const order = await db.order.findFirst({ where: { id: orderId, tenantId: req.tenant.id } });
   if (!order) throw new NotFoundError('Order', orderId);
   const payment = await db.payment.create({ data: { tenantId: req.tenant.id, orderId, amount, method: method || null, status: status || 'success' } });
-  res.status(201).json({ ok: true, data: payment });
+  // Оплата є, а картка ще «Очікуємо дані та оплату» → «Замовлення прийняте» (Edits cbca1621, 09.11: клієнтка оплатила, а в CRM стадія не змінилась).
+  const movedTo = await moveToAcceptedOnPayment(order, payment).catch(() => null);
+  res.status(201).json({ ok: true, data: payment, ...(movedTo ? { movedToStage: movedTo.name } : {}) });
 }));
 
 module.exports = router;

@@ -16,6 +16,9 @@ const DEFAULT_STAGES = [
   'Відправлено', 'Посилка зберігається на пошті', 'Не забрав на пошті', 'Клієнт забрав на пошті', 'Повернення/обмін',
 ];
 
+// Перші три стадії — розмова, ще не замовлення (Stage.countsAsOrder=false): замовленням у звітах стає «Замовлення прийняте».
+const EARLY_STAGES = 3;
+
 const publicBase = () => String(process.env.CRM_PUBLIC_URL || process.env.ADMIN_BASE_URL || 'https://pcrm.fineko.space').replace(/\/$/, '');
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -63,7 +66,7 @@ async function provisionCompany(payment) {
       prepaymentAmount: 200, expectedRefusalPct: 23, forecastRefusalPct: 20, forecastReturnPct: 3,
       publicKey: 'pk_' + crypto.randomUUID().replace(/-/g, ''),
       shopDescription: `Магазин «${payment.companyName || ''}» (тариф ${plan ? plan.name : payment.plan})`,
-      pipelines: { create: { name: 'Замовлення', stages: { create: DEFAULT_STAGES.map((name, i) => ({ name, order: i + 1 })) } } },
+      pipelines: { create: { name: 'Замовлення', stages: { create: DEFAULT_STAGES.map((name, i) => ({ name, order: i + 1, countsAsOrder: i >= EARLY_STAGES })) } } },
     },
   });
   await db.billingPayment.update({ where: { id: payment.id }, data: { newTenantId: company.id } });

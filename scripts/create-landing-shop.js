@@ -34,7 +34,7 @@ const NAME = arg('--name', 'goverla_landing');
   });
   const hasPipe = await db.pipeline.count({ where: { tenantId: tenant.id } });
   if (!hasPipe) {
-    await db.pipeline.create({ data: { tenantId: tenant.id, name: pipe.name, stages: { create: pipe.stages.map((s) => ({ name: s.name, order: s.order })) } } });
+    await db.pipeline.create({ data: { tenantId: tenant.id, name: pipe.name, stages: { create: pipe.stages.map((s) => ({ name: s.name, order: s.order, countsAsOrder: s.countsAsOrder })) } } });
     console.log('Воронку скопійовано');
   }
   const key = tenant.publicKey || 'pk_' + crypto.randomUUID().replace(/-/g, '');

@@ -139,7 +139,7 @@ const REMOVED_STAGES = ['Не відписали протягом доби', 'С
   const tid = tenant.id;
 
   let pipeline = await db.pipeline.findFirst({ where: { tenantId: tid }, include: { stages: true } });
-  if (!pipeline) pipeline = await db.pipeline.create({ data: { tenantId: tid, name: pipe.name, stages: { create: pipe.stages.filter((s) => !REMOVED_STAGES.includes(s.name)).map((s) => ({ name: s.name, order: s.order })) } }, include: { stages: true } });
+  if (!pipeline) pipeline = await db.pipeline.create({ data: { tenantId: tid, name: pipe.name, stages: { create: pipe.stages.filter((s) => !REMOVED_STAGES.includes(s.name)).map((s) => ({ name: s.name, order: s.order, countsAsOrder: s.countsAsOrder })) } }, include: { stages: true } });
   // Демо-магазин: прапорець isDemo (оплата з нього створює нову компанію) і тариф 3 без дати закінчення — і для вже створеного раніше.
   await db.tenant.update({ where: { id: tid }, data: { isDemo: true, plan: 'ai', planEndsAt: null } });
   const stageByName = Object.fromEntries(pipeline.stages.map((s) => [s.name, s]));

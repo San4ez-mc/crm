@@ -4,6 +4,7 @@
 // (назви показників) приклеєна (`sticky left-0`) — лишається видимою при горизонтальному скролі
 // вправо по днях.
 import { useEffect, useState } from 'react';
+import ManagerFilter from '../components/common/ManagerFilter';
 import { api } from '../api/client';
 import { PageHeader, Card, Input, Select, ErrorBanner, TrendChart, money, formatDate, kyivDateStr } from '../components/common/Common';
 import { useCurrency, CurrencyToggle } from '../components/common/Currency';
@@ -126,6 +127,7 @@ const SUMMARY_ROWS = [
   { label: 'Конверсія у продаж, %', get: (d) => pct(d.conversionToSale !== null ? d.conversionToSale * 100 : null) },
   { label: 'Маржинальний прибуток всього, грн', money: true, val: (d) => d.marginTotal, sep: true },
   { label: 'Маржинальний прибуток всього із прогнозованими відмовами, грн', money: true, val: (d) => d.marginTotalForecast, highlight: true },
+  { label: 'ЗП менеджерів за %, грн (орієнтовно, із прогнозом відмов)', money: true, val: (d) => d.managerPayForecast },
   { label: 'Рекламний бюджет, грн', money: true, val: (d) => d.adSpend },
   { label: 'Рекламний бюджет, $ (як з Meta)', get: (d) => (d.adSpendUsd === null ? '—' : `$${fmt(d.adSpendUsd)}`) },
   { label: 'Нові контакти в повідомленнях', get: (d) => d.newMessages },
@@ -177,6 +179,7 @@ export default function DailyAnalyticsPage() {
   const [productId, setProductId] = useState('');
   const [productDaily, setProductDaily] = useState(null);
   const [error, setError] = useState('');
+  const [manager, setManager] = useState(''); // фільтр «хто оформив»
   const [cur, setCur] = useCurrency(); // грн/$ (Edits 06.11: «додати перемикач гривні-долари»); вибір пам'ятається в браузері
 
   useEffect(() => { api.listProducts().then((r) => setProducts(r.data)).catch(() => {}); }, []);
@@ -184,12 +187,12 @@ export default function DailyAnalyticsPage() {
   const load = () => {
     setError('');
     if (tab === 'summary') {
-      api.analyticsDaily(range).then((r) => setSummary(r.data)).catch((e) => setError(e.message));
+      api.analyticsDaily({ ...range, ...(manager ? { placedBy: manager } : {}) }).then((r) => setSummary(r.data)).catch((e) => setError(e.message));
     } else if (productId) {
-      api.analyticsProductDaily({ ...range, productId }).then((r) => setProductDaily(r.data)).catch((e) => setError(e.message));
+      api.analyticsProductDaily({ ...range, productId, ...(manager ? { placedBy: manager } : {}) }).then((r) => setProductDaily(r.data)).catch((e) => setError(e.message));
     }
   };
-  useEffect(load, [tab, range.from, range.to, productId]);
+  useEffect(load, [tab, range.from, range.to, productId, manager]);
 
   const summaryDays = (summary || []).slice().reverse(); // новий день — лівіша колонка
   const productDays = (productDaily || []).slice().reverse();
@@ -220,6 +223,7 @@ export default function DailyAnalyticsPage() {
         <Input type="date" className="!w-auto" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
         <span className="text-slate-500">—</span>
         <Input type="date" className="!w-auto" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+        <div className="ml-2"><ManagerFilter value={manager} onChange={setManager} /></div>
         {tab === 'product' && (
           <Select className="max-w-xs" value={productId} onChange={(e) => setProductId(e.target.value)}>
             <option value="">— оберіть товар —</option>

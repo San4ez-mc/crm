@@ -9,6 +9,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError } = require('@crm/errors');
 const { parseFrom, parseTo } = require('../lib/dateRange');
 const { touchFields } = require('../lib/adAttribution');
+const { acceptancePatch } = require('../lib/orderOps');
 
 const router = express.Router();
 
@@ -35,7 +36,9 @@ async function upsertFunnelCard(tenantId, { sessionId, stageName, funnelSlug, ig
   if (!existing) {
     return db.order.create({ data: { tenantId, funnelSessionId: String(sessionId), stageId: stage ? stage.id : undefined, sourceName: 'Instagram' + (funnelSlug ? ' ' + String(funnelSlug) : ''), lastClientAt: at, ...contact, ...touch, ...(item ? { items: { create: [item] } } : {}) } });
   }
-  return db.order.update({ where: { id: existing.id }, data: { ...(stage ? { stageId: stage.id } : {}), lastClientAt: at, ...contact, ...touch, ...(item && !existing.items.length ? { items: { create: [item] } } : {}) } });
+  // Картка з покупцем перейшла з ранньої стадії на стадію-замовлення — дата оформлення = цей момент (lib/orderOps acceptancePatch).
+  const accept = stage ? await acceptancePatch(existing.stageId, stage.id, existing.buyerId) : {};
+  return db.order.update({ where: { id: existing.id }, data: { ...(stage ? { stageId: stage.id } : {}), ...accept, lastClientAt: at, ...contact, ...touch, ...(item && !existing.items.length ? { items: { create: [item] } } : {}) } });
 }
 
 router.post('/funnel-events', asyncHandler(async (req, res) => {

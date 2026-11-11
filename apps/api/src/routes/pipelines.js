@@ -51,20 +51,20 @@ router.patch('/pipelines/:id', asyncHandler(async (req, res) => {
 router.post('/pipelines/:pipelineId/stages', asyncHandler(async (req, res) => {
   const pipeline = await db.pipeline.findFirst({ where: { id: req.params.pipelineId, tenantId: req.tenant.id } });
   if (!pipeline) throw new NotFoundError('Pipeline', req.params.pipelineId);
-  const { name } = req.body || {};
+  const { name, countsAsOrder } = req.body || {};
   if (!name || !String(name).trim()) throw new ValidationError('name обовʼязкове');
   const maxOrder = await db.stage.aggregate({ where: { pipelineId: pipeline.id }, _max: { order: true } });
-  const stage = await db.stage.create({ data: { pipelineId: pipeline.id, name: String(name).trim(), order: (maxOrder._max.order ?? -1) + 1 } });
+  const stage = await db.stage.create({ data: { pipelineId: pipeline.id, name: String(name).trim(), order: (maxOrder._max.order ?? -1) + 1, ...(countsAsOrder !== undefined ? { countsAsOrder: !!countsAsOrder } : {}) } });
   res.status(201).json({ ok: true, data: stage });
 }));
 
 router.patch('/stages/:id', asyncHandler(async (req, res) => {
   const existing = await db.stage.findFirst({ where: { id: req.params.id, pipeline: { tenantId: req.tenant.id } } });
   if (!existing) throw new NotFoundError('Stage', req.params.id);
-  const { name, order } = req.body || {};
+  const { name, order, countsAsOrder } = req.body || {};
   const stage = await db.stage.update({
     where: { id: existing.id },
-    data: { ...(name !== undefined ? { name: String(name).trim() } : {}), ...(order !== undefined ? { order: Number(order) } : {}) },
+    data: { ...(name !== undefined ? { name: String(name).trim() } : {}), ...(order !== undefined ? { order: Number(order) } : {}), ...(countsAsOrder !== undefined ? { countsAsOrder: !!countsAsOrder } : {}) },
   });
   res.json({ ok: true, data: stage });
 }));
