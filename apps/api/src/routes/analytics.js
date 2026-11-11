@@ -376,6 +376,24 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   const defReturn = tenant.forecastReturnPct != null ? Number(tenant.forecastReturnPct) : DEFAULT_FORECAST_RETURN;
   const forecastByDay = new Map(forecastRows.map((f) => [f.date.toISOString().slice(0, 10), f]));
 
+  // Власні показники з ручним введенням (Edits bb8fe39f): значення дня або останнє задане раніше (як курс і постійні витрати).
+  const customRowIds = tenant.dailyLayout && Array.isArray(tenant.dailyLayout.rows) ? tenant.dailyLayout.rows.filter((r) => r.custom && r.custom.type === 'manual').map((r) => r.id) : [];
+  const customByRow = new Map();
+  if (customRowIds.length) {
+    const toDay = to ? new Date(String(to).slice(0, 10) + 'T00:00:00Z') : null;
+    const cv = await db.dayCustomValue.findMany({ where: { tenantId: tenant.id, rowId: { in: customRowIds }, ...(toDay && !Number.isNaN(toDay.getTime()) ? { date: { lte: toDay } } : {}) }, orderBy: { date: 'asc' } });
+    for (const r of cv) { const a = customByRow.get(r.rowId) || []; a.push({ key: r.date.toISOString().slice(0, 10), value: Number(r.value) }); customByRow.set(r.rowId, a); }
+  }
+  const customFor = (key) => {
+    const out = {};
+    for (const id of customRowIds) {
+      let last = null;
+      for (const x of customByRow.get(id) || []) { if (x.key <= key) last = x; else break; }
+      out[id] = last ? { value: last.value, own: last.key === key } : { value: null, own: false };
+    }
+    return out;
+  };
+
   const data = [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
     const adSpend = d.adSpend || 0; // вже в грн (сконвертовано вище: курс дня — ручний, інакше НБУ)
     const fixedManual = manualFor(date, 'fixedCosts');
@@ -403,6 +421,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     const profitNoPayroll = marginForecast - adSpend - fixedCosts - aiCost;
     return {
       marginTotalForecast: marginForecast,
+      custom: customFor(date),
       managerPay: d.managerPay,
       managerPayForecast,
       roiForecast: adSpend > 0 ? marginForecast / adSpend : null,

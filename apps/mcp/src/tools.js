@@ -69,6 +69,8 @@ const TOOLS = [
   { name: 'update_tenant_shop_profile', description: 'Умови й тип магазину для бота (те саме, що «Налаштування → Загальні → Магазин для бота»): shopDescription — хто ми для ШІ («Instagram-магазин чоловічого одягу»); prepaymentAmount — передоплата за часткової оплати, грн; shippingTerms — терміни відправки словами; expectedRefusalPct — очікувані відмови+повернення, % (звіт реклами «з відмовами», порожньо = 23).', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, shopDescription: { type: 'string' }, prepaymentAmount: { type: 'number' }, shippingTerms: { type: 'string' }, expectedRefusalPct: { type: 'number' } }, required: ['tenantId'] } },
   { name: 'get_catalog_sync', description: 'Синхронізація каталогу магазину: з якого магазину-джерела беруться товари, чи автоматична, коли востаннє й з яким результатом.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string', description: 'магазин-приймач' } }, required: ['tenantId'] } },
   { name: 'update_catalog_sync', description: 'Налаштувати синхронізацію каталогу (джерело → магазин tenantId): sourceTenantId (порожній = вимкнути й видалити налаштування), enabled (автоматично щогодини), syncCosts (переносити ціни постачальника й % менеджера). run:true — виконати синхронізацію одразу, dryRun:true — лише порахувати, що зміниться.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, sourceTenantId: { type: 'string' }, enabled: { type: 'boolean' }, syncCosts: { type: 'boolean' }, run: { type: 'boolean' }, dryRun: { type: 'boolean' } }, required: ['tenantId'] } },
+  { name: 'get_daily_layout', description: 'Розкладка «Щоденної аналітики» магазину: порядок і сховані рядки, власні показники (ручні, формули, з CRM) та збережені шаблони.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' } }, required: ['tenantId'] } },
+  { name: 'update_daily_layout', description: 'Зберегти розкладку «Щоденної аналітики»: layout = { rows: [ {id, hidden?, label?} | {id:"c_…", label, custom:{type:"manual|formula|auto", format:"uah|usd|pct|qty|num", decimals:0-2, formula?, auto?}} ] }; null — стандартна розкладка.', inputSchema: { type: 'object', properties: { tenantId: { type: 'string' }, layout: {} }, required: ['tenantId', 'layout'] } },
   { name: 'new_tenant', description: 'Створити новий магазин (tenant).', inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
 
   // ── Category §4.5 ────────────────────────────────────────────────────
@@ -156,6 +158,18 @@ async function callTool(name, args = {}) {
         : await sync.getConfig(args.tenantId);
       if (cfg && (args.run || args.dryRun)) return { config: cfg, result: await sync.runCatalogSync(args.tenantId, { dryRun: !!args.dryRun && !args.run }) };
       return { config: cfg };
+    }
+    case 'get_daily_layout': {
+      const t = await db.tenant.findUnique({ where: { id: args.tenantId }, select: { dailyLayout: true, dailyTemplates: true } });
+      if (!t) throw new NotFoundError('Tenant', args.tenantId);
+      return { layout: t.dailyLayout || null, templates: Array.isArray(t.dailyTemplates) ? t.dailyTemplates : [] };
+    }
+    case 'update_daily_layout': {
+      const { sanitizeLayout } = require('../../api/src/lib/dailyLayout');
+      const { Prisma } = require('@prisma/client');
+      const layout = sanitizeLayout(args.layout);
+      await db.tenant.update({ where: { id: args.tenantId }, data: { dailyLayout: layout === null ? Prisma.DbNull : layout } });
+      return { layout };
     }
     case 'new_tenant':
       if (!args.name) throw new ValidationError('name обовʼязкове');

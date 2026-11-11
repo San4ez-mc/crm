@@ -51,11 +51,16 @@ model Tenant {
   // 2026-11-09 (Олексій: «хіба % менеджера не однаковий для всіх?»): загальний % ЗП менеджера від НАЦІНКИ; діє для товарів, у яких
   // у «Витрати по товару» не вказано ні свого %, ні фіксу (lib/margin itemUnit). Порожньо — як раніше (0%).
   managerCostPercentDefault Decimal? @db.Decimal(5, 2)
+  // 2026-11-11 (Олексій, Edits bb8fe39f/26d9b146): «Щоденна аналітика» — власні рядки-показники. dailyLayout — порядок, сховані й перейменовані
+  // вбудовані рядки та власні показники з формулами (apps/admin/src/lib/dailyIndicators.js); dailyTemplates — збережені шаблони розкладки [{id,name,layout}].
+  dailyLayout    Json?
+  dailyTemplates Json     @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   billingPayments  BillingPayment[]
   dayForecasts     DayForecast[]
+  dayCustomValues  DayCustomValue[]
   categories       Category[]
   suppliers        Supplier[]
   products         Product[]
@@ -94,6 +99,23 @@ model CatalogSync {
   lastResult     Json? // {created,updated,hidden,errors[],durationMs}
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// 2026-11-11: ручні значення власних показників «Щоденної аналітики» (тип «Ручне введення»), по дню. Як курс і постійні витрати,
+// значення діє й на наступні дні, поки не вписано нове (перенесення робить звіт).
+// ─────────────────────────────────────────────────────────────
+model DayCustomValue {
+  id       String   @id @default(uuid())
+  tenantId String
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rowId    String // id показника в розкладці (c_xxxxxxxx)
+  date     DateTime @db.Date
+  value    Decimal  @db.Decimal(18, 4)
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, rowId, date])
+  @@index([tenantId, rowId])
 }
 
 // ─────────────────────────────────────────────────────────────
