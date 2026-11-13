@@ -37,14 +37,6 @@ const SERVICE_GROUPS = [
     ],
   },
   {
-    title: 'KeyCRM',
-    icon: '🗂️', color: '#F59E0B', logoSlug: null,
-    desc: 'Каталог товарів для воронки (тимчасово — до повного переходу воронки на Fineko CRM).',
-    keys: [
-      { key: 'KEYCRM_API_TOKEN', label: 'API Token', isSecret: true },
-    ],
-  },
-  {
     title: 'Оплата',
     icon: '💳', color: '#2563EB', logoSlug: null,
     // MONO_TOKEN/MONO_ACCOUNT_ID тут більше нема (2026-09-05): токен Monobank — поле активного ФОП вище,

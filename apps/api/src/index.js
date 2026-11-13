@@ -47,7 +47,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"], // React inline style="" атрибути
-      imgSrc: ["'self'", 'data:', 'https:'], // фото товарів — частина лишається на зовнішньому KeyCRM CDN (див. migrate-keycrm.js)
+      imgSrc: ["'self'", 'data:', 'https:'], // фото товарів можуть бути зовнішніми https-посиланнями
       connectSrc: ["'self'"],
       frameAncestors: ["'none'"],
       formAction: ["'self'", 'https://secure.wayforpay.com'], // кнопка «Оплатити» відправляє форму на сторінку оплати WayForPay

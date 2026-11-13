@@ -348,7 +348,7 @@ export function ComboTrendChart({ data, bars = [], line, labelKey = 'date', heig
 
 // Єдине форматування телефону (2026-09-05) — дані приходять у різних виглядах (з/без "+",
 // з/без "38", "0..." замість "380...") залежно від того, звідки взявся Buyer (воронка/ручне
-// створення/KeyCRM-міграція); показуємо всюди однаково: +380 XX XXX XX XX.
+// створення/імпорт); показуємо всюди однаково: +380 XX XXX XX XX.
 export function formatPhone(phone) {
   if (!phone) return '—';
   let digits = String(phone).replace(/\D/g, '');

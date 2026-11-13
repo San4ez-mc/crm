@@ -65,7 +65,7 @@ export default function ProductsPage() {
       {items === null ? null : items.length === 0 ? (
         <EmptyState
           title="Товарів ще немає"
-          action={<div className="flex gap-2"><Button onClick={() => setEditing({})}>+ Товар</Button><Button variant="secondary" disabled title="Скоро">Або імпортувати з KeyCRM</Button></div>}
+          action={<div className="flex gap-2"><Button onClick={() => setEditing({})}>+ Товар</Button></div>}
         />
       ) : (
         <Card>

@@ -10,3 +10,4 @@ public/admin/
 Thumbs.db
 /packages/db/node_modules/.prisma/
 uploads/
+.claude/
