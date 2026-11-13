@@ -3,6 +3,7 @@
 // Відновлення з того, що вже є в нашій CRM: товар → привʼязані оголошення (Ad.productId) → їхні пости Instagram (Ad.postId) →
 // фото поста (для каруселі — усі кадри; для відео — обкладинка). Файли зберігаються у наш /uploads/<tenantId>/.
 //   IG_TOKEN=<токен Instagram акаунта магазину> node scripts/restore-product-photos-2026-11-13.js --tenant=goverla_shop          (перевірка)
+//   … --only=A0187,C0043 — лише ці артикули (для вибіркової перевірки)
 //   IG_TOKEN=… node scripts/restore-product-photos-2026-11-13.js --tenant=goverla_shop --apply                                    (записати)
 // Захист: копія старих списків фото у файл; товар оновлюється лише якщо за час роботи його НЕ змінили (менеджер міг залити нові фото);
 // мертві посилання з Offer.images прибираються (бот тоді йде своїм «фото цього кольору нема», а не падає на завантаженні).
@@ -14,6 +15,8 @@ const { db } = require('../packages/db');
 const APPLY = process.argv.includes('--apply');
 const tenantArg = (process.argv.find((a) => a.startsWith('--tenant=')) || '').slice(9);
 const TOKEN = (process.env.IG_TOKEN || '').trim();
+const onlyArg = (process.argv.find((a) => a.startsWith('--only=')) || '').slice(7);
+const ONLY = onlyArg ? onlyArg.split(',').map((x) => x.trim().toUpperCase()) : null;
 const MAX_PHOTOS = 5;
 const MAX_POSTS = 12;
 const isDead = (u) => /keycrm/i.test(String(u || ''));
@@ -46,11 +49,11 @@ async function download(url) {
         where: { tenantId: tenant.id },
         select: { id: true, sku: true, name: true, images: true, thumbnailUrl: true, updatedAt: true, offers: { select: { id: true, images: true } } },
     });
-    const broken = products.filter((p) => p.images.some(isDead) || p.offers.some((o) => (o.images || []).some(isDead)));
+    const broken = products.filter((p) => (!ONLY || ONLY.includes(String(p.sku).toUpperCase())) && (p.images.some(isDead) || p.offers.some((o) => (o.images || []).some(isDead))));
     console.log('магазин', tenant.name, '| товарів з мертвими фото:', broken.length);
 
     const backup = broken.map((p) => ({ id: p.id, sku: p.sku, images: p.images, thumbnailUrl: p.thumbnailUrl, offers: p.offers.map((o) => ({ id: o.id, images: o.images })) }));
-    if (APPLY) { const bf = path.join(process.env.BACKUP_DIR || '/root', 'product_images_backup_2026-11-13.json'); fs.writeFileSync(bf, JSON.stringify(backup), { mode: 0o600 }); console.log('копія старих фото:', bf); }
+    if (APPLY) { const bf = path.join(process.env.BACKUP_DIR || '/root', 'product_images_backup_2026-11-13' + (ONLY ? '_' + ONLY.join('-') : '') + '.json'); fs.writeFileSync(bf, JSON.stringify(backup), { mode: 0o600 }); console.log('копія старих фото:', bf); }
 
     const summary = [];
     for (const p of broken) {
