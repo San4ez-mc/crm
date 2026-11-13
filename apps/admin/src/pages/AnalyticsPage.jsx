@@ -45,7 +45,6 @@ function deltaPct(cur, prev) {
 
 export default function AnalyticsPage() {
   const [range, setRange] = useState(periodPreset('month'));
-  const [includeUpsells, setIncludeUpsells] = useState(false);
   const [manager, setManager] = useState(''); // фільтр «хто оформив»
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -59,8 +58,9 @@ export default function AnalyticsPage() {
       // Плитка «Виручка» — уся виручка (з допродажами), як і маржа поруч; галочка «включно з допродажами» стосується лише таблиці товарів (аудит 09.11:
       // без допродажів виручка була на 4,5% менша за ту, з якої рахується маржа).
       const [top, prevTop, ads, margin, upsells, ttp, daily, prevDaily, managers, topAll, prevTopAll] = await Promise.all([
-        api.analyticsTopProducts({ ...params, includeUpsells }),
-        api.analyticsTopProducts({ ...prevRange, includeUpsells }),
+        // Таблиця товарів завжди з допродажами: маржа в ній уже рахується з ними, а виручка без допродажів давала «243 грн маржі при 490 грн виручки» (Edits 13.11).
+        api.analyticsTopProducts({ ...params, includeUpsells: true }),
+        api.analyticsTopProducts({ ...prevRange, includeUpsells: true }),
         api.analyticsAdsConversion(params),
         api.analyticsMargin(params),
         api.analyticsUpsells(params),
@@ -95,7 +95,7 @@ export default function AnalyticsPage() {
       });
     } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [range.from, range.to, includeUpsells, manager]);
+  useEffect(() => { load(); }, [range.from, range.to, manager]);
 
   return (
     <div>
@@ -111,9 +111,6 @@ export default function AnalyticsPage() {
         <Input type="date" className="!w-auto" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
         <span className="text-slate-500">—</span>
         <Input type="date" className="!w-auto" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
-        <label className="ml-2 flex items-center gap-1.5 text-xs text-slate-400">
-          <input type="checkbox" checked={includeUpsells} onChange={(e) => setIncludeUpsells(e.target.checked)} /> включно з допродажами
-        </label>
         <div className="ml-2"><ManagerFilter value={manager} onChange={setManager} /></div>
       </div>
       {manager && <p className="-mt-3 mb-4 text-xs text-amber-300/80">Показано лише замовлення менеджера «{manager}». Рекламний бюджет і постійні витрати по менеджерах не ділимо: вони лишаються загальними.</p>}
@@ -124,7 +121,7 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             {/* При наведенні — націнка (виручка мінус ціна постачальника): Edits 08.11, власник просив не виносити її на видне місце. */}
             <KpiCard label="Виручка" value={money(data.kpi.revenue)} delta={deltaPct(data.kpi.revenue, data.kpi.prevRevenue)} deltaGood="up" hint={`Сума націнок за період: ${money(data.kpi.markup)} (виручка мінус ціна постачальника)`} />
-            <KpiCard label="Маржинальний прибуток" value={money(data.kpi.margin)} delta={deltaPct(data.kpi.margin, data.kpi.prevMargin)} deltaGood="up" />
+            <KpiCard label="Маржинальний прибуток (після ЗП менеджерів)" value={money(data.kpi.margin)} delta={deltaPct(data.kpi.margin, data.kpi.prevMargin)} deltaGood="up" />
             <KpiCard label="Рекламний бюджет" value={money(data.kpi.adSpend)} delta={deltaPct(data.kpi.adSpend, data.kpi.prevAdSpend)} deltaGood="neutral" />
             <KpiCard label="Прибуток" value={money(data.kpi.profit)} delta={deltaPct(data.kpi.profit, data.kpi.prevProfit)} deltaGood="up" />
             <KpiCard label="Замовлень" value={data.kpi.orders} delta={deltaPct(data.kpi.orders, data.kpi.prevOrders)} deltaGood="up" />
@@ -168,7 +165,7 @@ export default function AnalyticsPage() {
           <Card className="p-4">
             <h3 className="mb-3 text-sm font-semibold">Товари: виручка і маржинальний прибуток</h3>
             <table className="w-full text-xs">
-              <thead className="text-slate-500"><tr><th className="pb-1 text-left">Товар</th><th className="pb-1 text-right">К-сть</th><th className="pb-1 text-right">Виручка</th><th className="pb-1 text-right">Маржинальний прибуток</th><th className="pb-1 text-right">Маржинальність, %</th></tr></thead>
+              <thead className="text-slate-500"><tr><th className="pb-1 text-left">Товар</th><th className="pb-1 text-right">К-сть</th><th className="pb-1 text-right">Виручка</th><th className="pb-1 text-right" title="Націнка мінус ЗП менеджера (% від націнки) мінус реклама цього товару; усі позиції, включно з допродажами">Маржинальний прибуток (після ЗП менеджера)</th><th className="pb-1 text-right">Маржинальність, %</th></tr></thead>
               <tbody>
                 {data.products.slice(0, 10).map((p) => (
                   <tr key={p.productId || p.name} className="border-t border-slate-800/60">

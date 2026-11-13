@@ -441,6 +441,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
       messagePrice: messages > 0 ? adSpend / messages : null, // CPL
       conversionToSale: messages > 0 ? d.ordersCount / messages : null,
       marginTotal: d.marginNonRefusedTotal,
+      // Та сама маржа, але ДО ЗП менеджерів (за %): націнка всіх реальних продажів. Edits 12–13.11: Олексій звіряє «ціна − дроп» і бачить на 10% менше, бо marginTotal уже без ЗП менеджера.
+      marginBeforeManagerPay: d.marginNonRefusedTotal + d.managerPay,
       adSpend,
       adSpendUsd: d.adSpendUsd || null, // сирі $ з Meta — для звірки з Ads Manager, у розрахунках не бере участі
       newMessages: messages,
