@@ -214,7 +214,7 @@ export default function SettingsGeneralPage() {
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
-  const [finance, setFinance] = useState({ usdExchangeRate: '', dailyFixedCosts: '', dailyPayrollCosts: '', forecastRefusalPct: '', forecastReturnPct: '', managerCostPercentDefault: '' });
+  const [finance, setFinance] = useState({ usdExchangeRate: '', dailyFixedCosts: '', dailyPayrollCosts: '', forecastRefusalPct: '', forecastReturnPct: '', managerCostPercentDefault: '', dailyPayrollPct: '' });
   const [financeSaved, setFinanceSaved] = useState(false);
   const [refreshingRate, setRefreshingRate] = useState(false);
   const [fitRows, setFitRows] = useState([]);
@@ -234,6 +234,7 @@ export default function SettingsGeneralPage() {
         forecastRefusalPct: data.forecastRefusalPct ?? '',
         forecastReturnPct: data.forecastReturnPct ?? '',
         managerCostPercentDefault: data.managerCostPercentDefault ?? '',
+        dailyPayrollPct: data.dailyPayrollPct ?? '',
       });
       setFitRows(fitChartToRows(data.fitChart)); setSizeRules(Array.isArray(data.sizeRules) ? data.sizeRules : []);
       setShop({ shopDescription: data.shopDescription || '', prepaymentAmount: data.prepaymentAmount ?? '', shippingTerms: data.shippingTerms || '' });
@@ -263,6 +264,7 @@ export default function SettingsGeneralPage() {
         forecastRefusalPct: finance.forecastRefusalPct === '' ? null : Number(finance.forecastRefusalPct),
         forecastReturnPct: finance.forecastReturnPct === '' ? null : Number(finance.forecastReturnPct),
         managerCostPercentDefault: finance.managerCostPercentDefault === '' ? null : Number(finance.managerCostPercentDefault),
+        dailyPayrollPct: finance.dailyPayrollPct === '' ? null : Number(finance.dailyPayrollPct),
       });
       setFinanceSaved(true);
     } catch (e) { setError(e.message); }
@@ -404,7 +406,8 @@ export default function SettingsGeneralPage() {
             )}
           </Field>
           <Field label="Постійні витрати за добу, грн"><Input type="number" step="0.01" value={finance.dailyFixedCosts} onChange={(e) => setFinance({ ...finance, dailyFixedCosts: e.target.value })} /></Field>
-          <Field label="Витрати на оплату праці за добу, грн (фіксована ставка; якщо менеджерам платять лише % від націнки, лишіть порожнім, щоб ЗП не рахувалась двічі)"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
+          <Field label="ЗП менеджерів, % від маржі з прогнозованими відмовами (рахується автоматично кожного дня й іде в «Очікуваний прибуток»; порожньо — оплату праці вписуєте вручну)"><Input type="number" step="0.1" min="0" max="99" value={finance.dailyPayrollPct} onChange={(e) => setFinance({ ...finance, dailyPayrollPct: e.target.value })} /></Field>
+          <Field label="Витрати на оплату праці за добу, грн (фіксована ставка; не використовується, якщо вище задано відсоток; якщо менеджерам платять лише % від націнки, лишіть порожнім, щоб ЗП не рахувалась двічі)"><Input type="number" step="0.01" value={finance.dailyPayrollCosts} onChange={(e) => setFinance({ ...finance, dailyPayrollCosts: e.target.value })} /></Field>
           <Field label="Прогноз відмов на пошті, % (за замовчуванням для всіх днів; порожньо = 20)"><Input type="number" step="0.1" min="0" max="99" value={finance.forecastRefusalPct} onChange={(e) => setFinance({ ...finance, forecastRefusalPct: e.target.value })} /></Field>
           <Field label="Прогноз повернень, % (порожньо = 3)"><Input type="number" step="0.1" min="0" max="99" value={finance.forecastReturnPct} onChange={(e) => setFinance({ ...finance, forecastReturnPct: e.target.value })} /></Field>
           <Field label="ЗП менеджера, % від націнки (для товарів, де в «Витрати по товару» не вказано свого %)"><Input type="number" step="0.1" min="0" max="99" value={finance.managerCostPercentDefault} onChange={(e) => setFinance({ ...finance, managerCostPercentDefault: e.target.value })} /></Field>

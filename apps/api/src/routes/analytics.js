@@ -359,6 +359,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     if (spend.currency === 'USD') b.adSpendUsd = (b.adSpendUsd || 0) + Number(spend.amount);
     b.impressions = (b.impressions || 0) + Number(spend.impressions || 0);
     b.platformClicks = (b.platformClicks || 0) + Number(spend.clicks || 0);
+    b.metaConversations = (b.metaConversations || 0) + Number(spend.conversations || 0); // розмови за даними Facebook
   }
   for (const lead of leadRows) {
     const b = bucket(dayKey(lead.createdAt));
@@ -372,6 +373,7 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
 
   const tenantFixed = Number(tenant.dailyFixedCosts || 0);
   const tenantPayroll = Number(tenant.dailyPayrollCosts || 0);
+  const tenantPayrollPct = tenant.dailyPayrollPct != null ? Number(tenant.dailyPayrollPct) : null;
   const defRefusal = tenant.forecastRefusalPct != null ? Number(tenant.forecastRefusalPct) : DEFAULT_FORECAST_REFUSAL;
   const defReturn = tenant.forecastReturnPct != null ? Number(tenant.forecastReturnPct) : DEFAULT_FORECAST_RETURN;
   const forecastByDay = new Map(forecastRows.map((f) => [f.date.toISOString().slice(0, 10), f]));
@@ -399,9 +401,12 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     const fixedManual = manualFor(date, 'fixedCosts');
     const payrollManual = manualFor(date, 'payrollCosts');
     const fixedCosts = fixedManual != null ? fixedManual : tenantFixed;
-    const payrollCosts = payrollManual != null ? payrollManual : tenantPayroll;
+    const payrollHand = payrollManual != null ? payrollManual : tenantPayroll; // вручну вписана оплата праці (якщо не задано автоматичний % — див. нижче)
     const dayRate = rateFor(date);
-    const messages = d.messages || 0;
+    // Розмови: за даними Facebook (як в Ads Manager) — з них ціна розмови й конверсія; картки в CRM (бот показав товар) — окремо, їх завжди менше
+    // (Edits 26.10, 10.11: «розмов в рази більше»). Немає даних Facebook за день (старі дні) — беремо картки.
+    const cardMessages = d.messages || 0;
+    const messages = d.metaConversations > 0 ? d.metaConversations : cardMessages;
     const impressions = d.impressions || 0;
     const platformClicks = d.platformClicks || 0;
     // Прогноз відмов/повернень (Edits 03.11): посилка їде кілька днів, тож свіжі дні показують ~0% відмов і завищений прибуток.
@@ -417,6 +422,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
     const avgGoodPay = goodOrders > 0 ? d.managerPay / goodOrders : 0;
     const managerPayForecast = Math.max(0, d.managerPay - avgGoodPay * pendingLoss); // як і маржа: мінус очікувані відмови/повернення
     const aiCost = (d.aiCostUsd || 0) * (dayRate || 0); // токени ШІ-бота, грн
+    // ЗП менеджерів автоматично: % від маржі з прогнозованими відмовами (Налаштування → Загальні). Задано — ручна цифра не використовується.
+    const payrollCosts = tenantPayrollPct != null ? (marginForecast * tenantPayrollPct) / 100 : payrollHand;
     const profitExpected = marginForecast - adSpend - fixedCosts - payrollCosts - aiCost;
     const profitNoPayroll = marginForecast - adSpend - fixedCosts - aiCost;
     return {
@@ -446,6 +453,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
       adSpend,
       adSpendUsd: d.adSpendUsd || null, // сирі $ з Meta — для звірки з Ads Manager, у розрахунках не бере участі
       newMessages: messages,
+      cardMessages,
+      messagesFromFacebook: d.metaConversations > 0,
       qtySold: d.qtySold,
       qtyRepeat: d.qtyRepeat,
       clicks: platformClicks,
@@ -462,6 +471,8 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
       returnRate: d.ordersCount > 0 ? ((d.returnOrders || 0) / d.ordersCount) * 100 : null,
       dailyFixedCosts: fixedCosts,
       dailyPayrollCosts: payrollCosts,
+      payrollAuto: tenantPayrollPct != null,
+      payrollPct: tenantPayrollPct,
       profitNoPayroll,
       newCustomerCost: d.newBuyerOrders > 0 ? adSpend / d.newBuyerOrders : null,
       cpc: platformClicks > 0 ? adSpend / platformClicks : null,
@@ -474,6 +485,39 @@ router.get('/analytics/daily', asyncHandler(async (req, res) => {
   });
 
   res.json({ ok: true, data });
+}));
+
+// Звірка маржі за день (Edits 10–13.11: Олексій рахує вручну «ціна − дроп» і бачить розбіжність у десятки гривень): ті самі замовлення й ті самі
+// формули, що в «Щоденній аналітиці», але по кожному замовленню окремо — ціна, дроп, націнка, ЗП менеджера, прапорці. Сума «враховано» = «Маржинальний прибуток всього».
+router.get('/analytics/daily-orders', asyncHandler(async (req, res) => {
+  const date = String(req.query.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new ValidationError('date має бути у форматі YYYY-MM-DD');
+  const expenseByProduct = await loadExpenseMap(req.tenant.id);
+  const orders = await db.order.findMany({
+    where: { tenantId: req.tenant.id, ...placedWhere(date, date, req.query.placedBy), ...ORDER_PLACED_WHERE },
+    include: { items: true, buyer: { select: { fullName: true, igUsername: true } }, returns: { select: { id: true } }, stage: { select: { name: true } } },
+    orderBy: { placedAt: 'asc' },
+  });
+  let markupSum = 0, marginSum = 0, countedN = 0, piecesSum = 0;
+  const rows = orders.map((o) => {
+    const at = placedAtOf(o);
+    const real = !o.isRefused && o.returns.length === 0;
+    let revenue = 0, cogs = 0, margin = 0;
+    const items = o.items.map((it) => {
+      const unit = itemUnit(it, expenseByProduct, at);
+      const rev = Number(it.price) * it.quantity;
+      const c = unit.cogs * it.quantity;
+      const m = marginPerOrderItem(it, expenseByProduct, o.isRefused, at);
+      revenue += rev; cogs += c; margin += m;
+      return { name: it.name, qty: it.quantity, price: Number(it.price), cogsUnit: unit.cogs, revenue: rev, markup: rev - c, margin: m, noCogs: !(unit.cogs > 0), pieces: itemPieces(it, expenseByProduct) };
+    });
+    if (real) { countedN += 1; markupSum += revenue - cogs; marginSum += margin; piecesSum += items.reduce((s, i) => s + i.pieces, 0); }
+    return {
+      id: o.id, placedAt: at, buyer: (o.buyer && (o.buyer.fullName || o.buyer.igUsername)) || o.contactName || o.contactIg || null, stage: o.stage ? o.stage.name : null,
+      isRefused: !!o.isRefused, hasReturn: o.returns.length > 0, counted: real, revenue, cogs, markup: revenue - cogs, managerPay: revenue - cogs - margin, margin, items,
+    };
+  });
+  res.json({ ok: true, data: { date, orders: rows, totals: { orders: rows.length, counted: countedN, pieces: piecesSum, markup: markupSum, margin: marginSum, managerPay: markupSum - marginSum } } });
 }));
 
 // Прогноз відмов/повернень на день (клітинка «Щоденної аналітики»): date = YYYY-MM-DD (київська доба); refusalPct/returnPct —

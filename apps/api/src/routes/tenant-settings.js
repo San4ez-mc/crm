@@ -19,7 +19,7 @@ router.get('/tenant', asyncHandler(async (req, res) => {
     data: {
       id: t.id, name: t.name, apiKey: t.apiKey, publicKey: t.publicKey || null, ssoOrgId: t.ssoOrgId, novaPoshtaApiKey: t.novaPoshtaApiKey,
       usdExchangeRate: t.usdExchangeRate, usdExchangeRateUpdatedAt: t.usdExchangeRateUpdatedAt,
-      dailyFixedCosts: t.dailyFixedCosts, dailyPayrollCosts: t.dailyPayrollCosts,
+      dailyFixedCosts: t.dailyFixedCosts, dailyPayrollCosts: t.dailyPayrollCosts, dailyPayrollPct: t.dailyPayrollPct,
       fitChart: t.fitChart || null, sizeRules: Array.isArray(t.sizeRules) ? t.sizeRules : [],
       shopDescription: t.shopDescription || '', prepaymentAmount: t.prepaymentAmount, shippingTerms: t.shippingTerms || '', expectedRefusalPct: t.expectedRefusalPct,
       forecastRefusalPct: t.forecastRefusalPct, forecastReturnPct: t.forecastReturnPct, managerCostPercentDefault: t.managerCostPercentDefault,
@@ -49,8 +49,8 @@ router.get('/tenant/size-fit', asyncHandler(async (req, res) => {
 }));
 
 router.patch('/tenant', asyncHandler(async (req, res) => {
-  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts, fitChart, sizeRules, shopDescription, prepaymentAmount, shippingTerms, expectedRefusalPct, forecastRefusalPct, forecastReturnPct, managerCostPercentDefault } = req.body || {};
-  for (const [v, label] of [[forecastRefusalPct, 'Прогноз відмов'], [forecastReturnPct, 'Прогноз повернень'], [managerCostPercentDefault, 'ЗП менеджера за замовчуванням']]) {
+  const { name, novaPoshtaApiKey, usdExchangeRate, dailyFixedCosts, dailyPayrollCosts, dailyPayrollPct, fitChart, sizeRules, shopDescription, prepaymentAmount, shippingTerms, expectedRefusalPct, forecastRefusalPct, forecastReturnPct, managerCostPercentDefault } = req.body || {};
+  for (const [v, label] of [[forecastRefusalPct, 'Прогноз відмов'], [forecastReturnPct, 'Прогноз повернень'], [managerCostPercentDefault, 'ЗП менеджера за замовчуванням'], [dailyPayrollPct, 'ЗП менеджерів від маржі']]) {
     if (v !== undefined && v !== null && v !== '' && !(Number(v) >= 0 && Number(v) < 100)) throw new ValidationError(label + ' — від 0 до 99 %');
   }
   if (expectedRefusalPct !== undefined && expectedRefusalPct !== null && expectedRefusalPct !== '' && !(Number(expectedRefusalPct) >= 0 && Number(expectedRefusalPct) < 100)) throw new ValidationError('Очікувані відмови — від 0 до 99 %');
@@ -66,6 +66,7 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
       ...(usdExchangeRate !== undefined ? { usdExchangeRate, usdExchangeRateUpdatedAt: new Date() } : {}),
       ...(dailyFixedCosts !== undefined ? { dailyFixedCosts } : {}),
       ...(dailyPayrollCosts !== undefined ? { dailyPayrollCosts } : {}),
+      ...(dailyPayrollPct !== undefined ? { dailyPayrollPct: dailyPayrollPct === null || dailyPayrollPct === '' ? null : Number(dailyPayrollPct) } : {}),
       ...(fitChart !== undefined ? { fitChart: normalizeFitChart(fitChart) } : {}),
       ...(sizeRules !== undefined ? { sizeRules: normalizeSizeRules(sizeRules) } : {}),
       ...(shopDescription !== undefined ? { shopDescription: String(shopDescription || '').trim() || null } : {}),
@@ -83,7 +84,7 @@ router.patch('/tenant', asyncHandler(async (req, res) => {
     data: {
       id: tenant.id, name: tenant.name, novaPoshtaApiKey: tenant.novaPoshtaApiKey,
       usdExchangeRate: tenant.usdExchangeRate, usdExchangeRateUpdatedAt: tenant.usdExchangeRateUpdatedAt,
-      dailyFixedCosts: tenant.dailyFixedCosts, dailyPayrollCosts: tenant.dailyPayrollCosts,
+      dailyFixedCosts: tenant.dailyFixedCosts, dailyPayrollCosts: tenant.dailyPayrollCosts, dailyPayrollPct: tenant.dailyPayrollPct,
       fitChart: tenant.fitChart || null, sizeRules: Array.isArray(tenant.sizeRules) ? tenant.sizeRules : [],
       shopDescription: tenant.shopDescription || '', prepaymentAmount: tenant.prepaymentAmount, shippingTerms: tenant.shippingTerms || '', expectedRefusalPct: tenant.expectedRefusalPct,
       forecastRefusalPct: tenant.forecastRefusalPct, forecastReturnPct: tenant.forecastReturnPct, managerCostPercentDefault: tenant.managerCostPercentDefault,

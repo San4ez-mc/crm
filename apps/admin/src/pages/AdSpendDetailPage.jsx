@@ -247,8 +247,10 @@ export default function AdSpendDetailPage() {
       <Card className="mt-4 p-4">
         <div className="grid grid-cols-2 gap-4 text-center md:grid-cols-4 lg:grid-cols-8">
           {[
-            ['Нові контакти', data.contacts],
-            ['Ціна контакту', data.costPerContact !== null ? m(data.costPerContact) : '—'],
+            ['Розмови (Facebook)', data.metaConversations ?? 0],
+            ['Ціна розмови (Facebook)', data.costPerMetaConversation != null ? m(data.costPerMetaConversation) : '—'],
+            ['Розмови з карткою в CRM', data.contacts],
+            ['Ціна розмови з карткою', data.costPerContact !== null ? m(data.costPerContact) : '—'],
             ['Ціна створеного замовлення', data.cpa !== null ? m(data.cpa) : '—'],
             ['Ціна замовлення без відмови', data.cpaPickedUp !== null ? m(data.cpaPickedUp) : '—'],
             ['Конверсія в замовлення', data.conversionToOrder !== null ? `${data.conversionToOrder.toFixed(1)}%` : '—'],

@@ -128,7 +128,7 @@ function CustomManualCell({ row, day, onSaved }) {
 }
 
 // editor (необов'язково, лише «Загальне зведення»): { editMode, valueOf, onEdit, onDelete, onRestore, onDrop } — режим «Керувати показниками».
-function MetricsTable({ days, rows, onSaved, cur = 'UAH', editor }) {
+function MetricsTable({ days, rows, onSaved, cur = 'UAH', editor, onRecon }) {
   const [dragId, setDragId] = useState(null);
   const edit = editor && editor.editMode;
   const shown = rows.filter((r) => edit || !r.hidden);
@@ -139,7 +139,7 @@ function MetricsTable({ days, rows, onSaved, cur = 'UAH', editor }) {
           <tr>
             <th className="sticky left-0 z-10 border-b border-r border-slate-800 bg-slate-900 px-3 py-2 text-left text-xs font-medium text-slate-500 whitespace-nowrap">Показник</th>
             {days.map((d) => (
-              <th key={d.date} className="border-b border-slate-800 px-3 py-2 text-right text-xs font-medium text-slate-400 whitespace-nowrap">{fmtDay(d.date)}</th>
+              <th key={d.date} className="border-b border-slate-800 px-3 py-2 text-right text-xs font-medium text-slate-400 whitespace-nowrap">{fmtDay(d.date)}{onRecon && <button type="button" onClick={() => onRecon(d.date)} className="ml-1.5 text-slate-600 hover:text-brand-light" title="Звірка маржі за цей день: усі замовлення з ціною, дропом і націнкою">🔍</button>}</th>
             ))}
             {edit && <th className="border-b border-slate-800 px-2" />}
           </tr>
@@ -164,7 +164,7 @@ function MetricsTable({ days, rows, onSaved, cur = 'UAH', editor }) {
                 const raw = row.money ? row.val(d) : null;
                 return (
                   <td key={d.date} className={`px-3 py-1.5 text-right text-xs whitespace-nowrap ${row.highlight ? 'font-semibold text-brand-light' : 'text-slate-200'} ${row.money && Number(raw) < 0 ? '!text-red-400' : ''}`}>
-                    {row.edit ? <ForecastCell day={d} field={row.edit} onSaved={onSaved} /> : row.money ? moneyCell(raw, d, cur) : row.get(d)}
+                    {row.edit && !(row.edit === 'payrollCosts' && d.payrollAuto) ? <ForecastCell day={d} field={row.edit} onSaved={onSaved} /> : row.money ? moneyCell(raw, d, cur) : row.get(d)}
                   </td>
                 );
               })}
@@ -197,8 +197,8 @@ const SUMMARY_ROWS = [
   { id: 'orderPrice', label: 'Ціна замовлення, грн', money: true, val: (d) => d.orderPrice },
   { id: 'profitPerClientNoPayroll', label: 'Прибуток з клієнта без ЗП, грн', money: true, val: (d) => d.profitPerClientNoPayroll },
   { id: 'profitPerClientWithPayroll', label: 'Прибуток з клієнта із ЗП, грн', money: true, val: (d) => d.profitPerClientWithPayroll },
-  { id: 'messagePrice', label: 'Ціна повідомлення, грн', money: true, val: (d) => d.messagePrice },
-  { id: 'conversionToSale', label: 'Конверсія у продаж, %', get: (d) => pct(d.conversionToSale !== null ? d.conversionToSale * 100 : null), num: (d) => (d.conversionToSale != null ? d.conversionToSale * 100 : null) },
+  { id: 'messagePrice', label: 'Ціна розмови (Facebook), грн', money: true, val: (d) => d.messagePrice },
+  { id: 'conversionToSale', label: 'Конверсія розмови в замовлення (Facebook), %', get: (d) => pct(d.conversionToSale !== null ? d.conversionToSale * 100 : null), num: (d) => (d.conversionToSale != null ? d.conversionToSale * 100 : null) },
   { id: 'marginTotal', label: 'Маржинальний прибуток всього (після ЗП менеджерів), грн', money: true, val: (d) => d.marginTotal, sep: true },
   { id: 'marginBeforeManagerPay', label: 'Націнка всього (маржа до ЗП менеджерів), грн', money: true, val: (d) => d.marginBeforeManagerPay },
   { id: 'managerPay', label: 'ЗП менеджерів за % від націнки, грн (факт)', money: true, val: (d) => d.managerPay },
@@ -206,7 +206,8 @@ const SUMMARY_ROWS = [
   { id: 'managerPayForecast', label: 'ЗП менеджерів за %, грн (орієнтовно, із прогнозом відмов)', money: true, val: (d) => d.managerPayForecast },
   { id: 'adSpend', label: 'Рекламний бюджет, грн', money: true, val: (d) => d.adSpend },
   { id: 'adSpendUsd', label: 'Рекламний бюджет, $ (як з Meta)', get: (d) => (d.adSpendUsd === null ? '—' : `$${fmt(d.adSpendUsd)}`), num: (d) => d.adSpendUsd },
-  { id: 'newMessages', label: 'Нові контакти в повідомленнях', get: (d) => d.newMessages, num: (d) => d.newMessages },
+  { id: 'newMessages', label: 'Нові розмови з реклами (за даними Facebook)', get: (d) => d.newMessages, num: (d) => d.newMessages },
+  { id: 'cardMessages', label: 'Розмови з карткою в CRM (бот показав товар)', get: (d) => d.cardMessages, num: (d) => d.cardMessages },
   { id: 'ordersCount', label: 'Замовлень, к-сть', get: (d) => d.ordersCount, num: (d) => d.ordersCount },
   { id: 'qtySold', label: 'Товарів, к-сть (штук)', get: (d) => d.qtySold, num: (d) => d.qtySold },
   { id: 'qtyRepeat', label: 'Повторно продані товари', get: (d) => d.qtyRepeat, num: (d) => d.qtyRepeat },
@@ -221,7 +222,8 @@ const SUMMARY_ROWS = [
   { id: 'returnRate', label: 'Відсоток повернень, %', get: (d) => pct(d.returnRate), num: (d) => d.returnRate },
   { id: 'returnPct', label: 'Відсоток повернень прогнозований, %', edit: 'returnPct' },
   { id: 'fixedCosts', label: 'Постійні витрати, грн', edit: 'fixedCosts' },
-  { id: 'payrollCosts', label: 'Витрати на оплату праці, грн', edit: 'payrollCosts' },
+  // Задано автоматичний % ЗП (Налаштування) — клітинка лише показує розраховане (d.payrollAuto), вписувати не треба.
+  { id: 'payrollCosts', label: 'Витрати на оплату праці, грн', edit: 'payrollCosts', money: true, val: (d) => d.dailyPayrollCosts },
   { id: 'aiCost', label: 'Витрати на токени Claude, грн', money: true, val: (d) => d.aiCost },
   { id: 'profitNoPayroll', label: 'Прибуток без ЗП, грн', money: true, val: (d) => d.profitNoPayroll },
   { id: 'newCustomerCost', label: 'Ціна клієнта нового, грн', money: true, val: (d) => d.newCustomerCost },
@@ -247,6 +249,50 @@ const PRODUCT_ROWS = [
   { label: 'Прибуток', get: (d) => fmt(d.profit), highlight: true },
 ];
 
+// Звірка маржі за день (Edits 10–13.11): кожне замовлення окремо — ціна, дроп, націнка; внизу сума, що збігається з «Маржинальний прибуток всього».
+function ReconModal({ date, manager, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => { api.analyticsDailyOrders({ date, ...(manager ? { placedBy: manager } : {}) }).then((r) => setData(r.data)).catch((e) => setError(e.message)); }, [date, manager]);
+  const t = data && data.totals;
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4" onClick={onClose}>
+      <div className="mt-6 w-full max-w-5xl rounded-xl border border-slate-700 bg-slate-900 p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-base font-semibold">Звірка маржі за {formatDate(date)}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white">✕</button>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">Ті самі замовлення й формули, що в таблиці. Маржа = ціна − дроп − ЗП менеджера (за %, якщо задано). Відмови й повернення не враховуються (сірі рядки).</p>
+        {error && <div className="text-sm text-red-400">{error}</div>}
+        {!data && !error && <div className="text-sm text-slate-400">Завантаження…</div>}
+        {data && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="border-b border-slate-800 text-left text-slate-500"><tr><th className="px-2 py-1.5">Клієнт / стадія</th><th className="px-2 py-1.5">Товари (ціна − дроп)</th><th className="px-2 py-1.5 text-right">Ціна</th><th className="px-2 py-1.5 text-right">Дроп</th><th className="px-2 py-1.5 text-right">Націнка</th><th className="px-2 py-1.5 text-right">ЗП менеджера</th><th className="px-2 py-1.5 text-right">Маржа</th></tr></thead>
+              <tbody>
+                {data.orders.map((o) => (
+                  <tr key={o.id} className={`border-b border-slate-800/60 align-top ${o.counted ? '' : 'opacity-40'}`}>
+                    <td className="px-2 py-1.5"><div>{o.buyer || '—'}</div><div className="text-slate-500">{o.stage || ''}{o.isRefused ? ' · відмова' : ''}{o.hasReturn ? ' · повернення' : ''}</div></td>
+                    <td className="px-2 py-1.5">{o.items.map((it, i) => <div key={i}>{it.name} ×{it.qty}: {fmt(it.price, 0)} − {it.noCogs ? <span className="text-amber-400">дроп не заданий</span> : fmt(it.cogsUnit, 0)} = {fmt(it.markup / (it.qty || 1), 0)}</div>)}</td>
+                    <td className="px-2 py-1.5 text-right">{fmt(o.revenue, 0)}</td>
+                    <td className="px-2 py-1.5 text-right">{fmt(o.cogs, 0)}</td>
+                    <td className="px-2 py-1.5 text-right">{fmt(o.markup, 0)}</td>
+                    <td className="px-2 py-1.5 text-right">{fmt(o.managerPay, 0)}</td>
+                    <td className="px-2 py-1.5 text-right font-medium">{fmt(o.margin, 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="font-semibold"><td className="px-2 py-2" colSpan={4}>Враховано: {t.counted} із {t.orders} замовлень, {t.pieces} шт.</td><td className="px-2 py-2 text-right">{fmt(t.markup, 0)}</td><td className="px-2 py-2 text-right">{fmt(t.managerPay, 0)}</td><td className="px-2 py-2 text-right text-brand-light">{fmt(t.margin, 0)}</td></tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DailyAnalyticsPage() {
   const [tab, setTab] = useState('summary'); // summary | product
   const [range, setRange] = useState(periodPreset('week'));
@@ -256,6 +302,7 @@ export default function DailyAnalyticsPage() {
   const [productDaily, setProductDaily] = useState(null);
   const [error, setError] = useState('');
   const [manager, setManager] = useState(''); // фільтр «хто оформив»
+  const [reconDate, setReconDate] = useState(null); // звірка маржі за день
   const [cur, setCur] = useCurrency(); // грн/$ (Edits 06.11: «додати перемикач гривні-долари»); вибір пам'ятається в браузері
 
   useEffect(() => { api.listProducts().then((r) => setProducts(r.data)).catch(() => {}); }, []);
@@ -409,6 +456,8 @@ export default function DailyAnalyticsPage() {
         )}
       </div>
 
+      {reconDate && <ReconModal date={reconDate} manager={manager} onClose={() => setReconDate(null)} />}
+
       {tab === 'summary' && (
         <div>
           {summaryDays.length > 1 && (
@@ -425,7 +474,7 @@ export default function DailyAnalyticsPage() {
             <Card className="p-5 text-sm text-slate-500">Даних за період немає.</Card>
           ) : (
             <>
-              <MetricsTable days={summaryDays} rows={rows} onSaved={load} cur={cur}
+              <MetricsTable days={summaryDays} rows={rows} onSaved={load} cur={cur} onRecon={setReconDate}
                 editor={{ editMode, valueOf: evaluator.valueOf, onEdit: (r) => setEditingId(r.id), onDelete: deleteRow, onRestore: restoreRow, onDrop: dropRow }} />
               <p className="mt-2 text-xs text-slate-500">
                 «З прогнозованими відмовами» = маржинальний прибуток мінус ще не відбуті відмови й повернення: прогноз дня (клітинка, за замовчуванням — з «Налаштування → Загальні») × замовлень дня мінус ті відмови, що вже є.

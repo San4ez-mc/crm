@@ -31,7 +31,7 @@ async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, u
   const [spendRows, clickRows, orders] = await Promise.all([
     // Meta пише суму у $ — конвертуємо в грн, щоб margin/spend (ROI) не змішували валюти
     // (2026-09-07, фідбек власника).
-    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ...(one ? { adId: ids[0] } : { ad: { tenantId } }), ...(dateWhere ? { date: dayRange(dateWhere) } : {}) }, _sum: { amount: true } }),
+    db.adSpendDaily.groupBy({ by: ['adId', 'currency'], where: { ...(one ? { adId: ids[0] } : { ad: { tenantId } }), ...(dateWhere ? { date: dayRange(dateWhere) } : {}) }, _sum: { amount: true, conversations: true } }),
     // Контакти = розмови, що почались із цієї реклами (картки воронки, lib/margin LEAD_WHERE); раніше — порожня AdClick.
     db.order.groupBy({ by: ['firstTouchAdId'], where: { tenantId, firstTouchAdId: one ? ids[0] : { not: null }, ...LEAD_WHERE, ...(dateWhere ? { createdAt: dateWhere } : {}) }, _count: { _all: true } })
       .then((rows) => rows.map((r) => ({ adId: r.firstTouchAdId, _count: r._count }))),
@@ -49,10 +49,13 @@ async function computeAdStatsBatch(tenantId, ads, dateWhere, expenseByProduct, u
   ]);
   const spendBy = new Map();
   for (const r of spendRows) spendBy.set(r.adId, (spendBy.get(r.adId) || 0) + rowToUAH(r._sum.amount, r.currency, usdRate));
+  // Розмови за даними самого Facebook (AdSpendDaily.conversations = messaging_conversation_started): їх більше, ніж карток у CRM (Edits 26.10, 10.11).
+  const metaConvBy = new Map();
+  for (const r of spendRows) metaConvBy.set(r.adId, (metaConvBy.get(r.adId) || 0) + (Number(r._sum.conversations) || 0));
   const clicksBy = new Map(clickRows.map((r) => [r.adId, r._count._all]));
   const ordersBy = new Map();
   for (const o of orders) { const l = ordersBy.get(o.firstTouchAdId) || []; l.push(o); ordersBy.set(o.firstTouchAdId, l); }
-  return ads.map((ad) => statsFromData(ad, spendBy.get(ad.id) || 0, clicksBy.get(ad.id) || 0, ordersBy.get(ad.id) || [], expenseByProduct, refusalPct));
+  return ads.map((ad) => statsFromData(ad, spendBy.get(ad.id) || 0, clicksBy.get(ad.id) || 0, ordersBy.get(ad.id) || [], expenseByProduct, refusalPct, metaConvBy.get(ad.id) || 0));
 }
 
 async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct, usdRate, refusalPct) {
@@ -62,7 +65,7 @@ async function computeAdStats(tenantId, ad, dateWhere, expenseByProduct, usdRate
 // Очікувані відмови й повернення, % (налаштування магазину; за замовчуванням 23 = 20 відмов на пошті + 3 повернення — Олексій, Edits 537c402a).
 const refusalPctOf = (tenant) => { const v = Number(tenant && tenant.expectedRefusalPct); return Number.isFinite(v) && v >= 0 && v < 100 && tenant.expectedRefusalPct !== null ? v : 23; };
 
-function statsFromData(ad, spend, contacts, orders, expenseByProduct, refusalPct = 23) {
+function statsFromData(ad, spend, contacts, orders, expenseByProduct, refusalPct = 23, metaConversations = 0) {
   const ordersCreated = orders.length;
   const pickedUp = orders.filter((o) => !o.isRefused);
   const ordersPickedUp = pickedUp.length;
@@ -121,6 +124,9 @@ function statsFromData(ad, spend, contacts, orders, expenseByProduct, refusalPct
     refusedRate: ordersCreated > 0 ? (refusedCount / ordersCreated) * 100 : null,
     spend,
     contacts,
+    // «Розмови (Facebook)» — як в Ads Manager; contacts — лише ті, де бот показав картку й упізнав рекламу (завжди менше).
+    metaConversations,
+    costPerMetaConversation: metaConversations > 0 ? spend / metaConversations : null,
     ordersCreated,
     ordersPickedUp,
     refusedCount,
@@ -372,7 +378,7 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
   const { from, to, search, linked, take = '10', skip = '0' } = req.query;
   // Edits 55e6794d (Олексій): сортування за колонкою (від більшого до меншого й навпаки) і без оголошень, де за період нічого нема
   // («117 сторінок» — це 1167 оголошень за весь час, більшість без витрат). showEmpty=1 — показати всі.
-  const SORTS = { spend: 'spend', contacts: 'contacts', orders: 'ordersCreated', cpa: 'cpa', roi: 'roi', profit: 'profit' };
+  const SORTS = { spend: 'spend', metaConv: 'metaConversations', contacts: 'contacts', orders: 'ordersCreated', cpa: 'cpa', roi: 'roi', profit: 'profit' };
   const sortKey = SORTS[String(req.query.sort || 'spend')] || 'spend';
   const dir = String(req.query.dir || 'desc') === 'asc' ? 1 : -1;
   const showEmpty = req.query.showEmpty === '1' || req.query.showEmpty === 'true';
@@ -421,13 +427,13 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
       if (g.length === 1) return { ...g[0], boosts: [] };
       const lead = [...g].sort((a, b) => (b.spend || 0) - (a.spend || 0))[0];
       const sum = (f) => g.reduce((s, r) => s + (Number(r[f]) || 0), 0);
-      const spend = sum('spend'), margin = sum('margin'), contacts = sum('contacts'), ordersCreated = sum('ordersCreated'), ordersPickedUp = sum('ordersPickedUp');
+      const spend = sum('spend'), margin = sum('margin'), contacts = sum('contacts'), metaConversations = sum('metaConversations'), ordersCreated = sum('ordersCreated'), ordersPickedUp = sum('ordersPickedUp');
       const profit = margin - spend;
       return {
-        ...lead, spend, margin, profit, contacts, ordersCreated, ordersPickedUp, revenue: sum('revenue'), refusedCount: sum('refusedCount'),
+        ...lead, spend, margin, profit, contacts, metaConversations, costPerMetaConversation: metaConversations > 0 ? spend / metaConversations : null, ordersCreated, ordersPickedUp, revenue: sum('revenue'), refusedCount: sum('refusedCount'),
         roi: spend > 0 ? margin / spend : null, romi: spend > 0 ? (profit / spend) * 100 : null,
         cpa: ordersCreated > 0 ? spend / ordersCreated : null, costPerContact: contacts > 0 ? spend / contacts : null,
-        boosts: g.sort((a, b) => (b.spend || 0) - (a.spend || 0)).map((r) => ({ id: r.id, externalId: r.externalId, name: r.name, campaignName: r.campaignName, effectiveStatus: r.effectiveStatus, adCreatedAt: r.adCreatedAt, spend: r.spend, contacts: r.contacts, ordersCreated: r.ordersCreated })),
+        boosts: g.sort((a, b) => (b.spend || 0) - (a.spend || 0)).map((r) => ({ id: r.id, externalId: r.externalId, name: r.name, campaignName: r.campaignName, effectiveStatus: r.effectiveStatus, adCreatedAt: r.adCreatedAt, spend: r.spend, contacts: r.contacts, metaConversations: r.metaConversations, ordersCreated: r.ordersCreated })),
       };
     });
   }
@@ -436,8 +442,8 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
     const byProd = new Map();
     for (const r of adRows) {
       const k = r.productId || 'none';
-      const g = byProd.get(k) || { id: 'product:' + k, productId: r.productId || null, name: r.productName || 'Без товару', productName: null, thumbnailUrl: null, spend: 0, margin: 0, contacts: 0, ordersCreated: 0, ordersPickedUp: 0, revenue: 0, refusedCount: 0, adsCount: 0, activeAds: 0, _topSpend: -1, boosts: [] };
-      g.spend += r.spend || 0; g.margin += r.margin || 0; g.contacts += r.contacts || 0; g.ordersCreated += r.ordersCreated || 0;
+      const g = byProd.get(k) || { id: 'product:' + k, productId: r.productId || null, name: r.productName || 'Без товару', productName: null, thumbnailUrl: null, spend: 0, margin: 0, contacts: 0, metaConversations: 0, ordersCreated: 0, ordersPickedUp: 0, revenue: 0, refusedCount: 0, adsCount: 0, activeAds: 0, _topSpend: -1, boosts: [] };
+      g.spend += r.spend || 0; g.margin += r.margin || 0; g.contacts += r.contacts || 0; g.metaConversations += r.metaConversations || 0; g.ordersCreated += r.ordersCreated || 0;
       g.ordersPickedUp += r.ordersPickedUp || 0; g.revenue += r.revenue || 0; g.refusedCount += r.refusedCount || 0; g.adsCount += 1;
       if ((r.spend || 0) > 0) g.activeAds += 1;
       if ((r.spend || 0) > g._topSpend && r.thumbnailUrl) { g.thumbnailUrl = r.thumbnailUrl; g._topSpend = r.spend || 0; }
@@ -448,7 +454,7 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
       return { ...g, profit, roi: g.spend > 0 ? g.margin / g.spend : null, romi: g.spend > 0 ? (profit / g.spend) * 100 : null, cpa: g.ordersCreated > 0 ? g.spend / g.ordersCreated : null };
     });
   }
-  if (!showEmpty) rows = rows.filter((r) => (r.spend || 0) > 0 || (r.ordersCreated || 0) > 0 || (r.contacts || 0) > 0);
+  if (!showEmpty) rows = rows.filter((r) => (r.spend || 0) > 0 || (r.ordersCreated || 0) > 0 || (r.contacts || 0) > 0 || (r.metaConversations || 0) > 0);
   // null (ділення на нуль) — завжди в кінці, незалежно від напрямку.
   rows.sort((a, b) => { const x = a[sortKey], y = b[sortKey]; if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x - y) * dir; });
   const paged = rows.slice(Number(skip), Number(skip) + Number(take));

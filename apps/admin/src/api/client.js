@@ -181,6 +181,7 @@ export const api = {
   deleteDailyTemplate: (id) => del(`/analytics/daily-templates/${encodeURIComponent(id)}`),
   setDayCustomValue: (data) => put('/analytics/daily-custom-values', data),
   analyticsDaily: (params = {}) => get(`/analytics/daily?${new URLSearchParams(params)}`),
+  analyticsDailyOrders: (params = {}) => get(`/analytics/daily-orders?${new URLSearchParams(params)}`),
   setDayForecast: (data) => req('PUT', '/analytics/daily-forecast', data),
   analyticsProductDaily: (params = {}) => get(`/analytics/product-daily?${new URLSearchParams(params)}`),
 

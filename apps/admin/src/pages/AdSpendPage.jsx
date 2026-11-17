@@ -36,7 +36,8 @@ function AdIdCopy({ id }) {
 
 const COLS = [
   { key: 'spend', label: 'Витрати' },
-  { key: 'contacts', label: 'Розмови', title: 'Розмови в Instagram, які почались із цієї реклами' },
+  { key: 'metaConv', label: 'Розмови (Facebook)', title: 'Скільки розмов почала реклама за даними Facebook (як в Ads Manager) — це те, за що списані гроші' },
+  { key: 'contacts', label: 'З карткою в CRM', title: 'Розмови, де бот показав товар і впізнав рекламу (картка в CRM) — зазвичай менше, ніж у Facebook' },
   { key: 'orders', label: 'Замовлення', title: 'Оформлені замовлення (є телефон покупця), перший дотик — ця реклама' },
   { key: 'cpa', label: 'Ціна за замовлення' },
   { key: 'roi', label: 'Окупність' },
@@ -174,7 +175,7 @@ export default function AdSpendPage() {
                                   <Link to={`/ad-spend/${b.id}?from=${range.from}&to=${range.to}`} className="hover:underline">{b.adCreatedAt ? new Date(b.adCreatedAt).toLocaleDateString('uk-UA') + ' · ' : ''}{b.campaignName || b.name}{b.effectiveStatus === 'ACTIVE' ? ' · активне' : ''}</Link>
                                   {' '}<AdIdCopy id={b.externalId} />
                                 </span>
-                                <span className="shrink-0">{m(b.spend)} · {b.contacts} розм. · {b.ordersCreated} зам.</span>
+                                <span className="shrink-0">{m(b.spend)} · {b.metaConversations ?? 0} розм. (FB) · {b.contacts} карток · {b.ordersCreated} зам.</span>
                               </div>
                             ))}
                           </div>
@@ -183,6 +184,7 @@ export default function AdSpendPage() {
                     </td>
                     <td className="px-4 py-3">{byProduct ? <span className="text-slate-400">{ad.activeAds} з витратами / {ad.adsCount}</span> : ad.spend > 0 ? <Badge color="green">Активне</Badge> : <Badge>Без витрат</Badge>}</td>
                     <td className="px-4 py-3 text-right">{m(ad.spend)}</td>
+                    <td className="px-4 py-3 text-right">{ad.metaConversations ?? 0}{ad.costPerMetaConversation != null && <div className="text-[11px] text-slate-500">{m(ad.costPerMetaConversation)} / розм.</div>}</td>
                     <td className="px-4 py-3 text-right">{ad.contacts ?? 0}</td>
                     <td className="px-4 py-3 text-right">{ad.ordersCreated}</td>
                     <td className="px-4 py-3 text-right">{ad.cpa !== null && ad.cpa !== undefined ? m(ad.cpa) : '—'}</td>

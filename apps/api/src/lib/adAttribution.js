@@ -10,6 +10,7 @@
 // Звіти за замовчуванням зараховують замовлення першому дотику; «Реклама → конверсія» показує обидва.
 const { db } = require('@crm/db');
 const { linkAdVariantsFor, ensureLiveParent } = require('./adVariants');
+const { adWasLive } = require('./adLiveness');
 
 async function findOrCreateAdByExternalId(tenantId, externalId, name, meta = {}) {
   let ad = await db.ad.findFirst({ where: { tenantId, externalId } });
@@ -68,6 +69,8 @@ async function touchFields(tenantId, { firstTouch, lastTouch } = {}, existing = 
       const parentId = await ensureLiveParent(ad, t.at).catch(() => ad.variantOfAdId);
       ad = (await db.ad.findFirst({ where: { id: parentId || ad.variantOfAdId, tenantId } })) || ad;
     }
+    // 14.11 (Edits 10.11, органіка в старій рекламі): Meta-id/допис, що давно не рекламується, — не реклама, а органіка. Ручний вибір (adId) не чіпаємо.
+    if (ad && !t.adId && !(await adWasLive(ad, t.at).catch(() => true))) return null;
     return ad;
   };
   if (firstTouch && !(existing && existing.firstTouchAdId)) {
