@@ -48,7 +48,9 @@ router.post('/returns', asyncHandler(async (req, res) => {
   // замовлень, не лише в журналі повернень. Немає такої стадії — тихо пропускаємо, не блокуючи
   // створення самого Return.
   if (order.stage?.pipelineId && !refusedAtPost) {
-    const returnStage = await db.stage.findFirst({ where: { pipelineId: order.stage.pipelineId, name: 'Повернення/обмін' } });
+    // 17.11 (Олексій: «сюди тільки повернення»; обміни він у CRM новим замовленням не вносить): повернення → стадія «Повернення» (стара назва «Повернення/обмін»),
+    // обмін → власна стадія «Обмін», а якщо її нема — картку не рухаємо (лишається в журналі повернень).
+    const returnStage = await db.stage.findFirst({ where: { pipelineId: order.stage.pipelineId, name: { in: type === 'exchange' ? ['Обмін'] : ['Повернення', 'Повернення/обмін'] } } });
     if (returnStage && returnStage.id !== order.stageId) {
       await db.order.update({ where: { id: order.id }, data: { stageId: returnStage.id } }).catch(() => {});
     }

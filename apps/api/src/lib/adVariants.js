@@ -60,9 +60,30 @@ async function liveAdIds(ads, at = new Date()) {
   for (const a of ads) if (a.effectiveStatus === 'ACTIVE' && a.adCreatedAt && new Date(a.adCreatedAt) >= new Date(at.getTime() - LIVE_DAYS * 86400000)) out.add(a.id);
   return out;
 }
-async function pickLiveParent(variant, real, at) {
+// 17.11 (Edits Олексія 16.11, a64d362c та ще 6: «CRM зарахувала не той рекламний допис»): Meta дає варіанту НАЗВУ першого оголошення набору,
+// тож два варіанти «РЕК-1, 05.11_Group_1» належали різним оголошенням (РЕК-1 і РЕК-2), а за назвою обидва йшли на РЕК-1. Одне оголошення має
+// ОДИН варіант з кожним номером групи: якщо між знайденим за назвою оголошенням і цим варіантом уже є варіант з ТАКОЮ САМОЮ назвою — оголошення
+// «зайняте» тим раннім варіантом. Тоді справжній «батько» — найближче МЕНШЕ за id оголошення, що тоді крутилось і не зайняте (варіант
+// створюється через ~18–20 млн кроків id після свого оголошення, а оголошення в наборі йдуть ≥25 млн одне від одного). В усіх інших випадках — як було.
+const NEAREST_MAX_STEPS = 6000n; // спостережено 120–3372 кроки
+function takenBySameNameVariant(variant, cand, variants) {
+  const vb = BigInt(variant.externalId); const cb = BigInt(cand.externalId);
+  return variants.some((v) => v.id !== variant.id && v.name === variant.name && BigInt(v.externalId) > cb && BigInt(v.externalId) < vb);
+}
+async function loadVariants(tenantId) {
+  return (await db.ad.findMany({ where: { tenantId, name: { contains: '_Group_' } }, select: { id: true, name: true, externalId: true, adAccountId: true } })).filter(isVariant);
+}
+async function pickLiveParent(variant, real, at, variants = null) {
+  const t = at || new Date();
   const pool = sameNameCandidates(variant, real);
-  return pickParent(variant, pool, await liveAdIds(pool, at || new Date()));
+  const old = pickParent(variant, pool, await liveAdIds(pool, t));
+  const vs = variants || (await loadVariants(variant.tenantId));
+  if (old && !takenBySameNameVariant(variant, old, vs)) return old;
+  const vid = BigInt(variant.externalId);
+  const lower = real.filter((c) => isReal(c) && BigInt(c.externalId) < vid && (vid - BigInt(c.externalId)) / STEP <= NEAREST_MAX_STEPS && !takenBySameNameVariant(variant, c, vs));
+  const live = await liveAdIds(lower, t);
+  const best = nearest(lower.filter((c) => live.has(c.id)));
+  return best || old;
 }
 
 /** Привʼязати варіант до оголошення: товар — в обидва боки, де бракує; дотики замовлень — на справжнє оголошення. */
@@ -152,16 +173,12 @@ async function ensureLiveParent(variant, at, { force = false, dryRun = false } =
   const seen = _liveCheck.get(variant.id);
   if (!force && seen && Date.now() - seen.t < 3600000) return seen.parentId;
   let parentId = variant.variantOfAdId;
-  const pool = sameNameCandidates(variant, await realAds(variant.tenantId));
-  const live = await liveAdIds(pool, atD);
-  if (live.size && !live.has(parentId)) {
-    const better = pickParent(variant, pool, live);
-    if (better && better.id !== parentId) {
-      const r = await relinkVariant(variant, parentId, better, { dryRun });
-      if (dryRun) return r;
-      parentId = better.id;
-    }
-  } else if (dryRun) return { from: parentId, unchanged: true, parentLive: live.has(parentId) };
+  const better = await pickLiveParent(variant, await realAds(variant.tenantId), atD);
+  if (better && better.id !== parentId) {
+    const r = await relinkVariant(variant, parentId, better, { dryRun });
+    if (dryRun) return r;
+    parentId = better.id;
+  } else if (dryRun) return { from: parentId, unchanged: true };
   if (!dryRun) _liveCheck.set(variant.id, { t: Date.now(), parentId });
   return parentId;
 }
@@ -190,4 +207,4 @@ async function propagateProductToVariants(tenantId, adId, productId) {
   return db.ad.updateMany({ where: { tenantId, variantOfAdId: adId, OR: [{ productId: null }, { productLinkSource: 'auto_variant' }] }, data: { productId: productId || null, productLinkSource: productId ? 'auto_variant' : null, productLinkNote: productId ? 'товар справжнього оголошення' : null } });
 }
 
-module.exports = { propagateProductToVariants, canonicalAdId, normAdName, isVariant, isReal, pickParent, liveAdIds, linkAdVariantsFor, linkAllAdVariants, ensureLiveParent, relinkVariantsByExternalId, PSEUDO_ACCOUNT };
+module.exports = { propagateProductToVariants, canonicalAdId, normAdName, isVariant, isReal, pickParent, pickLiveParent, liveAdIds, linkAdVariantsFor, linkAllAdVariants, ensureLiveParent, relinkVariantsByExternalId, PSEUDO_ACCOUNT };

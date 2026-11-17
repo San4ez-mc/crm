@@ -9,6 +9,7 @@ const { parseFrom, parseTo } = require('../lib/dateRange');
 const { igOrNull, igSearchTerm, normalizeInstagram } = require('../lib/instagram');
 const { itemsTotal, paymentFields, resolveItemSuppliers, parseTtnList, shippedStagePatch, applyBuyerEdit, deleteOrder, restoreOrder, acceptancePatch } = require('../lib/orderOps');
 const { syncTtnStatuses } = require('../lib/novaPoshta');
+const { loadExpenseMap, itemUnit, placedAtOf } = require('../lib/margin');
 const { buildXlsx } = require('../lib/xlsx');
 const logger = require('@crm/logger');
 
@@ -23,7 +24,7 @@ const ORDER_INCLUDE = {
   // supplier — постачальник позиції (2026-10-18), product.supplierId — щоб форма могла показати постачальника з каталогу.
   items: { include: { product: { select: { id: true, name: true, sku: true, thumbnailUrl: true, images: true, supplierId: true } }, offer: { select: { id: true, sku: true, images: true } }, supplier: { select: { id: true, name: true } } } },
   returns: true,
-  firstTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true, postUrl: true, effectiveStatus: true } },
+  firstTouchAd: { select: { id: true, name: true, externalId: true, adAccountId: true, campaignName: true, thumbnailUrl: true, postUrl: true, effectiveStatus: true } },
   lastTouchAd: { select: { id: true, name: true, externalId: true, campaignName: true, thumbnailUrl: true, postUrl: true, effectiveStatus: true } },
 };
 
@@ -115,7 +116,10 @@ router.get('/orders', asyncHandler(async (req, res) => {
     db.order.count({ where }),
   ]);
   const paid = await paidSumsByOrder(req.tenant.id, items.map((o) => o.id));
-  res.json({ ok: true, data: items.map((o) => ({ ...o, paidSum: paid.get(o.id) || 0 })), meta: { total, take: Number(take), skip: Number(skip) } });
+  // Маржинальний дохід замовлення (ціна − ціна постачальника) — для суми «МД» у шапці колонки дошки (Edits 61a92bcf).
+  const expenseByProduct = await loadExpenseMap(req.tenant.id);
+  const markupOf = (o) => o.items.reduce((s, it) => s + Number(it.price) * it.quantity - itemUnit(it, expenseByProduct, placedAtOf(o)).cogs * it.quantity, 0);
+  res.json({ ok: true, data: items.map((o) => ({ ...o, paidSum: paid.get(o.id) || 0, markup: markupOf(o) })), meta: { total, take: Number(take), skip: Number(skip) } });
 }));
 
 // Дата оформлення з тіла запиту («Змінити дату», імпорт) — інакше null (тоді «зараз»).

@@ -251,6 +251,7 @@ export default function OrdersPage() {
           {stages.map((stage) => {
             const stageOrders = boardByStage[stage.id] || [];
             const stageSum = stageOrders.reduce((s, o) => s + orderTotal(o), 0);
+            const stageMd = stageOrders.reduce((s, o) => s + (Number(o.markup) || 0), 0); // МД — маржинальний дохід (без ЗП менеджерів)
             return (
               <div key={stage.id} className="w-72 shrink-0"
                 onDragOver={(e) => e.preventDefault()}
@@ -260,7 +261,7 @@ export default function OrdersPage() {
                   <span className="text-sm font-medium">{stage.name}</span>
                   <span className="text-xs text-slate-500">{stageOrders.length}</span>
                 </div>
-                <div className="mb-2 px-1 text-xs font-medium text-brand-light">{money(stageSum)}</div>
+                <div className="mb-2 flex flex-wrap gap-x-3 px-1 text-xs font-medium text-brand-light"><span title="Товарообіг: сума замовлень у колонці">ТО {money(Math.round(stageSum))}</span><span title="Маржинальний дохід: сума (ціна − ціна постачальника) по замовленнях колонки">МД {money(Math.round(stageMd))}</span></div>
                 <div className="space-y-2">
                   {stageOrders.map((o) => (
                     <Card

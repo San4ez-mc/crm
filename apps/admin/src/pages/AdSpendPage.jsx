@@ -163,6 +163,7 @@ export default function AdSpendPage() {
                       {!byProduct && ad.productName && <div className="text-xs text-slate-500">{ad.productName}</div>}
                       <div className="flex flex-wrap items-center gap-x-3">
                         {ad.postUrl && <a href={ad.postUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-light hover:underline">відкрити пост ↗</a>}
+                        {/^act_\d+$/.test(ad.adAccountId || '') && ad.externalId && <a href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ad.adAccountId.slice(4)}&selected_ad_ids=${ad.externalId}`} target="_blank" rel="noreferrer" className="text-xs text-brand-light hover:underline">Ads Manager ↗</a>}
                         {!byProduct && <AdIdCopy id={ad.externalId} />}
                       </div>
                       {!byProduct && ad.boosts?.length > 1 && (

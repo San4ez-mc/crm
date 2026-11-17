@@ -203,6 +203,7 @@ export default function AdSpendDetailPage() {
           <div className="font-medium">{ad.name || ad.externalId}</div>
           {ad.productName && <div className="mt-1 text-xs text-slate-500">Товар: {ad.productName}</div>}
           {ad.postUrl && <a href={ad.postUrl} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-brand-light hover:underline">відкрити пост ↗</a>}
+          {/^act_\d+$/.test(ad.adAccountId || '') && ad.externalId && <a href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ad.adAccountId.slice(4)}&selected_ad_ids=${ad.externalId}`} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-brand-light hover:underline">відкрити в Ads Manager ↗</a>}
           <div className="mt-2">{ad.effectiveStatus && ad.effectiveStatus !== 'ACTIVE' ? <Badge color="amber">На паузі</Badge> : <Badge color="green">Активне</Badge>}</div>
         </Card>
 

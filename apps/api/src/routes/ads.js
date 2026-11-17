@@ -411,7 +411,7 @@ router.get('/ads/spend-summary', asyncHandler(async (req, res) => {
   }, { spend: 0, margin: 0, orders: 0, activeAds: 0 });
 
   const adRows = ads.map((ad) => ({
-    id: ad.id, name: ad.name, externalId: ad.externalId, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName,
+    id: ad.id, name: ad.name, externalId: ad.externalId, adAccountId: ad.adAccountId || null, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName,
     effectiveStatus: ad.effectiveStatus, adCreatedAt: ad.adCreatedAt, postId: ad.postId || null, postUrl: ad.postUrl || null,
     productId: ad.productId, productName: ad.product?.name || null,
     ...statsByAd.get(ad.id),
@@ -500,7 +500,7 @@ router.get('/ads/:id/detail', asyncHandler(async (req, res) => {
   res.json({
     ok: true,
     data: {
-      ad: { id: ad.id, name: ad.name, externalId: ad.externalId, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName, productId: ad.productId, productName: ad.product?.name || null, postUrl: ad.postUrl || null, effectiveStatus: ad.effectiveStatus || null },
+      ad: { id: ad.id, name: ad.name, externalId: ad.externalId, adAccountId: ad.adAccountId || null, thumbnailUrl: ad.thumbnailUrl, campaignName: ad.campaignName, productId: ad.productId, productName: ad.product?.name || null, postUrl: ad.postUrl || null, effectiveStatus: ad.effectiveStatus || null },
       ...stats,
       trend,
       usdRate,

@@ -82,7 +82,7 @@ export default function AnalyticsPage() {
       // Товари: виручка+кількість з top-products (враховує чекбокс "включно з допродажами"),
       // маржа/маржа% доклеюємо з /analytics/margin по productId (margin завжди рахує з допродажами).
       const marginByProduct = new Map(margin.data.map((m) => [m.productId, m]));
-      const products = top.data.map((t) => ({ ...t, margin: marginByProduct.get(t.productId)?.margin ?? null, marginPercent: marginByProduct.get(t.productId)?.marginPercent ?? null }));
+      const products = top.data.map((t) => { const m = marginByProduct.get(t.productId); return { ...t, margin: m?.margin ?? null, marginPercent: m?.marginPercent ?? null, cogs: m ? m.cogs : null, managerCost: m ? m.managerCost : 0, adSpend: m ? m.adSpend : null }; });
 
       setData({
         kpi: { revenue, prevRevenue, markup: margin.data.reduce((s, m) => s + (m.revenue || 0) - (m.cogs || 0), 0), ...cur, prevMargin: prev.margin, prevAdSpend: prev.adSpend, prevProfit: prev.profit, prevOrders: prev.orders, roi, prevRoi },
@@ -121,7 +121,7 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             {/* При наведенні — націнка (виручка мінус ціна постачальника): Edits 08.11, власник просив не виносити її на видне місце. */}
             <KpiCard label="Виручка" value={money(data.kpi.revenue)} delta={deltaPct(data.kpi.revenue, data.kpi.prevRevenue)} deltaGood="up" hint={`Сума націнок за період: ${money(data.kpi.markup)} (виручка мінус ціна постачальника)`} />
-            <KpiCard label="Маржинальний прибуток (після ЗП менеджерів)" value={money(data.kpi.margin)} delta={deltaPct(data.kpi.margin, data.kpi.prevMargin)} deltaGood="up" />
+            <KpiCard label="Маржинальний дохід" value={money(data.kpi.margin)} delta={deltaPct(data.kpi.margin, data.kpi.prevMargin)} deltaGood="up" />
             <KpiCard label="Рекламний бюджет" value={money(data.kpi.adSpend)} delta={deltaPct(data.kpi.adSpend, data.kpi.prevAdSpend)} deltaGood="neutral" />
             <KpiCard label="Прибуток" value={money(data.kpi.profit)} delta={deltaPct(data.kpi.profit, data.kpi.prevProfit)} deltaGood="up" />
             <KpiCard label="Замовлень" value={data.kpi.orders} delta={deltaPct(data.kpi.orders, data.kpi.prevOrders)} deltaGood="up" />
@@ -163,20 +163,34 @@ export default function AnalyticsPage() {
 
           {/* 3. Що продається і наскільки прибутково — топ товарів і маржа в одній таблиці */}
           <Card className="p-4">
-            <h3 className="mb-3 text-sm font-semibold">Товари: виручка і маржинальний прибуток</h3>
+            <h3 className="mb-3 text-sm font-semibold">Товари: виручка, маржинальний дохід і прибуток після реклами</h3>
             <table className="w-full text-xs">
-              <thead className="text-slate-500"><tr><th className="pb-1 text-left">Товар</th><th className="pb-1 text-right">К-сть</th><th className="pb-1 text-right">Виручка</th><th className="pb-1 text-right" title="Націнка мінус ЗП менеджера (% від націнки) мінус реклама цього товару; усі позиції, включно з допродажами">Маржинальний прибуток (після ЗП менеджера)</th><th className="pb-1 text-right">Маржинальність, %</th></tr></thead>
+              <thead className="text-slate-500"><tr>
+                <th className="pb-1 text-left">Товар</th>
+                <th className="pb-1 text-right">К-сть</th>
+                <th className="pb-1 text-right">Виручка</th>
+                <th className="pb-1 text-right" title="Маржинальний дохід = виручка − ціна постачальника (мінус ЗП менеджера за %, якщо задано)">Маржинальний дохід</th>
+                <th className="pb-1 text-right" title="Рекламні витрати на оголошення цього товару за період">Витрати на рекламу</th>
+                <th className="pb-1 text-right" title="Маржинальний дохід мінус витрати на рекламу цього товару. Мінус — реклама товару ще не окупилась">Прибуток після реклами</th>
+                <th className="pb-1 text-right" title="Прибуток після реклами ÷ виручка">Рентабельність, %</th>
+              </tr></thead>
               <tbody>
-                {data.products.slice(0, 10).map((p) => (
-                  <tr key={p.productId || p.name} className="border-t border-slate-800/60">
-                    <td className="py-1">{p.name}</td>
-                    <td className="py-1 text-right">{p.quantity}</td>
-                    <td className="py-1 text-right">{money(p.revenue)}</td>
-                    <td className="py-1 text-right">{p.margin !== null ? money(p.margin) : '—'}</td>
-                    <td className="py-1 text-right">{p.marginPercent !== null ? `${p.marginPercent.toFixed(0)}%` : '—'}</td>
-                  </tr>
-                ))}
-                {data.products.length === 0 && <tr><td colSpan={5} className="py-3 text-center text-slate-500">Даних за період немає.</td></tr>}
+                {data.products.slice(0, 10).map((p) => {
+                  const md = p.margin !== null && p.adSpend !== null ? p.margin + p.adSpend : p.margin; // маржа з /analytics/margin вже мінус реклама товару
+                  const profit = p.margin;
+                  return (
+                    <tr key={p.productId || p.name} className="border-t border-slate-800/60">
+                      <td className="py-1">{p.name}</td>
+                      <td className="py-1 text-right">{p.quantity}</td>
+                      <td className="py-1 text-right">{money(Math.round(p.revenue))}</td>
+                      <td className="py-1 text-right">{md !== null ? money(Math.round(md)) : '—'}</td>
+                      <td className="py-1 text-right">{p.adSpend !== null ? money(Math.round(p.adSpend)) : '—'}</td>
+                      <td className={`py-1 text-right font-medium ${profit !== null && profit < 0 ? 'text-red-400' : ''}`}>{profit !== null ? money(Math.round(profit)) : '—'}</td>
+                      <td className="py-1 text-right">{p.marginPercent !== null ? `${p.marginPercent.toFixed(0)}%` : '—'}</td>
+                    </tr>
+                  );
+                })}
+                {data.products.length === 0 && <tr><td colSpan={7} className="py-3 text-center text-slate-500">Даних за період немає.</td></tr>}
               </tbody>
             </table>
           </Card>

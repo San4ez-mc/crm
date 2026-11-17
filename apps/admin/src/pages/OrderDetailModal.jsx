@@ -47,6 +47,7 @@ function AdLine({ ad }) {
       <span>{ad.name || ad.externalId}{ad.campaignName && ad.campaignName !== ad.name ? <span className="text-slate-500"> · {ad.campaignName}</span> : null}</span>
       {ad.effectiveStatus && ad.effectiveStatus !== 'ACTIVE' && <Badge color="amber">на паузі</Badge>}
       {ad.postUrl && <a href={ad.postUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs text-brand-light hover:underline">пост ↗</a>}
+      {/^act_\d+$/.test(ad.adAccountId || '') && ad.externalId && <a href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ad.adAccountId.slice(4)}&selected_ad_ids=${ad.externalId}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs text-brand-light hover:underline" title="Відкрити це оголошення в Ads Manager (допис реклами може не відкриватись як звичайний пост)">Ads Manager ↗</a>}
     </span>
   );
 }

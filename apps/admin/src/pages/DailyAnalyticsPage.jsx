@@ -192,17 +192,17 @@ function MetricsTable({ days, rows, onSaved, cur = 'UAH', editor, onRecon }) {
 // справді був $ до цього фіксу). adSpendUsd — сирий $ з Meta, лише для довідки/звірки.
 // money: true — рядок у гривнях, що перемикається на $ за курсом дня (val повертає число в грн); edit — клітинка, яку вписує власник.
 const SUMMARY_ROWS = [
-  { id: 'marginAvgNonRefused', label: 'Маржинальний прибуток ср. без відмов, грн', money: true, val: (d) => d.marginAvgNonRefused },
-  { id: 'marginAvgWithRefused', label: 'Маржинальний прибуток ср. з відмовами, грн', money: true, val: (d) => d.marginAvgWithRefused },
+  { id: 'marginAvgNonRefused', label: 'Середній маржинальний дохід із замовлення (без відмов), грн', money: true, val: (d) => d.marginAvgNonRefused },
+  { id: 'marginAvgWithRefused', label: 'Середній маржинальний дохід із замовлення (з відмовами), грн', money: true, val: (d) => d.marginAvgWithRefused },
   { id: 'orderPrice', label: 'Ціна замовлення, грн', money: true, val: (d) => d.orderPrice },
   { id: 'profitPerClientNoPayroll', label: 'Прибуток з клієнта без ЗП, грн', money: true, val: (d) => d.profitPerClientNoPayroll },
   { id: 'profitPerClientWithPayroll', label: 'Прибуток з клієнта із ЗП, грн', money: true, val: (d) => d.profitPerClientWithPayroll },
   { id: 'messagePrice', label: 'Ціна розмови (Facebook), грн', money: true, val: (d) => d.messagePrice },
   { id: 'conversionToSale', label: 'Конверсія розмови в замовлення (Facebook), %', get: (d) => pct(d.conversionToSale !== null ? d.conversionToSale * 100 : null), num: (d) => (d.conversionToSale != null ? d.conversionToSale * 100 : null) },
-  { id: 'marginTotal', label: 'Маржинальний прибуток всього (після ЗП менеджерів), грн', money: true, val: (d) => d.marginTotal, sep: true },
-  { id: 'marginBeforeManagerPay', label: 'Націнка всього (маржа до ЗП менеджерів), грн', money: true, val: (d) => d.marginBeforeManagerPay },
-  { id: 'managerPay', label: 'ЗП менеджерів за % від націнки, грн (факт)', money: true, val: (d) => d.managerPay },
-  { id: 'marginTotalForecast', label: 'Маржинальний прибуток всього із прогнозованими відмовами (після ЗП менеджерів), грн', money: true, val: (d) => d.marginTotalForecast, highlight: true },
+  { id: 'marginTotal', label: 'Маржинальний дохід, грн (виручка − ціна постачальника)', money: true, val: (d) => d.marginTotal, sep: true },
+  { id: 'marginBeforeManagerPay', label: 'Маржинальний дохід до ЗП менеджерів, грн', money: true, val: (d) => d.marginBeforeManagerPay },
+  { id: 'managerPay', label: 'ЗП менеджерів за %, грн (факт)', money: true, val: (d) => d.managerPay },
+  { id: 'marginTotalForecast', label: 'Маржинальний дохід з урахуванням прогнозованих відмов, грн', money: true, val: (d) => d.marginTotalForecast, highlight: true },
   { id: 'managerPayForecast', label: 'ЗП менеджерів за %, грн (орієнтовно, із прогнозом відмов)', money: true, val: (d) => d.managerPayForecast },
   { id: 'adSpend', label: 'Рекламний бюджет, грн', money: true, val: (d) => d.adSpend },
   { id: 'adSpendUsd', label: 'Рекламний бюджет, $ (як з Meta)', get: (d) => (d.adSpendUsd === null ? '—' : `$${fmt(d.adSpendUsd)}`), num: (d) => d.adSpendUsd },
@@ -215,7 +215,7 @@ const SUMMARY_ROWS = [
   { id: 'impressions', label: 'Покази', get: (d) => d.impressions, num: (d) => d.impressions },
   { id: 'roi', label: 'Окупність', get: (d) => fmt(d.roi), highlight: true, sep: true, num: (d) => d.roi },
   { id: 'roiForecast', label: 'Окупність із прогнозованими відмовами', get: (d) => fmt(d.roiForecast), highlight: true, num: (d) => d.roiForecast },
-  { id: 'expectedProfit', label: 'Очікуваний прибуток, грн', money: true, val: (d) => d.expectedProfit, highlight: true },
+  { id: 'expectedProfit', label: 'Очікуваний чистий прибуток, грн', money: true, val: (d) => d.expectedProfit, highlight: true },
   { id: 'usdRate', label: 'Курс долара, грн', edit: 'usdRate', sep: true },
   { id: 'refusalRate', label: 'Відсоток відмов, %', get: (d) => pct(d.refusalRate), num: (d) => d.refusalRate },
   { id: 'refusalPct', label: 'Відсоток відмов прогнозований, %', edit: 'refusalPct' },
@@ -327,7 +327,10 @@ export default function DailyAnalyticsPage() {
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   useEffect(() => { api.dailyLayout().then((r) => { setLayout(r.data.layout); setTemplates(r.data.templates || []); }).catch(() => {}); }, []);
-  const rows = useMemo(() => applyLayout(SUMMARY_ROWS, layout), [layout]);
+  const rowsAll = useMemo(() => applyLayout(SUMMARY_ROWS, layout), [layout]);
+  // Дублі маржі й ЗП менеджерів за % (Edits aa260362/3cedd42a): показуємо, лише коли відсоток менеджера в товарах справді щось віднімає.
+  const hasManagerPay = summaryDays.some((d) => Number(d.managerPay) > 0 || Number(d.managerPayForecast) > 0);
+  const rows = useMemo(() => (hasManagerPay ? rowsAll : rowsAll.filter((r) => !['managerPay', 'managerPayForecast', 'marginBeforeManagerPay'].includes(r.id))), [rowsAll, hasManagerPay]);
   const evaluator = useMemo(() => makeEval(rows), [rows]);
   const options = rows.map((r) => ({ id: r.id, label: r.label, custom: !!r.custom }));
   const editingRow = editingId ? rows.find((r) => r.id === editingId) : null;
