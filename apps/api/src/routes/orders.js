@@ -271,7 +271,7 @@ router.get('/orders/lookup-client', asyncHandler(async (req, res) => {
   const find = () => db.order.findFirst({
     where: { tenantId: req.tenant.id, buyerId: { not: null }, deletedAt: null, OR: or },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, createdAt: true, ttn: true, ttnStatus: true, ttnStatusAt: true, ttnEta: true, isRefused: true, funnelSessionId: true, stage: { select: { name: true } }, items: { select: { name: true, quantity: true, product: { select: { name: true, customerName: true } } } }, returns: { select: { id: true, type: true, status: true } } },
+    select: { id: true, createdAt: true, ttn: true, ttnStatus: true, ttnStatusAt: true, ttnEta: true, isRefused: true, funnelSessionId: true, stage: { select: { name: true } }, items: { select: { name: true, quantity: true, properties: true, product: { select: { name: true, customerName: true, sku: true } } } }, returns: { select: { id: true, type: true, status: true } } },
   });
   let o = await find();
   // Клієнт питає про замовлення — статус НП свіжий на момент відповіді (2026-10-20): старший за 10 хв → CRM питає НП сама.

@@ -6,6 +6,15 @@ const { ValidationError, NotFoundError } = require('@crm/errors');
 
 const router = express.Router();
 
+// details від бота — лише відомі поля, короткі рядки (підтверджена клієнтом заявка).
+function cleanDetails(d) {
+  if (d === undefined) return undefined;
+  if (d === null || typeof d !== 'object' || Array.isArray(d)) return null;
+  const s = (v, n) => (v == null || v === '' ? undefined : String(v).slice(0, n));
+  const del = d.delivery && typeof d.delivery === 'object' ? { name: s(d.delivery.name, 120), phone: s(d.delivery.phone, 40), place: s(d.delivery.place, 240) } : undefined;
+  return { itemLine: s(d.itemLine, 200), oldSize: s(d.oldSize, 40), newSize: s(d.newSize, 80), receivedTtn: s(d.receivedTtn, 20), returnTtn: s(d.returnTtn, 20), refundCard: s(d.refundCard, 24), delivery: del, confirmedAt: s(d.confirmedAt, 40), confirmedBy: s(d.confirmedBy, 20) };
+}
+
 router.get('/returns', asyncHandler(async (req, res) => {
   const { take = '50', skip = '0' } = req.query;
   const [items, total] = await Promise.all([
@@ -23,6 +32,7 @@ router.get('/returns', asyncHandler(async (req, res) => {
 
 router.post('/returns', asyncHandler(async (req, res) => {
   const { type, reason, status, ttn, exchangeFor, source, funnelSessionId, igUsername, senderName } = req.body || {};
+  const detailsN = cleanDetails((req.body || {}).details);
   let { orderId } = req.body || {};
   if (!['return', 'exchange'].includes(type)) throw new ValidationError('type: return | exchange');
   // Без orderId — за розмовою воронки (2026-10-14): замовлення, оформлені менеджером у чаті, у CRM не потрапляли, тож бот не мав
@@ -41,7 +51,7 @@ router.post('/returns', asyncHandler(async (req, res) => {
   const refusedAtPost = /відмов/i.test(String(order.ttnStatus || ''));
   if (!order) throw new NotFoundError('Order', orderId);
   const ret = await db.return.create({
-    data: { tenantId: req.tenant.id, orderId, type, reason: reason || null, status: status || 'new', ttn: ttn ? String(ttn).replace(/\D/g, '') || null : null, exchangeFor: exchangeFor || null, source: source || null },
+    data: { tenantId: req.tenant.id, orderId, type, reason: reason || null, status: status || 'new', ttn: ttn ? String(ttn).replace(/\D/g, '') || null : null, exchangeFor: exchangeFor || null, source: source || null, ...(detailsN ? { details: detailsN } : {}) },
   });
   // Best-effort: переносимо замовлення на стадію "Повернення/обмін" тієї ж воронки, якщо вона
   // є (2026-09-05, за проханням власника) — щоб факт повернення/обміну було видно на дошці
@@ -62,10 +72,11 @@ router.patch('/returns/:id', asyncHandler(async (req, res) => {
   const existing = await db.return.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
   if (!existing) throw new NotFoundError('Return', req.params.id);
   const { status, reason, ttn, exchangeFor } = req.body || {};
+  const detailsN = cleanDetails((req.body || {}).details);
   if (status && !['new', 'confirmed', 'completed'].includes(status)) throw new ValidationError('status: new | confirmed | completed');
   const ret = await db.return.update({
     where: { id: existing.id },
-    data: { ...(status !== undefined ? { status } : {}), ...(reason !== undefined ? { reason } : {}), ...(ttn !== undefined ? { ttn: ttn ? String(ttn).replace(/\D/g, '') || null : null } : {}), ...(exchangeFor !== undefined ? { exchangeFor: exchangeFor || null } : {}) },
+    data: { ...(status !== undefined ? { status } : {}), ...(reason !== undefined ? { reason } : {}), ...(ttn !== undefined ? { ttn: ttn ? String(ttn).replace(/\D/g, '') || null : null } : {}), ...(exchangeFor !== undefined ? { exchangeFor: exchangeFor || null } : {}), ...(detailsN !== undefined ? { details: detailsN === null ? require('@prisma/client').Prisma.DbNull : detailsN } : {}) },
   });
   res.json({ ok: true, data: ret });
 }));

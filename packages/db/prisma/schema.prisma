@@ -717,6 +717,8 @@ model Return {
   ttn         String?
   exchangeFor String? // обмін: на який розмір/колір/товар
   source      String? // 'bot' — створено ботом із розмови; порожньо — вручну
+  // 2026-11-22 (Олексій, автоматизація обмінів/повернень): що клієнт підтвердив словом «Так» — {itemLine, oldSize, newSize, receivedTtn, returnTtn, refundCard, delivery:{name,phone,place}, confirmedAt}.
+  details     Json?
   status    ReturnStatus @default(new)
   createdAt DateTime     @default(now())
 

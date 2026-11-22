@@ -46,6 +46,15 @@ export default function ReturnsPage() {
                   <td className="px-4 py-3 text-slate-400">
                     {r.reason || '—'}
                     {r.exchangeFor && <div className="text-xs text-slate-300">Обмін на: {r.exchangeFor}</div>}
+                    {r.details && (
+                      <div className="mt-1 space-y-0.5 text-xs text-slate-300">
+                        <div className="text-emerald-400">✓ Клієнт підтвердив заявку{r.details.confirmedAt ? ' · ' + formatDate(r.details.confirmedAt) : ''}</div>
+                        {r.details.itemLine && <div>{r.details.itemLine}{r.details.oldSize ? ' · було ' + r.details.oldSize : ''}{r.details.newSize ? ' → ' + r.details.newSize : ''}</div>}
+                        {r.details.receivedTtn && <div>Забрали по ТТН: {r.details.receivedTtn}</div>}
+                        {r.details.refundCard && <div>Картка для повернення коштів: {r.details.refundCard}</div>}
+                        {r.details.delivery && <div>Отримувач обміну: {[r.details.delivery.name, r.details.delivery.phone, r.details.delivery.place].filter(Boolean).join(' · ')}</div>}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 tabular-nums text-slate-400">{r.ttn || '—'}</td>
                   <td className="px-4 py-3">
