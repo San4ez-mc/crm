@@ -5,6 +5,7 @@ const { Prisma } = require('@prisma/client');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, NotFoundError, ConflictError } = require('@crm/errors');
 const { normalizeFitChart, normalizeSizeRules } = require('../lib/sizeFit');
+const { normalizeQuestionFlow } = require('../lib/questionFlow');
 
 const router = express.Router();
 
@@ -21,9 +22,11 @@ router.post('/categories', asyncHandler(async (req, res) => {
   const { name, description, aiInstructions, requiredParams, synonyms, sizeChartImage, sizeChartData } = req.body || {};
   const fitChart = normalizeFitChart((req.body || {}).fitChart); const sizeRules = normalizeSizeRules((req.body || {}).sizeRules);
   if (!name || !String(name).trim()) throw new ValidationError('name обовʼязкове');
+  const questionFlowN = normalizeQuestionFlow((req.body || {}).questionFlow);
   const category = await db.category.create({
     data: { tenantId: req.tenant.id, name: String(name).trim(), description: description || null, aiInstructions: aiInstructions || null, requiredParams: Array.isArray(requiredParams) ? requiredParams : [], synonyms: Array.isArray(synonyms) ? synonyms : [],
-      fitChart: fitChart || undefined, sizeRules: sizeRules || [], sizeChartImage: sizeChartImage || null, sizeChartData: sizeChartData || undefined },
+      fitChart: fitChart || undefined, sizeRules: sizeRules || [], sizeChartImage: sizeChartImage || null, sizeChartData: sizeChartData || undefined,
+      ...(questionFlowN ? { questionFlow: questionFlowN } : {}) },
   });
   res.status(201).json({ ok: true, data: category });
 }));
@@ -40,6 +43,7 @@ router.patch('/categories/:id', asyncHandler(async (req, res) => {
   const { name, description, aiInstructions, requiredParams, synonyms, sizeChartImage, sizeChartData } = req.body || {};
   // Розміри (2026-10-18): сітка зріст/вага, межі експерта, картинка/таблиця замірів — для товарів категорії без власних.
   const fitChart = normalizeFitChart((req.body || {}).fitChart); const sizeRules = normalizeSizeRules((req.body || {}).sizeRules);
+  const questionFlowN = normalizeQuestionFlow((req.body || {}).questionFlow);
   const category = await db.category.update({
     where: { id: existing.id },
     data: {
@@ -52,6 +56,7 @@ router.patch('/categories/:id', asyncHandler(async (req, res) => {
       ...(sizeRules !== undefined ? { sizeRules } : {}),
       ...(sizeChartImage !== undefined ? { sizeChartImage: sizeChartImage || null } : {}),
       ...(sizeChartData !== undefined ? { sizeChartData: sizeChartData || Prisma.DbNull } : {}), // голий null Prisma для Json? не приймає
+      ...(questionFlowN !== undefined ? { questionFlow: questionFlowN === null ? Prisma.DbNull : questionFlowN } : {}),
     },
   });
   res.json({ ok: true, data: category });

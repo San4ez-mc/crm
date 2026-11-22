@@ -1,7 +1,7 @@
 // §9.4 Категорії — список + форма (drawer/модалка).
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Button, IconButton, Field, Input, Textarea, Card, EmptyState, ErrorBanner } from '../components/common/Common';
+import { PageHeader, Button, IconButton, Field, Input, Textarea, Select, Card, EmptyState, ErrorBanner } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 import SizeFitEditor, { fitChartToRows } from '../components/common/SizeFitEditor';
 import { SingleFileDrop } from '../components/common/FileDropInput';
@@ -72,12 +72,12 @@ export default function CategoriesPage() {
 function CategoryForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState({
     id: initial.id, name: initial.name || '', description: initial.description || '', aiInstructions: initial.aiInstructions || '',
-    requiredParams: initial.requiredParams || [], synonyms: initial.synonyms || [],
+    requiredParams: initial.requiredParams || [], synonyms: initial.synonyms || [], questionFlow: initial.questionFlow || { questions: [] },
     // Розміри (2026-10-18) — для товарів категорії, у яких немає власних
     fitRows: fitChartToRows(initial.fitChart), sizeRules: Array.isArray(initial.sizeRules) ? initial.sizeRules : [], sizeChartImage: initial.sizeChartImage || '',
   });
   return (
-    <form onSubmit={(e) => { e.preventDefault(); const { fitRows, ...rest } = form; onSave({ ...rest, fitChart: fitRows.length ? fitRows : null }); }}>
+    <form onSubmit={(e) => { e.preventDefault(); const { fitRows, ...rest } = form; onSave({ ...rest, fitChart: fitRows.length ? fitRows : null, questionFlow: rest.questionFlow && rest.questionFlow.questions && rest.questionFlow.questions.length ? rest.questionFlow : null }); }}>
       <Field label="Назва"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
       <Field label="Опис"><Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
       <Field label="Синоніми (слова клієнта, за якими воронка розпізнає цю категорію в тексті)">
@@ -89,6 +89,9 @@ function CategoryForm({ initial, onSave, onCancel }) {
       </Field>
       <Field label="Параметри, які треба запитати перед оформленням">
         <RequiredParamsEditor value={form.requiredParams} onChange={(v) => setForm({ ...form, requiredParams: v })} />
+      </Field>
+      <Field label="Питання з умовами (необовʼязково): що питати по порядку і коли">
+        <QuestionFlowEditor value={form.questionFlow} onChange={(v) => setForm({ ...form, questionFlow: v })} />
       </Field>
       <Field label="Інформація для ШІ (вільний текст, додатково до параметрів вище)">
         <Textarea rows={3} placeholder="Напр. нюанси розмірної сітки, застереження для бота" value={form.aiInstructions} onChange={(e) => setForm({ ...form, aiInstructions: e.target.value })} />
@@ -106,6 +109,65 @@ function CategoryForm({ initial, onSave, onCancel }) {
         <Button type="submit">Зберегти</Button>
       </div>
     </form>
+  );
+}
+
+
+// Питання категорії з умовами (21.11, правка Олексія про унісекс): питання по порядку; у кожного — що спитати, допустимі відповіді і за якої умови воно задається
+// («відповідь на попереднє питання дорівнює цьому або цьому значенню»). Розмірна таблиця за обмірами — окремим блоком (JSON).
+function QuestionFlowEditor({ value, onChange }) {
+  const flow = value && Array.isArray(value.questions) ? value : { questions: [] };
+  const qs = flow.questions;
+  const set = (questions) => onChange({ ...flow, questions });
+  const upd = (i, patch) => set(qs.map((q, idx) => (idx === i ? { ...q, ...patch } : q)));
+  const csv = (arr) => (Array.isArray(arr) ? arr : []).join(', ');
+  const fromCsv = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const add = () => set([...qs, { id: 'q' + (qs.length + 1), kind: 'options', ask: '', options: [{ value: '', aliases: [] }, { value: '', aliases: [] }] }]);
+  const [sizingText, setSizingText] = useState(flow.sizing ? JSON.stringify(flow.sizing, null, 2) : '');
+  const [sizingErr, setSizingErr] = useState('');
+  return (
+    <div className="space-y-3">
+      <div className="text-xs text-slate-500">Порожньо — бот питає звичайні параметри категорії (вище). Тут можна задати послідовність із умовами: наприклад «Для кого костюм?» → якщо «чоловік» — зріст і вага, якщо «жінка» — чотири обміри.</div>
+      {qs.map((q, i) => (
+        <div key={i} className="rounded-lg border border-slate-800 p-3">
+          <div className="mb-2 flex items-center justify-between text-xs text-slate-400"><span>Питання {i + 1} · код <b>{q.id}</b></span><IconButton onClick={() => set(qs.filter((_, idx) => idx !== i))}>🗑️</IconButton></div>
+          <div className="grid gap-2 md:grid-cols-2">
+            <Select value={q.kind || 'options'} onChange={(e) => upd(i, { kind: e.target.value })}>
+              <option value="options">Вибір із варіантів</option>
+              <option value="numbers">Кілька чисел (через пробіл)</option>
+              <option value="legacy">Далі — звичайні параметри категорії</option>
+            </Select>
+            {i > 0 && (
+              <Select value={(q.showIf && q.showIf.question) || ''} onChange={(e) => upd(i, { showIf: e.target.value ? { question: e.target.value, in: (q.showIf && q.showIf.in) || [] } : undefined })}>
+                <option value="">Задавати завжди</option>
+                {qs.slice(0, i).map((p) => <option key={p.id} value={p.id}>Задавати, якщо відповідь на «{p.id}» …</option>)}
+              </Select>
+            )}
+          </div>
+          {q.showIf && q.showIf.question && <Input className="mt-2" placeholder="… дорівнює (через кому): напр. жінка" value={csv(q.showIf.in)} onChange={(e) => upd(i, { showIf: { ...q.showIf, in: fromCsv(e.target.value) } })} />}
+          {q.kind !== 'legacy' && <Textarea className="mt-2" rows={2} placeholder="Що спитати клієнта" value={q.ask || ''} onChange={(e) => upd(i, { ask: e.target.value })} />}
+          {q.kind === 'options' && (
+            <div className="mt-2 space-y-1">
+              {(q.options || []).map((o, oi) => (
+                <div key={oi} className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+                  <Input placeholder="варіант (напр. жінка)" value={o.value || ''} onChange={(e) => upd(i, { options: q.options.map((x, xi) => (xi === oi ? { ...x, value: e.target.value } : x)) })} />
+                  <Input placeholder="як ще можуть написати (через кому): дівчина, дівчину, жінку" value={csv(o.aliases)} onChange={(e) => upd(i, { options: q.options.map((x, xi) => (xi === oi ? { ...x, aliases: fromCsv(e.target.value) } : x)) })} />
+                </div>
+              ))}
+              <Button type="button" variant="secondary" onClick={() => upd(i, { options: [...(q.options || []), { value: '', aliases: [] }] })}>+ Варіант</Button>
+            </div>
+          )}
+          {q.kind === 'numbers' && <Input className="mt-2" placeholder="Які числа чекаємо, у цьому порядку (через кому): зріст, груди, талія, стегна" value={csv(q.fields)} onChange={(e) => upd(i, { fields: fromCsv(e.target.value) })} />}
+        </div>
+      ))}
+      <Button type="button" variant="secondary" onClick={add}>+ Питання</Button>
+      <div className="rounded-lg border border-slate-800 p-3">
+        <div className="mb-1 text-sm font-semibold text-slate-200">Розмір за обмірами (таблиця й правила, JSON)</div>
+        <div className="mb-2 text-xs text-slate-500">Для відповіді з числами: яка таблиця діапазонів, коли розмір один, а коли радити окремо штани й кофту. Лишіть порожнім, якщо не потрібно.</div>
+        <Textarea rows={8} value={sizingText} onChange={(e) => { setSizingText(e.target.value); try { const t = e.target.value.trim(); onChange({ ...flow, sizing: t ? JSON.parse(t) : undefined }); setSizingErr(''); } catch (er) { setSizingErr('JSON ще не коректний — не збережеться, поки не виправите'); } }} />
+        {sizingErr && <div className="mt-1 text-xs text-amber-400">{sizingErr}</div>}
+      </div>
+    </div>
   );
 }
 

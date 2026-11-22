@@ -15,7 +15,7 @@ const norm = (s) => String(s || '').trim().toLowerCase();
 function categoryData(c, withSync) {
   return {
     name: c.name, description: c.description, aiInstructions: c.aiInstructions, requiredParams: c.requiredParams || [], synonyms: c.synonyms || [],
-    fitChart: jsonOrNull(c.fitChart), sizeRules: c.sizeRules || [], sizeChartImage: c.sizeChartImage, sizeChartData: jsonOrNull(c.sizeChartData),
+    fitChart: jsonOrNull(c.fitChart), sizeRules: c.sizeRules || [], sizeChartImage: c.sizeChartImage, sizeChartData: jsonOrNull(c.sizeChartData), questionFlow: jsonOrNull(c.questionFlow),
     ...(withSync ? { syncSourceId: c.id } : {}),
   };
 }

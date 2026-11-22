@@ -173,6 +173,8 @@ model Category {
   sizeRules      Json     @default("[]")
   sizeChartImage String?
   sizeChartData  Json?
+  // 2026-11-21 (правка Олексія про унісекс): послідовність питань з умовами («стать → для чоловіка зріст/вага, для жінки чотири обміри») і розмірна таблиця за обмірами. Формат — lib/questionFlow.js.
+  questionFlow   Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

@@ -64,14 +64,16 @@ function buildOrdersWhere(tenantId, query) {
     const qs = String(q).trim();
     const ig = igSearchTerm(qs);
     const digits = qs.replace(/\D/g, '');
+    // 21.11 (Edits 158e25cb: пошук «elen_k011» показував ще 8 клієнтів): цифри з нікнейма («011») шукались як частина телефону. Пошук за телефоном — лише коли запит схожий на телефон.
+    const looksPhone = /^[\d\s+()\-.]{3,}$/.test(qs);
     andClauses.push({ OR: ig ? [
       { contactIg: { equals: ig, mode: 'insensitive' } },
       { buyer: { is: { igUsername: { equals: ig, mode: 'insensitive' } } } },
     ] : [
       { ttn: { has: qs } },
       { buyer: { is: { OR: [
-        { phone: { contains: qs } },
-        ...(digits.length >= 3 && digits !== qs ? [{ phone: { contains: digits } }] : []),
+        ...(looksPhone ? [{ phone: { contains: qs } }] : []),
+        ...(looksPhone && digits.length >= 3 && digits !== qs ? [{ phone: { contains: digits } }] : []),
         { fullName: { contains: qs, mode: 'insensitive' } },
         { igUsername: { contains: qs.replace(/^@/, ''), mode: 'insensitive' } },
       ] } } },
