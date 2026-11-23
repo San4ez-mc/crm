@@ -82,6 +82,10 @@ function buildOrdersWhere(tenantId, query) {
     ] });
   }
   if (adId) andClauses.push({ OR: [{ firstTouchAdId: String(adId) }, { lastTouchAdId: String(adId) }] });
+  // 23.11: служба ТТН у Flows брала «150 найновіших» — а це майже самі картки розмов (≈400/добу проти ≈35 оформлених), тож знаходила 11 замовлень
+  // і мовчки пропускала решту. Тепер вона просить лише оформлені (є покупець) і без ТТН.
+  if (query.placed === '1') andClauses.push({ buyerId: { not: null } });
+  if (query.noTtn === '1') andClauses.push({ ttn: { isEmpty: true } });
   // 2026-09-12 (КРИТИЧНО, живий баг знайдено одразу після деплою): firstTouchAt історично НІКОЛИ не
   // заповнювався воронкою (усі існуючі замовлення мають firstTouchAt=null) — фільтр по НЬОМУ напряму
   // ховав би АБСОЛЮТНО ВСІ замовлення, щойно власник відкрив би дошку (дефолт = останні 7 днів).
