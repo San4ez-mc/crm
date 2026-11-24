@@ -19,7 +19,7 @@ async function accessibleSources(req) {
 }
 
 const view = (cfg) => cfg && ({
-  sourceTenantId: cfg.sourceTenantId, source: cfg.source, enabled: cfg.enabled, syncCosts: cfg.syncCosts,
+  sourceTenantId: cfg.sourceTenantId, source: cfg.source, enabled: cfg.enabled, syncCosts: cfg.syncCosts, skipSets: cfg.skipSets,
   lastRunAt: cfg.lastRunAt, lastStatus: cfg.lastStatus, lastResult: cfg.lastResult,
 });
 
@@ -31,12 +31,12 @@ router.get('/tenant/catalog-sync', asyncHandler(async (req, res) => {
 router.put('/tenant/catalog-sync', asyncHandler(async (req, res) => {
   if (req.authMethod !== 'sso-session') throw new ForbiddenError('Налаштувати синхронізацію можна лише з адмінки під своїм входом');
   if (req.access && req.access.canEdit === false) throw new ForbiddenError('Лише перегляд — змінювати налаштування не можна');
-  const { sourceTenantId, enabled, syncCosts } = req.body || {};
+  const { sourceTenantId, enabled, syncCosts, skipSets } = req.body || {};
   if (sourceTenantId) {
     const allowed = await accessibleSources(req);
     if (!allowed.some((t) => t.id === sourceTenantId)) throw new ForbiddenError('Немає доступу до магазину-джерела');
   }
-  const cfg = await sync.saveConfig(req.tenant.id, { sourceTenantId: sourceTenantId || null, enabled, syncCosts });
+  const cfg = await sync.saveConfig(req.tenant.id, { sourceTenantId: sourceTenantId || null, enabled, syncCosts, skipSets });
   res.json({ ok: true, data: { config: view(cfg) } });
 }));
 

@@ -116,6 +116,7 @@ function CatalogSyncCard({ shopName }) {
   const [source, setSource] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [syncCosts, setSyncCosts] = useState(true);
+  const [skipSets, setSkipSets] = useState(false);
   const [busy, setBusy] = useState('');
   const [preview, setPreview] = useState(null);
   const [err, setErr] = useState('');
@@ -124,14 +125,14 @@ function CatalogSyncCard({ shopName }) {
     try {
       const { data } = await api.catalogSync();
       setInfo(data);
-      setSource(data.config?.sourceTenantId || ''); setEnabled(!!data.config?.enabled); setSyncCosts(data.config ? data.config.syncCosts : true);
+      setSource(data.config?.sourceTenantId || ''); setEnabled(!!data.config?.enabled); setSyncCosts(data.config ? data.config.syncCosts : true); setSkipSets(!!data.config?.skipSets);
     } catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
 
   async function save() {
     setErr(''); setBusy('save');
-    try { await api.saveCatalogSync({ sourceTenantId: source || null, enabled, syncCosts }); setPreview(null); await load(); }
+    try { await api.saveCatalogSync({ sourceTenantId: source || null, enabled, syncCosts, skipSets }); setPreview(null); await load(); }
     catch (e) { setErr(e.message); } finally { setBusy(''); }
   }
   async function run(dryRun) {
@@ -142,7 +143,7 @@ function CatalogSyncCard({ shopName }) {
 
   if (!info) return err ? <ErrorBanner message={err} /> : null;
   const cfg = info.config;
-  const changed = !cfg || cfg.sourceTenantId !== source || cfg.enabled !== enabled || cfg.syncCosts !== syncCosts;
+  const changed = !cfg || cfg.sourceTenantId !== source || cfg.enabled !== enabled || cfg.syncCosts !== syncCosts || !!cfg.skipSets !== skipSets;
   const last = cfg?.lastResult;
   const line = (r) => `товари: ${r.products.created} нових, ${r.products.updated} оновлено${r.products.hidden ? `, ${r.products.hidden} сховано (зникли в джерелі)` : ''}; категорії: ${r.categories.created} нових; постачальники: ${r.suppliers.created} нових`;
 
@@ -176,6 +177,10 @@ function CatalogSyncCard({ shopName }) {
           <label className="mt-2 flex items-start gap-2 text-sm text-slate-300">
             <input type="checkbox" className="mt-1" checked={syncCosts} onChange={(e) => setSyncCosts(e.target.checked)} />
             <span>Переносити ціни постачальника і % менеджера <span className="text-xs text-slate-500">(без цього маржа в цьому магазині дорівнює виручці)</span></span>
+          </label>
+          <label className="mt-2 flex items-start gap-2 text-sm text-slate-300">
+            <input type="checkbox" className="mt-1" checked={skipSets} onChange={(e) => setSkipSets(e.target.checked)} />
+            <span>Не переносити комплекти <span className="text-xs text-slate-500">(комплекти, що вже були перенесені, ховаються як «немає в наявності» і не видаляються)</span></span>
           </label>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button onClick={save} disabled={!changed || busy}>{busy === 'save' ? 'Зберігаю…' : 'Зберегти'}</Button>

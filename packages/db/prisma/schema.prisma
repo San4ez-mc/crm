@@ -97,6 +97,7 @@ model CatalogSync {
   sourceTenantId String
   enabled        Boolean   @default(false) // автоматично щогодини
   syncCosts      Boolean   @default(true) // переносити ціну постачальника і % менеджера (інакше маржа в приймачі = виручці)
+  skipSets       Boolean   @default(false) // 2026-11-24 (власник): не переносити комплекти (isSet) — уже перенесені в приймачі ховаються (outOfStock), не видаляються
   lastRunAt      DateTime?
   lastStatus     String? // ok | error
   lastResult     Json? // {created,updated,hidden,errors[],durationMs}

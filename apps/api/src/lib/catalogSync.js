@@ -65,7 +65,7 @@ async function mirrorSimple({ model, tenantId, srcRows, tgtRows, keyOf, build, d
   return map;
 }
 
-async function syncCatalog(targetTenantId, sourceTenantId, { syncCosts, dryRun }) {
+async function syncCatalog(targetTenantId, sourceTenantId, { syncCosts, skipSets, dryRun }) {
   const started = Date.now();
   const result = { dryRun: !!dryRun, categories: { created: 0, updated: 0 }, suppliers: { created: 0, updated: 0 }, products: { created: 0, updated: 0, hidden: 0 }, errors: [] };
 
@@ -84,7 +84,8 @@ async function syncCatalog(targetTenantId, sourceTenantId, { syncCosts, dryRun }
   const supMap = await mirrorSimple({ model: 'supplier', tenantId: targetTenantId, srcRows: srcSups, tgtRows: tgtSups, keyOf: (s) => norm(s.name), build: (s) => supplierData(s), dryRun, stat: result.suppliers });
 
   // 3. Товари — спершу самі товари (щоб знати id для допродажів і комплектів), потім звʼязки
-  const srcProducts = await db.product.findMany({ where: { tenantId: sourceTenantId }, include: { offers: { orderBy: { sortOrder: 'asc' } }, setOf: true, productExpense: true } });
+  // skipSets: комплекти не переносимо; ті, що вже перенесені раніше, потраплять у «зниклі» (крок 5) і сховаються (outOfStock), а не видаляться.
+  const srcProducts = await db.product.findMany({ where: { tenantId: sourceTenantId, ...(skipSets ? { isSet: false } : {}) }, include: { offers: { orderBy: { sortOrder: 'asc' } }, setOf: true, productExpense: true } });
   const tgtProducts = await db.product.findMany({ where: { tenantId: targetTenantId }, select: { id: true, sku: true, syncSourceId: true, outOfStock: true } });
   const bySync = new Map(); const bySku = new Map();
   for (const t of tgtProducts) { if (t.syncSourceId) bySync.set(t.syncSourceId, t); bySku.set(t.sku, t); }
@@ -162,13 +163,13 @@ async function getConfig(tenantId) {
 }
 
 /** Зберегти налаштування. sourceTenantId порожній → синхронізацію вимкнено й налаштування видалено (вже перенесені товари лишаються). */
-async function saveConfig(tenantId, { sourceTenantId, enabled, syncCosts }) {
+async function saveConfig(tenantId, { sourceTenantId, enabled, syncCosts, skipSets }) {
   if (!sourceTenantId) { await db.catalogSync.deleteMany({ where: { tenantId } }); return null; }
   if (sourceTenantId === tenantId) throw new ValidationError('Магазин не може синхронізуватись сам із собою');
   const source = await db.tenant.findUnique({ where: { id: sourceTenantId }, include: { catalogSync: true } });
   if (!source) throw new NotFoundError('Tenant', sourceTenantId);
   if (source.catalogSync && source.catalogSync.sourceTenantId === tenantId) throw new ValidationError('Цей магазин сам синхронізується з поточного — так вийшло б коло. Спершу вимкніть синхронізацію там.');
-  const data = { sourceTenantId, ...(enabled !== undefined ? { enabled: !!enabled } : {}), ...(syncCosts !== undefined ? { syncCosts: !!syncCosts } : {}) };
+  const data = { sourceTenantId, ...(enabled !== undefined ? { enabled: !!enabled } : {}), ...(syncCosts !== undefined ? { syncCosts: !!syncCosts } : {}), ...(skipSets !== undefined ? { skipSets: !!skipSets } : {}) };
   await db.catalogSync.upsert({ where: { tenantId }, create: { tenantId, ...data }, update: data });
   return getConfig(tenantId);
 }
@@ -184,7 +185,7 @@ async function runCatalogSync(tenantId, { dryRun = false } = {}) {
   try {
     let result;
     try {
-      result = await syncCatalog(tenantId, cfg.sourceTenantId, { syncCosts: cfg.syncCosts, dryRun });
+      result = await syncCatalog(tenantId, cfg.sourceTenantId, { syncCosts: cfg.syncCosts, skipSets: cfg.skipSets, dryRun });
     } catch (e) {
       if (!dryRun) await db.catalogSync.update({ where: { tenantId }, data: { lastRunAt: new Date(), lastStatus: 'error', lastResult: { error: String(e.message || e).slice(0, 500) } } });
       throw e;
