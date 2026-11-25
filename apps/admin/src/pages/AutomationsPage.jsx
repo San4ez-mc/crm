@@ -9,7 +9,7 @@
 // Синхронізація реклами і Webhook-креденшли — на сторінках Оголошення / Загальні.
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, Card, Field, Input, Textarea, Button, IconButton, ErrorBanner, formatDateTime } from '../components/common/Common';
+import { PageHeader, Card, Field, Input, Textarea, Button, IconButton, EyeButton, SecretInput, ErrorBanner, formatDateTime } from '../components/common/Common';
 import Modal from '../components/common/Modal';
 
 const SERVICE_GROUPS = [
@@ -121,6 +121,14 @@ export default function AutomationsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncReport, setSyncReport] = useState(null);
   const [syncError, setSyncError] = useState('');
+  const [revealed, setRevealed] = useState({}); // id секрету (або 'fop:id') → повне значення, поки «око» відкрите
+
+  // Список секретів приходить замаскованим — повне значення беремо окремим запитом лише коли натиснуто «око».
+  async function toggleReveal(id) {
+    if (revealed[id] !== undefined) { setRevealed(({ [id]: _, ...rest }) => rest); return; }
+    try { const { data } = await api.getSecret(id); setRevealed((r) => ({ ...r, [id]: data.value })); } catch (e) { setError(e.message); }
+  }
+  const toggleFopToken = (f) => setRevealed((r) => { const k = 'fop:' + f.id; if (r[k] !== undefined) { const { [k]: _, ...rest } = r; return rest; } return { ...r, [k]: f.monobankToken }; });
 
   async function syncToFunnel() {
     setSyncing(true); setSyncError(''); setSyncReport(null);
@@ -153,6 +161,7 @@ export default function AutomationsPage() {
       if (form.id) await api.updateSecret(form.id, form);
       else await api.createSecret(form);
       setEditingSecret(null);
+      setRevealed({});
       load();
     } catch (e) { setError(e.message); }
   }
@@ -224,7 +233,14 @@ export default function AutomationsPage() {
                   <td className="py-2 text-slate-400">{f.iban || '—'}</td>
                   <td className="py-2 text-slate-400">{f.cardNumber || '—'}{f.cardComment && <div className="whitespace-pre-line text-xs text-slate-500">{f.cardComment}</div>}</td>
                   <td className="py-2 text-slate-400">{f.taxId || '—'}</td>
-                  <td className="py-2 text-slate-400">{f.monobankToken ? '✓ задано' : '—'}</td>
+                  <td className="py-2 text-slate-400">
+                    {f.monobankToken ? (
+                      <div className="flex items-center gap-2">
+                        <span className="max-w-[16rem] break-all font-mono text-xs">{revealed['fop:' + f.id] !== undefined ? f.monobankToken : '✓ задано'}</span>
+                        <EyeButton shown={revealed['fop:' + f.id] !== undefined} onClick={() => toggleFopToken(f)} />
+                      </div>
+                    ) : '—'}
+                  </td>
                   <td className="py-2 text-right">
                     <div className="flex justify-end gap-1.5">
                       <IconButton onClick={() => setEditingFop(f)}>✏️</IconButton>
@@ -244,8 +260,8 @@ export default function AutomationsPage() {
         <p className="mb-3 text-xs text-slate-500">Статуси ТТН опитує окремий крон-flow цим ключем і пише назад через PATCH /orders/:id/ttn-status.</p>
         <Field label="API-ключ Нової Пошти">
           <div className="flex gap-2">
-            <Input type="password" value={npKey} onChange={(e) => setNpKey(e.target.value)} />
-            <Button onClick={saveNp}>Зберегти</Button>
+            <SecretInput value={npKey} onChange={(e) => setNpKey(e.target.value)} />
+            <Button type="button" onClick={saveNp}>Зберегти</Button>
           </div>
         </Field>
         {npSaved && <span className="text-xs text-emerald-400">Збережено</span>}
@@ -266,20 +282,27 @@ export default function AutomationsPage() {
               {group.keys.map((k) => {
                 const existing = byKey[k.key];
                 return (
-                  <button
+                  <div
                     key={k.key}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => openSecret(k)}
-                    className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-left text-sm hover:border-brand"
+                    onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSecret(k); } }}
+                    className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-left text-sm hover:border-brand"
                   >
                     <div className="min-w-0">
                       <div className="truncate">{k.label}</div>
-                      <div className="truncate font-mono text-xs text-slate-500">{existing ? (k.isSecret ? mask(existing.value) : existing.value) : '— не задано —'}</div>
+                      {existing && revealed[existing.id] !== undefined
+                        ? <div className="break-all font-mono text-xs text-slate-200">{revealed[existing.id]}</div>
+                        : <div className="truncate font-mono text-xs text-slate-500">{existing ? (k.isSecret ? mask(existing.value) : existing.value) : '— не задано —'}</div>}
                     </div>
-                    {existing
-                      ? <IconButton onClick={(e) => { e.stopPropagation(); deleteSecret(existing.id); }}>🗑️</IconButton>
-                      : <span className="shrink-0 text-xs text-slate-600">+</span>}
-                  </button>
+                    {existing ? (
+                      <div className="flex shrink-0 gap-1.5">
+                        {k.isSecret && <EyeButton shown={revealed[existing.id] !== undefined} onClick={(e) => { e.stopPropagation(); toggleReveal(existing.id); }} />}
+                        <IconButton type="button" onClick={(e) => { e.stopPropagation(); deleteSecret(existing.id); }}>🗑️</IconButton>
+                      </div>
+                    ) : <span className="shrink-0 text-xs text-slate-600">+</span>}
+                  </div>
                 );
               })}
             </div>

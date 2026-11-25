@@ -1,4 +1,5 @@
 // Дрібні спільні елементи, щоб не дублювати класи по сторінках.
+import { useState } from 'react';
 
 // Номери сторінок з "…" для великої кількості — завжди показує 1, останню, поточну±1.
 function pageList(current, total) {
@@ -77,6 +78,31 @@ export function IconButton({ children, ...props }) {
 
 export function Input(props) {
   return <input {...props} className={`w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-brand focus:outline-none ${props.className || ''}`} />;
+}
+
+// Кнопка «око»: показати/сховати ключ (2026-11-25, власник: «біля ключів іконка ока, щоб можна було проглянути»).
+export function EyeButton({ shown, onClick, className }) {
+  const title = shown ? 'Сховати' : 'Показати';
+  return (
+    <IconButton type="button" onClick={onClick} title={title} aria-label={title} aria-pressed={shown} className={`shrink-0 ${className || ''}`}>
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+        <circle cx="12" cy="12" r="3" />
+        {shown && <path d="M4 4l16 16" />}
+      </svg>
+    </IconButton>
+  );
+}
+
+// Поле ключа: за замовчуванням крапки, «око» всередині поля показує значення.
+export function SecretInput({ className, ...props }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className={`relative w-full ${className || ''}`}>
+      <Input {...props} type={shown ? 'text' : 'password'} autoComplete="off" className="pr-11 font-mono" />
+      <EyeButton shown={shown} onClick={() => setShown((v) => !v)} className="absolute right-1.5 top-1/2 -translate-y-1/2" />
+    </div>
+  );
 }
 
 export function Textarea(props) {
