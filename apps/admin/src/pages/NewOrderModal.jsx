@@ -27,6 +27,21 @@ export default function NewOrderModal({ stages, ads, onClose, onCreated }) {
   useEffect(() => { api.listProducts({ take: '500' }).then((r) => setProducts(r.data)).catch(() => {}); }, []);
   useEffect(() => { api.listSuppliers().then((r) => setSuppliers(r.data || [])).catch(() => {}); }, []);
   const total = items.reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+  // 26.11 (Edits 0542faa5: менеджер замість редагування створив друге замовлення): щойно вписано телефон чи нікнейм — показуємо
+  // свіжі замовлення цього покупця з посиланням «відкрити й відредагувати».
+  const [recent, setRecent] = useState([]);
+  useEffect(() => {
+    const digits = buyer.phone.replace(/\D/g, '');
+    const ig = buyer.igUsername.trim() ? normalizeInstagram(buyer.igUsername) : '';
+    const q = ig ? `@${ig}` : (digits.length >= 10 ? digits.slice(-10) : '');
+    if (!q) { setRecent([]); return undefined; }
+    const t = setTimeout(() => {
+      api.listOrders({ q, placed: '1', take: '5' })
+        .then((r) => setRecent((r.data || []).filter((o) => Date.now() - new Date(o.placedAt || o.createdAt).getTime() < 14 * 864e5)))
+        .catch(() => setRecent([]));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [buyer.phone, buyer.igUsername]);
 
   function updateItem(i, patch) {
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
@@ -83,6 +98,18 @@ export default function NewOrderModal({ stages, ads, onClose, onCreated }) {
           <Field label="Телефон *"><Input value={buyer.phone} onChange={(e) => setBuyer({ ...buyer, phone: e.target.value })} placeholder="+380..." /></Field>
           <Field label="Instagram"><Input value={buyer.igUsername} onChange={(e) => setBuyer({ ...buyer, igUsername: igInputValue(e.target.value) })} onBlur={() => setBuyer((b) => ({ ...b, igUsername: normalizeInstagram(b.igUsername) || b.igUsername }))} placeholder="нікнейм або посилання на профіль" /></Field>
         </div>
+        {recent.length > 0 && (
+          <div className="mt-2 rounded-lg border border-amber-700 bg-amber-900/20 p-2 text-xs text-amber-200">
+            У цього покупця вже є замовлення за останні 2 тижні — можливо, треба відредагувати його, а не створювати нове:
+            {recent.map((o) => (
+              <div key={o.id}>
+                <a className="text-brand-light hover:underline" href={`/orders?open=${o.id}&edit=1`} target="_blank" rel="noreferrer">
+                  Відкрити замовлення від {new Date(o.placedAt || o.createdAt).toLocaleDateString('uk-UA')}{o.stage?.name ? ` · ${o.stage.name}` : ''} ↗
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mb-4">

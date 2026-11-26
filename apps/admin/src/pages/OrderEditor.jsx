@@ -247,20 +247,20 @@ export default function OrderEditor({ order, onSaved, onCancel }) {
       </section>
 
       <section>
-        <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Отримувач</h4>
-        <label className="flex items-center gap-2 text-xs text-slate-400">
-          <input type="checkbox" checked={otherRecipient} onChange={(e) => setOtherRecipient(e.target.checked)} />
-          Отримує інша людина (не покупець)
-        </label>
-        {otherRecipient && (
-          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-            <Input placeholder="ПІБ отримувача" value={shipping.recipientFullName} onChange={(e) => setShipping({ ...shipping, recipientFullName: e.target.value })} />
-            <Input placeholder="Телефон отримувача" value={shipping.recipientPhone} onChange={(e) => setShipping({ ...shipping, recipientPhone: e.target.value })} />
-          </div>
-        )}
-        {/* Місто й відділення CRM не потрібні (Edits a39d6416/57d02912) — лише для кнопки «Оформити постачальнику» в Telegram. */}
-        <details className="mt-2 text-xs text-slate-400" open={!!(shipping.city || shipping.branch)}>
-          <summary className="cursor-pointer">Адреса Нової Пошти (необовʼязково)</summary>
+        {/* Місто й відділення CRM не потрібні (Edits a39d6416/57d02912) — лише для кнопки «Оформити постачальнику» в Telegram.
+            Інший отримувач — рідкість (26.11, Edits e0105559 «це зайве»): у тому ж згорнутому блоці. */}
+        <details className="text-xs text-slate-400" open={!!(shipping.city || shipping.branch || otherRecipient)}>
+          <summary className="cursor-pointer">Адреса Нової Пошти та інший отримувач (необовʼязково)</summary>
+          <label className="mt-2 flex items-center gap-2">
+            <input type="checkbox" checked={otherRecipient} onChange={(e) => setOtherRecipient(e.target.checked)} />
+            Отримує інша людина
+          </label>
+          {otherRecipient && (
+            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <Input placeholder="ПІБ отримувача" value={shipping.recipientFullName} onChange={(e) => setShipping({ ...shipping, recipientFullName: e.target.value })} />
+              <Input placeholder="Телефон отримувача" value={shipping.recipientPhone} onChange={(e) => setShipping({ ...shipping, recipientPhone: e.target.value })} />
+            </div>
+          )}
           <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
             <Input placeholder="Місто" value={shipping.city} onChange={(e) => setShipping({ ...shipping, city: e.target.value })} />
             <Input placeholder="Відділення / поштомат (номер)" value={shipping.branch} onChange={(e) => setShipping({ ...shipping, branch: e.target.value })} />

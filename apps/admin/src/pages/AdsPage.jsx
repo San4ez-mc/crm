@@ -48,6 +48,12 @@ export default function AdsPage() {
     load(next);
   }
 
+  // 26.11 (Edits f0d79a18: «не шукає рекламне оголошення по ІД»): пошук іде й серед неактивних — інакше старе оголошення не знаходиться.
+  useEffect(() => {
+    if (search.trim().length >= 3 && !showAll) { setShowAll(true); load(undefined, true); }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [search]);
+
   function toggleShowAll() {
     const next = !showAll;
     setShowAll(next);

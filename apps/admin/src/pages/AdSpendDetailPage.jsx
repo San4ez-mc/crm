@@ -133,7 +133,13 @@ function ResultChart({ data, on, toggle, toCur }) {
             );
           })}
           {on.roi && roiPts && <polyline points={roiPts} fill="none" stroke="#f59e0b" strokeWidth="2" />}
-          {on.roi && data.map((d, i) => (d.roi !== null && d.roi !== undefined ? <circle key={'r' + d.date} cx={xOf(i)} cy={scaleR(d.roi)} r="3" fill="#f59e0b"><title>×{d.roi.toFixed(2)}</title></circle> : null))}
+          {on.roi && data.map((d, i) => (d.roi !== null && d.roi !== undefined ? (
+            <g key={'r' + d.date}>
+              <circle cx={xOf(i)} cy={scaleR(d.roi)} r="3" fill="#f59e0b"><title>×{d.roi.toFixed(2)}</title></circle>
+              {/* Цифра біля кожної точки окупності (Edits 5171a397: «не бачу на графіку цифри»); разом із прибутком — під точкою, щоб не накладались. */}
+              <text x={xOf(i)} y={scaleR(d.roi) + (on.profit ? 14 : -8)} textAnchor="middle" fontSize="10" fontWeight="600" fill="#fbbf24">×{d.roi.toFixed(d.roi >= 10 ? 0 : 1)}</text>
+            </g>
+          ) : null))}
         </svg>
       </div>
       {legend}
